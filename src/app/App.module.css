@@ -1,0 +1,241 @@
+.viewport {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  overflow: clip;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(183, 43, 50, 0.2), transparent 32%),
+    linear-gradient(135deg, #07091c 0%, #11183c 48%, #090b21 100%);
+}
+
+.stage {
+  position: relative;
+  width: min(100vw, 177.78vh);
+  aspect-ratio: 16 / 9;
+  overflow: clip;
+  border: 1px solid rgba(215, 171, 88, 0.32);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    radial-gradient(circle at 50% 45%, #202a59 0%, #101637 36%, #090c24 78%);
+  background-size:
+    22px 22px,
+    22px 22px,
+    auto;
+  box-shadow: inset 0 0 120px rgba(2, 3, 14, 0.85);
+  isolation: isolate;
+}
+
+.welcome {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+}
+
+.stage::before {
+  position: absolute;
+  right: 8%;
+  bottom: -19%;
+  left: 8%;
+  height: 42%;
+  border-top: 3px solid rgba(197, 147, 64, 0.55);
+  border-radius: 50% 50% 0 0;
+  background:
+    repeating-linear-gradient(
+      92deg,
+      rgba(255, 255, 255, 0.025) 0 2px,
+      transparent 2px 38px
+    ),
+    #291018;
+  box-shadow: 0 -22px 70px rgba(178, 34, 42, 0.14);
+  content: '';
+  transform: perspective(320px) rotateX(16deg);
+}
+
+.stage::after {
+  position: absolute;
+  width: 24rem;
+  height: 24rem;
+  border: 1px solid rgba(220, 169, 78, 0.16);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 18px rgba(179, 41, 49, 0.045),
+    0 0 0 20px rgba(220, 169, 78, 0.11),
+    0 0 90px rgba(206, 42, 51, 0.16);
+  content: '';
+  z-index: -1;
+}
+
+.curtainLeft,
+.curtainRight {
+  position: absolute;
+  top: -8%;
+  bottom: 0;
+  width: 26%;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(10, 2, 12, 0.74),
+      transparent 18% 82%,
+      rgba(10, 2, 12, 0.5)
+    ),
+    repeating-linear-gradient(90deg, #59151f 0 9%, #8b202a 10% 18%, #45101a 20% 28%);
+  filter: drop-shadow(0 0 28px rgba(0, 0, 0, 0.7));
+  opacity: 0.82;
+  transform-origin: top;
+}
+
+.curtainLeft {
+  left: -13%;
+  transform: rotate(5deg);
+}
+
+.curtainRight {
+  right: -13%;
+  transform: rotate(-5deg) scaleX(-1);
+}
+
+.lanterns {
+  position: absolute;
+  top: 4%;
+  right: 21%;
+  left: 21%;
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid rgba(222, 181, 96, 0.35);
+}
+
+.lanterns i {
+  width: 9px;
+  height: 9px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #efc77a;
+  box-shadow:
+    0 0 12px #d94c39,
+    0 0 28px rgba(255, 200, 105, 0.6);
+}
+
+.eyebrow {
+  margin: 0 0 1.6rem;
+  color: #d7ab58;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.34em;
+}
+
+.titleSeal {
+  position: absolute;
+  top: 23%;
+  right: calc(50% - 13rem);
+  display: grid;
+  width: 3.7rem;
+  height: 3.7rem;
+  place-items: center;
+  border: 2px solid #c7353c;
+  color: #d85d50;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1.8rem;
+  transform: rotate(8deg);
+}
+
+.welcome h1 {
+  margin: 0;
+  color: #f6e7bd;
+  font-family: 'STKaiti', 'KaiTi', 'Songti SC', serif;
+  font-size: clamp(5rem, 8vw, 8.5rem);
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  line-height: 1;
+  text-indent: 0.13em;
+  text-shadow:
+    0 3px 0 #781f2a,
+    0 7px 0 rgba(0, 0, 0, 0.24),
+    0 0 45px rgba(218, 173, 85, 0.18);
+}
+
+.tagline {
+  margin: 1.4rem 0 1.1rem;
+  color: #d8cab0;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1.25rem;
+  letter-spacing: 0.48em;
+  text-indent: 0.48em;
+}
+
+.stageLine {
+  display: flex;
+  width: 15rem;
+  align-items: center;
+  justify-content: space-between;
+  color: #c13a3e;
+}
+
+.stageLine::before,
+.stageLine::after {
+  width: 3.6rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #b48742);
+  content: '';
+}
+
+.stageLine::after {
+  transform: scaleX(-1);
+}
+
+.stageLine span:nth-child(odd) {
+  color: #d6b467;
+}
+
+.loading {
+  margin: 2rem 0 0;
+  color: rgba(240, 228, 198, 0.52);
+  font-size: 0.72rem;
+  letter-spacing: 0.25em;
+}
+
+.playingPlaceholder {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  color: #f3e4be;
+}
+
+.errorBanner {
+  position: absolute;
+  right: 2rem;
+  bottom: 1.5rem;
+  left: 2rem;
+  z-index: 20;
+  margin: 0;
+  padding: 0.7rem 1rem;
+  border: 1px solid rgba(234, 109, 88, 0.65);
+  background: rgba(62, 9, 19, 0.9);
+  color: #ffe6d0;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.crashFallback {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-content: center;
+  justify-items: center;
+  gap: 1rem;
+  background: #090c24;
+  color: #f4e6bf;
+}
+
+.crashFallback button {
+  padding: 0.65rem 1.2rem;
+  border: 1px solid #c5964d;
+  background: #8d242d;
+  color: #fff0c8;
+  cursor: pointer;
+}

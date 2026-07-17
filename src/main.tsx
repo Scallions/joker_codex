@@ -1,0 +1,17 @@
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+
+import { App } from './app/App';
+import './presentation/styles/global.css';
+
+const rootElement = document.querySelector('#root');
+
+if (!rootElement) {
+  throw new Error('找不到应用根节点');
+}
+
+createRoot(rootElement).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);

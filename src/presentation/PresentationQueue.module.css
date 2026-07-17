@@ -1,0 +1,30 @@
+.cue {
+  position: absolute;
+  top: 7.2rem;
+  left: 50%;
+  z-index: 40;
+  display: grid;
+  min-width: 10rem;
+  justify-items: center;
+  padding: 0.42rem 1.1rem 0.5rem;
+  border: 1px solid rgba(225, 177, 83, 0.52);
+  background: rgba(72, 16, 28, 0.94);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+  color: #f6e1ad;
+  cursor: pointer;
+  translate: -50% 0;
+}
+
+.cue span,
+.cue em {
+  color: rgba(235, 207, 148, 0.58);
+  font-size: 0.45rem;
+  font-style: normal;
+  letter-spacing: 0.16em;
+}
+
+.cue strong {
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 0.92rem;
+  letter-spacing: 0.1em;
+}

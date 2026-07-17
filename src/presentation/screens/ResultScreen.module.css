@@ -1,0 +1,211 @@
+.screen {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-content: center;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(181, 45, 47, 0.2), transparent 28%),
+    linear-gradient(180deg, rgba(7, 10, 32, 0.72), rgba(4, 5, 19, 0.94));
+  text-align: center;
+}
+
+.screen::before,
+.screen::after {
+  position: absolute;
+  top: -6%;
+  bottom: -6%;
+  width: 28%;
+  background: repeating-linear-gradient(90deg, #5f1520 0 12%, #8b222a 14% 24%);
+  content: '';
+  filter: drop-shadow(0 0 24px rgba(0, 0, 0, 0.65));
+}
+
+.screen::before {
+  left: -17%;
+  transform: rotate(4deg);
+}
+
+.screen::after {
+  right: -17%;
+  transform: rotate(-4deg) scaleX(-1);
+}
+
+.resultSeal {
+  position: absolute;
+  top: 8.5rem;
+  right: calc(50% - 16rem);
+  display: grid;
+  width: 5rem;
+  height: 5rem;
+  place-items: center;
+  border: 3px double #ce4b45;
+  color: #d65c4e;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 2.4rem;
+  box-shadow: inset 0 0 0 0.4rem rgba(192, 52, 51, 0.08);
+}
+
+.copy {
+  position: relative;
+  z-index: 2;
+}
+
+.copy p,
+.copy h1,
+.copy span {
+  margin: 0;
+}
+
+.copy p {
+  color: #c99e53;
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.28em;
+}
+
+.copy h1 {
+  margin: 0.7rem 0;
+  color: #f7e6b8;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 3.2rem;
+  letter-spacing: 0.1em;
+  text-shadow:
+    0 4px 0 #6e1a24,
+    0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.lost .copy h1 {
+  color: #c8c3bc;
+  text-shadow: 0 4px 0 #30273b;
+}
+
+.copy span {
+  display: block;
+  color: rgba(238, 221, 184, 0.58);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.summary {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 34rem;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 2rem 0 1rem;
+  border: 1px solid rgba(207, 159, 74, 0.28);
+  background: rgba(13, 17, 42, 0.72);
+}
+
+.summary > div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.85rem 0.5rem;
+  border-right: 1px solid rgba(207, 159, 74, 0.18);
+}
+
+.summary > div:last-child {
+  border: 0;
+}
+
+.summary dt {
+  color: #9e855a;
+  font-size: 0.5rem;
+  letter-spacing: 0.14em;
+}
+
+.summary dd {
+  margin: 0;
+  color: #f1dca8;
+  font:
+    1.35rem Georgia,
+    serif;
+  font-weight: 800;
+}
+
+.summary > div:first-child dd {
+  color: #ee6857;
+}
+
+.lastHand {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  gap: 0.7rem;
+  align-items: baseline;
+  color: rgba(231, 210, 167, 0.48);
+  font-size: 0.58rem;
+}
+
+.lastHand strong {
+  color: #e2c378;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1rem;
+}
+
+.lastHand em {
+  color: #e46553;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.screen > button {
+  position: relative;
+  z-index: 2;
+  min-width: 14rem;
+  margin-top: 1.7rem;
+  padding: 0.9rem 1.4rem;
+  border: 0;
+  background: linear-gradient(135deg, #ab2d35, #c8463d);
+  color: #ffedc5;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  box-shadow: 0 6px 0 #651821;
+  cursor: pointer;
+}
+
+.screen > button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.checkpoint {
+  position: relative;
+  z-index: 2;
+  margin: 1rem 0 0;
+  color: rgba(223, 201, 155, 0.32);
+  font-size: 0.5rem;
+  letter-spacing: 0.12em;
+}
+
+.paperCrowd {
+  position: absolute;
+  right: 8%;
+  bottom: 0;
+  left: 8%;
+  display: flex;
+  height: 7rem;
+  align-items: end;
+  justify-content: space-around;
+  opacity: 0.4;
+}
+
+.paperCrowd i {
+  width: 2.5rem;
+  height: 4.5rem;
+  border-radius: 48% 48% 10% 10%;
+  background: #050611;
+  transform: rotate(var(--tilt, 0deg));
+}
+
+.paperCrowd i:nth-child(3n) {
+  height: 5.7rem;
+  transform: rotate(5deg);
+}
+
+.paperCrowd i:nth-child(2n) {
+  transform: rotate(-4deg);
+}

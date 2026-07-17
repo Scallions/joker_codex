@@ -1,0 +1,513 @@
+.table {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 56% 46%, rgba(174, 47, 49, 0.15), transparent 23%),
+    linear-gradient(180deg, rgba(10, 14, 43, 0.08), rgba(5, 7, 24, 0.55));
+}
+
+.inventoryRail {
+  position: absolute;
+  top: 2.3rem;
+  right: 7.4rem;
+  left: 7.4rem;
+  display: grid;
+  grid-template-columns: 10rem 1fr 11rem;
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.brandPlate {
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.55rem 0.7rem;
+  border-left: 2px solid #bc3438;
+  background: rgba(8, 12, 34, 0.72);
+}
+
+.brandPlate span {
+  color: #c89c50;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.brandPlate strong {
+  color: rgba(242, 227, 192, 0.66);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+}
+
+.sessionControls {
+  display: flex;
+  gap: 0.3rem;
+  margin-top: 0.28rem;
+}
+
+.sessionControls button {
+  padding: 0.18rem 0.35rem;
+  border: 1px solid rgba(194, 151, 72, 0.24);
+  background: transparent;
+  color: rgba(226, 204, 158, 0.54);
+  font-size: 0.48rem;
+  cursor: pointer;
+}
+
+.jokerSlots {
+  display: flex;
+  gap: 0.48rem;
+  justify-content: center;
+}
+
+.jokerPlacard,
+.emptyJokerSlot {
+  position: relative;
+  width: 7.25rem;
+  height: 4.2rem;
+  border: 1px solid rgba(213, 166, 84, 0.5);
+  background: linear-gradient(145deg, #a52e36, #641a29);
+  box-shadow: 0 7px 16px rgba(0, 0, 0, 0.28);
+  color: #f6dfaa;
+}
+
+.jokerPlacard {
+  display: grid;
+  align-content: center;
+  padding: 0.45rem 0.6rem;
+  text-align: center;
+}
+
+.jokerPlacard::before,
+.emptyJokerSlot::before {
+  position: absolute;
+  top: -1.1rem;
+  left: 50%;
+  width: 1px;
+  height: 1.1rem;
+  background: #bd934d;
+  content: '';
+}
+
+.jokerPlacard span {
+  color: rgba(250, 229, 179, 0.62);
+  font-size: 0.5rem;
+  letter-spacing: 0.18em;
+}
+
+.jokerPlacard strong {
+  margin: 0.12rem 0;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1.02rem;
+  letter-spacing: 0.08em;
+}
+
+.jokerPlacard em {
+  color: #ffd979;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.emptyJokerSlot {
+  display: grid;
+  place-items: center;
+  border-style: dashed;
+  background: rgba(10, 14, 39, 0.48);
+  color: rgba(225, 196, 136, 0.25);
+  font-family: 'STKaiti', 'KaiTi', serif;
+}
+
+.consumableSlots {
+  display: flex;
+  gap: 0.45rem;
+  justify-content: end;
+}
+
+.consumable {
+  display: grid;
+  width: 5rem;
+  height: 4.2rem;
+  align-content: center;
+  border: 1px solid #4f977f;
+  background: linear-gradient(145deg, #183f41, #102a36);
+  color: #d5f0d1;
+  cursor: pointer;
+}
+
+.consumable span {
+  color: #79b89c;
+  font-size: 0.48rem;
+  letter-spacing: 0.15em;
+}
+
+.consumable strong {
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 0.82rem;
+}
+
+.ledger {
+  position: absolute;
+  top: 8.1rem;
+  bottom: 5.7rem;
+  left: 2.8rem;
+  width: 10.5rem;
+  padding: 1.05rem 0.95rem;
+  border: 1px solid rgba(201, 151, 70, 0.35);
+  border-radius: 0 0 5.2rem 5.2rem;
+  background:
+    linear-gradient(90deg, transparent 97%, rgba(255, 255, 255, 0.05)),
+    linear-gradient(180deg, #3b101d, #180d1b 74%);
+  box-shadow: 8px 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.ledgerTitle {
+  display: grid;
+  justify-items: center;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid rgba(213, 171, 90, 0.27);
+}
+
+.ledgerTitle span {
+  color: #b68b4c;
+  font-size: 0.55rem;
+  letter-spacing: 0.2em;
+}
+
+.ledgerTitle strong {
+  color: #f0dfb1;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1.3rem;
+}
+
+.ledger dl {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.8rem 0 0;
+}
+
+.ledger dl > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.36rem 0.15rem;
+  border-bottom: 1px dotted rgba(232, 210, 162, 0.14);
+}
+
+.ledger dt {
+  color: rgba(234, 217, 181, 0.55);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+}
+
+.ledger dd {
+  margin: 0;
+  color: #f4e7c5;
+  font-family: Georgia, serif;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.ledger .scoreRow dd {
+  color: #ee6557;
+  font-size: 1.5rem;
+}
+
+.ledger .moneyRow dd {
+  color: #efc569;
+}
+
+.ledger > p {
+  margin: 0.85rem 0 0;
+  color: rgba(223, 201, 155, 0.34);
+  font-size: 0.48rem;
+  text-align: center;
+}
+
+.centerStage {
+  position: absolute;
+  top: 8.2rem;
+  right: 15.2rem;
+  bottom: 16.5rem;
+  left: 14.5rem;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+}
+
+.blindBanner {
+  display: grid;
+  min-width: 20rem;
+  justify-items: center;
+  padding: 0.55rem 2.5rem 0.65rem;
+  background: linear-gradient(90deg, transparent, #731c2a 12% 88%, transparent);
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.35));
+}
+
+.blindBanner span {
+  color: rgba(250, 219, 163, 0.6);
+  font-size: 0.55rem;
+  letter-spacing: 0.12em;
+}
+
+.blindBanner strong {
+  color: #ffe7ae;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1.2rem;
+  letter-spacing: 0.12em;
+}
+
+.scoreSeal {
+  position: relative;
+  display: grid;
+  width: 13.2rem;
+  height: 13.2rem;
+  margin-top: 1rem;
+  place-content: center;
+  place-items: center;
+  border: 2px solid rgba(191, 47, 50, 0.58);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(175, 41, 46, 0.2), transparent 60%),
+    repeating-radial-gradient(
+      circle,
+      transparent 0 1.8rem,
+      rgba(204, 69, 61, 0.09) 1.85rem 1.9rem
+    );
+  box-shadow:
+    0 0 0 0.45rem rgba(197, 52, 53, 0.06),
+    0 0 0 0.52rem rgba(215, 164, 75, 0.17),
+    0 0 55px rgba(193, 44, 46, 0.15);
+}
+
+.scoreSeal > span {
+  color: #a98d62;
+  font-size: 0.55rem;
+  letter-spacing: 0.23em;
+}
+
+.scoreSeal > strong {
+  color: #f5e4b8;
+  font-family: Georgia, serif;
+  font-size: 3.35rem;
+  line-height: 1;
+}
+
+.scoreSeal > i {
+  position: absolute;
+  right: 1.2rem;
+  bottom: 1.5rem;
+  display: grid;
+  width: 2.1rem;
+  height: 2.1rem;
+  place-items: center;
+  border: 1px solid #be3d3e;
+  color: #c34b43;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 0.62rem;
+  font-style: normal;
+  transform: rotate(8deg);
+}
+
+.scoreSeal p {
+  position: absolute;
+  bottom: -2rem;
+  margin: 0;
+  color: #dcae5f;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.handArea {
+  position: absolute;
+  right: 12rem;
+  bottom: 0.8rem;
+  left: 12.5rem;
+  height: 15.6rem;
+}
+
+.handMeta {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin: 0 0 0.4rem;
+  color: rgba(235, 217, 176, 0.55);
+  font-size: 0.6rem;
+}
+
+.handMeta > div {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.handMeta button {
+  padding: 0.32rem 0.55rem;
+  border: 1px solid rgba(202, 160, 82, 0.23);
+  background: rgba(11, 16, 42, 0.65);
+  color: #c7a96e;
+  font-size: 0.56rem;
+  cursor: pointer;
+}
+
+.handMeta p {
+  display: flex;
+  gap: 1rem;
+  margin: 0;
+  color: #e0c994;
+  letter-spacing: 0.08em;
+}
+
+.handMeta p span {
+  color: #e56b57;
+  font-weight: 900;
+}
+
+.handMeta > span {
+  justify-self: end;
+}
+
+.handFan {
+  display: flex;
+  height: 13.5rem;
+  align-items: end;
+  justify-content: center;
+  gap: 0.45rem;
+  perspective: 900px;
+}
+
+.card {
+  position: relative;
+  width: 6.1rem;
+  height: 9rem;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 2px solid #e4cf9c;
+  border-radius: 0.38rem;
+  background:
+    linear-gradient(125deg, rgba(255, 255, 255, 0.38), transparent 42%), #efe1bd;
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 2px rgba(91, 44, 39, 0.12);
+  color: #181724;
+  cursor: pointer;
+  transform-origin: 50% 115%;
+}
+
+.card:disabled {
+  cursor: default;
+}
+
+.selectedCard {
+  border-color: #e05849;
+  box-shadow:
+    0 0 0 3px rgba(206, 58, 53, 0.22),
+    0 13px 23px rgba(0, 0, 0, 0.4),
+    0 0 24px rgba(222, 72, 59, 0.25);
+}
+
+.redCard {
+  color: #ac2934;
+}
+
+.cardCorner {
+  position: absolute;
+  top: 0.45rem;
+  left: 0.5rem;
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  line-height: 0.9;
+}
+
+.cardCorner strong {
+  font-family: Georgia, serif;
+  font-size: 1.05rem;
+}
+
+.cardCorner i {
+  font-size: 0.85rem;
+  font-style: normal;
+}
+
+.cardSuit {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  font-size: 2.8rem;
+  opacity: 0.86;
+  transform: translate(-50%, -50%);
+}
+
+.cardFiber {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    112deg,
+    transparent 0 8px,
+    rgba(79, 50, 37, 0.025) 9px 10px
+  );
+  pointer-events: none;
+}
+
+.enhancement {
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.35rem;
+  padding: 0.18rem 0.25rem;
+  background: #243f48;
+  color: #d9efda;
+  font-size: 0.48rem;
+}
+
+.actionRail {
+  position: absolute;
+  right: 2.5rem;
+  bottom: 5.6rem;
+  display: grid;
+  width: 8.5rem;
+  gap: 0.85rem;
+}
+
+.actionRail button {
+  position: relative;
+  display: grid;
+  min-height: 5rem;
+  align-content: center;
+  border: 0;
+  clip-path: polygon(0 8%, 92% 0, 100% 92%, 8% 100%);
+  cursor: pointer;
+  filter: drop-shadow(0 8px 8px rgba(0, 0, 0, 0.35));
+}
+
+.actionRail button span {
+  font-size: 0.52rem;
+  letter-spacing: 0.15em;
+  opacity: 0.65;
+}
+
+.actionRail button strong {
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1.35rem;
+  letter-spacing: 0.15em;
+}
+
+.playButton {
+  background: linear-gradient(145deg, #c53b3d, #861f2b);
+  color: #fff0ca;
+}
+
+.discardButton {
+  background: linear-gradient(145deg, #c49a4f, #765328);
+  color: #fff2cf;
+}
+
+.actionRail button:disabled,
+.consumable:disabled,
+.handMeta button:disabled {
+  cursor: default;
+  filter: grayscale(0.75);
+  opacity: 0.42;
+}

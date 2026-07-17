@@ -1,0 +1,352 @@
+.screen {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 1.2rem;
+  padding: 4.2rem 9rem 3.4rem;
+  background:
+    radial-gradient(circle at 50% 43%, rgba(172, 45, 50, 0.13), transparent 30%),
+    linear-gradient(180deg, rgba(8, 11, 34, 0.1), rgba(8, 11, 29, 0.82));
+}
+
+.header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(211, 166, 83, 0.28);
+  padding-bottom: 1rem;
+}
+
+.header p,
+.header h1 {
+  margin: 0;
+}
+
+.header p {
+  color: #c5964d;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+}
+
+.header h1 {
+  margin-top: 0.32rem;
+  color: #f4e6bf;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 2.3rem;
+  letter-spacing: 0.12em;
+}
+
+.utilityBar {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.utilityBar > span {
+  color: rgba(235, 222, 190, 0.55);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+}
+
+.utilityBar button {
+  padding: 0.42rem 0.58rem;
+  border: 1px solid rgba(202, 159, 80, 0.25);
+  background: rgba(12, 17, 43, 0.72);
+  color: #bda066;
+  font-size: 0.56rem;
+  cursor: pointer;
+}
+
+.utilityBar input {
+  display: none;
+}
+
+.profileRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.2rem;
+  align-items: center;
+}
+
+.ticket {
+  position: relative;
+  display: grid;
+  min-height: 19.5rem;
+  place-items: center;
+  align-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(218, 177, 96, 0.38);
+  background:
+    linear-gradient(145deg, rgba(248, 232, 194, 0.95), rgba(218, 193, 143, 0.93)), #e7d4aa;
+  color: #27151c;
+  box-shadow:
+    0 18px 36px rgba(0, 0, 0, 0.28),
+    inset 0 0 0 5px rgba(97, 33, 35, 0.08);
+  clip-path: polygon(0 0, 100% 0, 100% 92%, 95% 100%, 5% 100%, 0 92%);
+}
+
+.ticket::before {
+  position: absolute;
+  inset: 0.65rem;
+  border: 1px solid rgba(123, 44, 42, 0.24);
+  content: '';
+  pointer-events: none;
+}
+
+.ticket::after {
+  position: absolute;
+  right: -2.5rem;
+  bottom: -2.5rem;
+  width: 8rem;
+  height: 8rem;
+  border: 2px solid rgba(162, 36, 43, 0.16);
+  border-radius: 50%;
+  content: '';
+}
+
+.activeTicket {
+  border-color: #d8aa54;
+  box-shadow:
+    0 0 0 2px rgba(193, 53, 57, 0.8),
+    0 22px 42px rgba(0, 0, 0, 0.35),
+    0 0 36px rgba(212, 161, 73, 0.14);
+}
+
+.slotMark {
+  position: absolute;
+  top: 1.2rem;
+  left: 1.35rem;
+  display: grid;
+  width: 2.1rem;
+  height: 2.1rem;
+  place-items: center;
+  border: 1px solid #a63437;
+  color: #a22e33;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1.1rem;
+  transform: rotate(-4deg);
+}
+
+.slotLabel {
+  margin: 0 0 0.85rem;
+  color: #8b5a3d;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+}
+
+.ticket h2 {
+  margin: 0;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 2rem;
+  letter-spacing: 0.12em;
+}
+
+.profileState {
+  margin: 0.65rem 0 1.4rem;
+  color: rgba(62, 37, 34, 0.66);
+  font-size: 0.74rem;
+  letter-spacing: 0.1em;
+}
+
+.emptySeal {
+  display: grid;
+  width: 4.4rem;
+  height: 4.4rem;
+  place-items: center;
+  border: 1px dashed rgba(114, 69, 49, 0.5);
+  border-radius: 50%;
+  color: rgba(80, 51, 41, 0.5);
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1.7rem;
+}
+
+.selectButton,
+.emptyButton,
+.startButton,
+.nameForm button,
+.ticketActions button {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ticketActions {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.ticketActions button {
+  padding: 0.28rem 0.48rem;
+  background: transparent;
+  color: rgba(92, 45, 39, 0.58);
+  font-size: 0.52rem;
+}
+
+.ticketActions button:last-child {
+  color: #9f3537;
+}
+
+.selectButton,
+.emptyButton {
+  min-width: 8.5rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid rgba(109, 40, 39, 0.35);
+  background: transparent;
+  color: #6e292c;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem 0.75rem 1.4rem;
+  border: 1px solid rgba(211, 166, 83, 0.3);
+  background: rgba(11, 16, 42, 0.72);
+}
+
+.footer div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.footer span {
+  color: #a78b5a;
+  font-size: 0.62rem;
+  letter-spacing: 0.2em;
+}
+
+.footer strong {
+  color: #f0dfb4;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1.15rem;
+  letter-spacing: 0.1em;
+}
+
+.seedField {
+  display: grid;
+  width: 15rem;
+  gap: 0.2rem;
+}
+
+.seedField span {
+  color: #9d8356;
+  font-size: 0.52rem;
+  letter-spacing: 0.12em;
+}
+
+.seedField input {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid rgba(201, 157, 76, 0.42);
+  outline: 0;
+  background: transparent;
+  color: #e7d3a6;
+  font-size: 0.65rem;
+  padding: 0.28rem 0;
+}
+
+.seedField input::placeholder {
+  color: rgba(220, 199, 158, 0.28);
+}
+
+.startButton {
+  min-width: 13rem;
+  padding: 0.9rem 1.5rem;
+  background: linear-gradient(135deg, #a92731, #c8423c);
+  color: #fff1d0;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  box-shadow: 0 7px 0 #611821;
+}
+
+.startButton:disabled,
+.ticket button:disabled {
+  cursor: default;
+  filter: grayscale(0.7);
+  opacity: 0.45;
+}
+
+.modalBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  background: rgba(3, 4, 17, 0.78);
+}
+
+.localError {
+  position: absolute;
+  right: 9rem;
+  bottom: 1.1rem;
+  left: 9rem;
+  z-index: 8;
+  margin: 0;
+  color: #ffb7a3;
+  font-size: 0.62rem;
+  text-align: center;
+}
+
+.nameForm {
+  display: grid;
+  width: 24rem;
+  gap: 0.8rem;
+  padding: 2.1rem;
+  border: 1px solid #c99a4f;
+  background: #e8d6ad;
+  color: #28161a;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
+.nameForm p {
+  margin: 0 0 0.3rem;
+  color: #9a3034;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.nameForm label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.nameForm input {
+  min-height: 2.8rem;
+  border: 0;
+  border-bottom: 2px solid #9e3b3c;
+  outline: 0;
+  background: rgba(255, 250, 231, 0.65);
+  color: #25161a;
+  font:
+    1.2rem 'STKaiti',
+    'KaiTi',
+    serif;
+  padding: 0 0.8rem;
+}
+
+.nameForm > div {
+  display: flex;
+  justify-content: end;
+  gap: 0.7rem;
+  margin-top: 0.7rem;
+}
+
+.nameForm button {
+  padding: 0.7rem 1rem;
+  background: #221936;
+  color: #f3dfb6;
+}
+
+.nameForm button[type='submit'] {
+  background: #ac3034;
+}

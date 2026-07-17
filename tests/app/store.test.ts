@@ -1,0 +1,161 @@
+import { createGameStore } from '../../src/app/store';
+import {
+  createLocalProfile,
+  exportActiveProfile,
+  importLocalProfile,
+  initializeApplication,
+  deleteLocalProfile,
+  renameLocalProfile,
+  selectLocalProfile,
+  startLocalFixtureRun,
+  submitRunCommand,
+} from '../../src/app/store/appSlice';
+import type { ProfileId } from '../../src/game-core/model/ids';
+import type { RunState } from '../../src/game-core/model/run';
+import type { GameRepository } from '../../src/persistence/repository';
+import type { ProfileRecord } from '../../src/persistence/profiles';
+
+function memoryRepository(): GameRepository {
+  const profiles = new Map<string, ProfileRecord>();
+  const runs = new Map<string, RunState>();
+  let activeProfileId: ProfileId | null = null;
+
+  return {
+    initialize: async () => undefined,
+    listProfiles: async () => [...profiles.values()].sort((a, b) => a.slot - b.slot),
+    getProfile: async (id) => profiles.get(id),
+    saveProfile: async (profile) => void profiles.set(profile.id, profile),
+    deleteProfile: async (id) => {
+      profiles.delete(id);
+      runs.delete(id);
+    },
+    setActiveProfile: async (id) => {
+      activeProfileId = id;
+    },
+    getActiveProfileId: async () => activeProfileId,
+    loadRun: async (id) => runs.get(id),
+    loadRecoveryRun: async () => undefined,
+    commitCheckpoint: async (profile, run) => {
+      profiles.set(profile.id, profile);
+      runs.set(profile.id, run);
+    },
+    replaceProfile: async (profile, run) => {
+      profiles.set(profile.id, profile);
+      if (run) runs.set(profile.id, run);
+      else runs.delete(profile.id);
+    },
+    clearRun: async (profile) => {
+      profiles.set(profile.id, { ...profile, activeRunId: null });
+      runs.delete(profile.id);
+    },
+  };
+}
+
+describe('应用状态纵切片', () => {
+  it('从空数据库建立第一档案并开始确定性试玩局', async () => {
+    const store = createGameStore(memoryRepository());
+
+    await store.dispatch(initializeApplication()).unwrap();
+    expect(store.getState().app.status).toBe('profiles');
+
+    await store
+      .dispatch(createLocalProfile({ slot: 1, displayName: '看戏人', nowEpochMs: 100 }))
+      .unwrap();
+    expect(store.getState().app.profiles[0]?.displayName).toBe('看戏人');
+    expect(store.getState().app.activeProfileId).toBe('profile:1');
+
+    await store
+      .dispatch(startLocalFixtureRun({ seed: 'ui-seed', nowEpochMs: 200 }))
+      .unwrap();
+    expect(store.getState().app.status).toBe('playing');
+    expect(store.getState().app.run?.seed).toBe('ui-seed');
+    expect(store.getState().app.run?.checkpointId).toBe(0);
+  });
+
+  it('只在自动保存成功后提交规则指令', async () => {
+    const store = createGameStore(memoryRepository());
+    await store.dispatch(initializeApplication()).unwrap();
+    await store
+      .dispatch(createLocalProfile({ slot: 1, displayName: '掌柜', nowEpochMs: 100 }))
+      .unwrap();
+    await store
+      .dispatch(startLocalFixtureRun({ seed: 'command-seed', nowEpochMs: 200 }))
+      .unwrap();
+    const before = store.getState().app.run;
+    if (!before) throw new Error('缺少试玩局');
+
+    await store
+      .dispatch(
+        submitRunCommand({
+          type: 'toggle-card',
+          checkpointId: before.checkpointId,
+          cardId: before.hand[0]!.id,
+        }),
+      )
+      .unwrap();
+
+    expect(store.getState().app.run?.checkpointId).toBe(1);
+    expect(store.getState().app.run?.selectedCardIds).toEqual([before.hand[0]!.id]);
+  });
+
+  it('切换档案时只恢复该档案自己的进行中牌局', async () => {
+    const store = createGameStore(memoryRepository());
+    await store.dispatch(initializeApplication()).unwrap();
+    await store
+      .dispatch(createLocalProfile({ slot: 1, displayName: '甲', nowEpochMs: 100 }))
+      .unwrap();
+    await store
+      .dispatch(startLocalFixtureRun({ seed: 'profile-one-run', nowEpochMs: 200 }))
+      .unwrap();
+    const firstProfileId = store.getState().app.activeProfileId;
+    if (!firstProfileId) throw new Error('缺少第一档案');
+
+    await store
+      .dispatch(createLocalProfile({ slot: 2, displayName: '乙', nowEpochMs: 300 }))
+      .unwrap();
+    expect(store.getState().app.run).toBeNull();
+
+    await store.dispatch(selectLocalProfile(firstProfileId)).unwrap();
+    expect(store.getState().app.run?.seed).toBe('profile-one-run');
+    expect(store.getState().app.status).toBe('playing');
+  });
+
+  it('通过应用层导出并恢复含活动牌局的完整档案', async () => {
+    const source = createGameStore(memoryRepository());
+    await source.dispatch(initializeApplication()).unwrap();
+    await source
+      .dispatch(createLocalProfile({ slot: 1, displayName: '移箱人', nowEpochMs: 100 }))
+      .unwrap();
+    await source
+      .dispatch(startLocalFixtureRun({ seed: 'portable-run', nowEpochMs: 200 }))
+      .unwrap();
+    const json = await source.dispatch(exportActiveProfile()).unwrap();
+
+    const target = createGameStore(memoryRepository());
+    await target.dispatch(initializeApplication()).unwrap();
+    await target.dispatch(importLocalProfile(json)).unwrap();
+
+    expect(target.getState().app.profiles[0]?.displayName).toBe('移箱人');
+    expect(target.getState().app.run?.seed).toBe('portable-run');
+    expect(target.getState().app.status).toBe('playing');
+  });
+
+  it('可以改名并删除本地档案位', async () => {
+    const store = createGameStore(memoryRepository());
+    await store.dispatch(initializeApplication()).unwrap();
+    await store
+      .dispatch(createLocalProfile({ slot: 1, displayName: '旧名', nowEpochMs: 100 }))
+      .unwrap();
+    const profileId = store.getState().app.activeProfileId;
+    if (!profileId) throw new Error('缺少活动档案');
+
+    await store
+      .dispatch(renameLocalProfile({ profileId, displayName: '新名', nowEpochMs: 200 }))
+      .unwrap();
+    expect(store.getState().app.profiles[0]?.displayName).toBe('新名');
+
+    await store.dispatch(deleteLocalProfile(profileId)).unwrap();
+    expect(store.getState().app.profiles).toEqual([]);
+    expect(store.getState().app.activeProfileId).toBeNull();
+  });
+});
