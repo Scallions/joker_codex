@@ -71,3 +71,36 @@ Implemented the complete deterministic V2 run and economy slice with eight-ante 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Complete non-Joker production catalogs
+
+**Date**: 2026-07-18
+**Task**: Complete non-Joker production catalogs
+**Branch**: `main`
+
+### Summary
+
+Implemented the 230-row Chinese production content baseline, deterministic V3 runtime and migration, local catalog audit presentation, persistence round trips, and Chromium/WebKit regression coverage.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cdec433` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
