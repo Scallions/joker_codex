@@ -1,11 +1,14 @@
 import { getCardChipValue, evaluatePokerHand } from '../poker/evaluate';
+import type { CatalogOperation, CatalogTrigger } from '../../content/schema/catalog';
 import type { CardId } from '../model/ids';
+import { isRunStateV3 } from '../model/runV3';
 import type {
   EffectWindow,
   RunPlayingCard,
   RunStateV2,
   ScoreBreakdownV2,
 } from '../model/runV2';
+import { nextInteger, type RandomState } from '../rng/random';
 import { multiplyScore } from '../score/score';
 import {
   resolveEffectQueue,
@@ -17,7 +20,17 @@ import {
 const MAX_EFFECT_OPERATIONS = 10_000;
 
 export type ScoreResolution =
-  | { readonly ok: true; readonly breakdown: ScoreBreakdownV2 }
+  | {
+      readonly ok: true;
+      readonly breakdown: ScoreBreakdownV2;
+      readonly rngState: RandomState;
+      readonly moneyDelta: number;
+      readonly destroyedCardIds: readonly CardId[];
+      readonly modifierRolls: readonly {
+        readonly sourceId: string;
+        readonly value: number;
+      }[];
+    }
   | {
       readonly ok: false;
       readonly code: EffectQueueFailureCode;
@@ -26,18 +39,67 @@ export type ScoreResolution =
 
 type ScoreResolutionFailure = Extract<ScoreResolution, { readonly ok: false }>;
 
-function compatibleCard(card: RunPlayingCard) {
+function modifierOperations(
+  state: RunStateV2,
+  card: RunPlayingCard,
+  trigger: CatalogTrigger | 'identity',
+): readonly { readonly sourceId: string; readonly operation: CatalogOperation }[] {
+  if (!isRunStateV3(state)) return [];
+  const ids = [card.enhancementId, card.sealId, card.editionId].filter(
+    (id): id is string => id !== null,
+  );
+  return ids.flatMap((id) => {
+    const row = state.productionContentV3.rows.find(
+      ({ definition }) => definition.id === id,
+    )?.definition;
+    if (!row) return [];
+    return row.effects.flatMap((effect) =>
+      trigger === 'identity' ||
+      effect.trigger === trigger ||
+      (trigger === 'scored-card' && effect.trigger === 'passive')
+        ? effect.operations.map((operation) => ({ sourceId: row.id, operation }))
+        : [],
+    );
+  });
+}
+
+function compatibleCard(state: RunStateV2, card: RunPlayingCard) {
+  const identity = modifierOperations(state, card, 'identity');
+  const wild = identity.some(
+    ({ operation }) =>
+      operation.type === 'baseline' &&
+      operation.key === 'playing-card-counts-as-all-suits',
+  );
+  const stone = identity.some(
+    ({ operation }) =>
+      operation.type === 'baseline' &&
+      operation.key === 'playing-card-has-no-effective-rank-or-suit',
+  );
   return {
     id: card.id,
     suit: card.suit,
     rank: card.rank,
     enhancement:
-      card.enhancementId?.endsWith(':wild') === true
+      wild || card.enhancementId?.endsWith(':wild') === true
         ? ('wild' as const)
-        : card.enhancementId?.endsWith(':stone') === true
+        : stone || card.enhancementId?.endsWith(':stone') === true
           ? ('stone' as const)
           : ('none' as const),
   };
+}
+
+function setupOperations(state: RunStateV2): readonly CatalogOperation[] {
+  if (!isRunStateV3(state)) return [];
+  const ids = new Set([
+    state.setupV3.deckId,
+    ...state.setupV3.appliedStakeIds,
+    ...(state.setupV3.challengeId ? [state.setupV3.challengeId] : []),
+  ]);
+  return state.productionContentV3.rows
+    .filter(({ definition }) => ids.has(definition.id))
+    .flatMap(({ definition }) =>
+      definition.effects.flatMap((effect) => effect.operations),
+    );
 }
 
 function resolveJokerWindow(
@@ -146,6 +208,7 @@ function resolveGlobalAfterHandWindow(state: RunStateV2):
 }
 
 function debuffedCardIds(
+  state: RunStateV2,
   cards: readonly RunPlayingCard[],
   operations: readonly EffectOperation[],
 ): ReadonlySet<CardId> {
@@ -169,6 +232,24 @@ function debuffedCardIds(
   );
   for (const operation of operations) {
     if (operation.type === 'enable-card') explicit.delete(operation.cardId);
+    if (operation.type !== 'transform-card-field' || operation.field !== 'debuff') {
+      continue;
+    }
+    for (const card of cards) {
+      const matches =
+        operation.value === true ||
+        operation.value === card.suit ||
+        (operation.value === 'face-card' &&
+          (card.rank === 'jack' || card.rank === 'queen' || card.rank === 'king')) ||
+        (operation.selection === 'played-this-ante' &&
+          state.history.playedCardIdsThisAnte.includes(card.id));
+      if (matches) explicit.add(card.id);
+    }
+  }
+  if (isRunStateV3(state)) {
+    for (const modifier of state.modifiersV3.playingCards) {
+      if (modifier.debuffed) explicit.add(modifier.cardId);
+    }
   }
   return new Set(
     cards
@@ -183,9 +264,40 @@ export function validateBeforeHandV2(
 ): string | null {
   const resolved = resolveBeforeHandWindow(state);
   if (!resolved.ok) return resolved.message;
+  const evaluation = evaluatePokerHand(
+    cards.map((card) => compatibleCard(state, card)),
+    {
+      straightSize: state.rules.straightSize,
+      flushSize: state.rules.flushSize,
+      handLevels: state.rules.handLevels,
+    },
+  );
   for (const { operation } of resolved.operations) {
     if (operation.type === 'require-play-count' && cards.length !== operation.count) {
       return `${state.round?.blind.name ?? '当前班主'}要求每次恰好打出${operation.count}张牌`;
+    }
+    if (
+      operation.type === 'catalog-blind-rule' &&
+      operation.key === 'hand-type-no-repeat'
+    ) {
+      const handsThisRound = state.history.playedHandTypes.slice(
+        -(state.round?.handsPlayed ?? 0),
+      );
+      if (handsThisRound.includes(evaluation.type)) {
+        return `${state.round?.blind.name ?? '当前班主'}不允许重复牌型`;
+      }
+    }
+    if (
+      operation.type === 'catalog-blind-rule' &&
+      operation.key === 'first-hand-type-only' &&
+      (state.round?.handsPlayed ?? 0) > 0
+    ) {
+      const firstType = state.history.playedHandTypes.at(
+        -(state.round?.handsPlayed ?? 0),
+      );
+      if (firstType !== evaluation.type) {
+        return `${state.round?.blind.name ?? '当前班主'}只允许首个牌型`;
+      }
     }
   }
   return null;
@@ -208,17 +320,39 @@ export function resolveHandScoreV2(
   const globalAfterHandEffects = resolveGlobalAfterHandWindow(state);
   if (!globalAfterHandEffects.ok) return globalAfterHandEffects;
 
-  const compatibleCards = cards.map(compatibleCard);
-  const evaluation = evaluatePokerHand(compatibleCards, {
+  const beforeHandOperations = beforeHand.operations.map((entry) => entry.operation);
+  const compatibleCards = cards.map((card) => compatibleCard(state, card));
+  let evaluation = evaluatePokerHand(compatibleCards, {
     straightSize: state.rules.straightSize,
     flushSize: state.rules.flushSize,
     handLevels: state.rules.handLevels,
   });
+  const levelDecrease = beforeHandOperations.find(
+    (operation) =>
+      operation.type === 'catalog-blind-rule' &&
+      operation.key === 'decrease-hand-level' &&
+      typeof operation.value === 'number',
+  );
+  if (
+    levelDecrease?.type === 'catalog-blind-rule' &&
+    typeof levelDecrease.value === 'number'
+  ) {
+    evaluation = evaluatePokerHand(compatibleCards, {
+      straightSize: state.rules.straightSize,
+      flushSize: state.rules.flushSize,
+      handLevels: {
+        ...state.rules.handLevels,
+        [evaluation.type]: Math.max(
+          1,
+          state.rules.handLevels[evaluation.type] - levelDecrease.value,
+        ),
+      },
+    });
+  }
   const cardMap = new Map(cards.map((card) => [card.id, card]));
   const scoringIds = new Set(evaluation.scoringCardIds);
   const scoringCards = cards.filter((card) => scoringIds.has(card.id));
-  const beforeHandOperations = beforeHand.operations.map((entry) => entry.operation);
-  const debuffed = debuffedCardIds(cards, beforeHandOperations);
+  const debuffed = debuffedCardIds(state, cards, beforeHandOperations);
   let operationCount =
     beforeHand.operationCount +
     scoredCardEffects.operationCount +
@@ -227,8 +361,13 @@ export function resolveHandScoreV2(
     afterHandEffects.operationCount +
     globalAfterHandEffects.operationCount;
   let cardChips = 0;
+  let baseChips = evaluation.baseChips;
   let multiplier = evaluation.baseMultiplier;
   let finalScoreFactor = 1;
+  let rngState = state.rngState;
+  let moneyDelta = 0;
+  const destroyedCardIds = new Set<CardId>();
+  const modifierRolls: { sourceId: string; value: number }[] = [];
   const trace: string[] = [
     `window:before-hand`,
     `hand:${evaluation.type}`,
@@ -253,6 +392,21 @@ export function resolveHandScoreV2(
       finalScoreFactor = multiplyScore(finalScoreFactor, operation.factor);
       trace.splice(-1, 0, `before:${source.effectId}:scorex${operation.factor}`);
     }
+    if (operation.type === 'catalog-score-rule' && operation.key === 'halve-base') {
+      baseChips = Math.floor(baseChips * operation.amount);
+      multiplier = multiplyScore(multiplier, operation.amount);
+      trace.splice(-1, 0, `before:${source.effectId}:base-x${operation.amount}`);
+    }
+    if (
+      operation.type === 'record-observation' &&
+      operation.key === 'baseline:held-matching-planet-multiplies-1.5' &&
+      state.inventory.consumables.some((item) =>
+        item.effects.some((effect) => effect.parameters.hand === evaluation.type),
+      )
+    ) {
+      multiplier = multiplyScore(multiplier, 1.5);
+      trace.splice(-1, 0, `before:${source.effectId}:held-planet-x1.5`);
+    }
   }
 
   for (const [cardIndex, card] of scoringCards.entries()) {
@@ -268,52 +422,101 @@ export function resolveHandScoreV2(
       trace.push(`card:${card.id}:debuffed`);
       continue;
     }
-    const value = getCardChipValue(compatibleCard(card)) + card.bonusChips;
-    cardChips += value;
-    trace.push(`card:${card.id}:chips+${value}`);
-    for (const source of scoredCardEffects.operations) {
-      const operation = source.operation;
-      const sourceTrace = source.copiedBy.length
-        ? `${source.copiedBy.join('>')}=>${source.sourceInstanceId}`
-        : source.sourceInstanceId;
-      if (operation.type === 'add-chips') {
+    const value = getCardChipValue(compatibleCard(state, card)) + card.bonusChips;
+    const catalogOperations = modifierOperations(state, card, 'scored-card');
+    const catalogRetriggerSources = catalogOperations
+      .filter(
+        ({ operation }) =>
+          operation.type === 'baseline' &&
+          operation.key === 'retrigger-scored-or-held-card-once',
+      )
+      .map(({ sourceId }) => sourceId);
+    const jokerRetriggerSources = scoredCardEffects.operations.flatMap((source) =>
+      source.operation.type === 'retrigger-card' &&
+      (!source.operation.onlyFirst || cardIndex === 0)
+        ? Array.from({ length: source.operation.count }, () => source.effectId)
+        : [],
+    );
+    const retriggerSources = [...catalogRetriggerSources, ...jokerRetriggerSources];
+    const passes = 1 + retriggerSources.length;
+    for (let pass = 0; pass < passes; pass += 1) {
+      operationCount += 1;
+      cardChips += value;
+      trace.push(
+        pass === 0
+          ? `card:${card.id}:chips+${value}`
+          : `retrigger:${retriggerSources[pass - 1]}:${card.id}:chips+${value}`,
+      );
+      for (const { sourceId, operation } of catalogOperations) {
         operationCount += 1;
-        cardChips += operation.amount;
-        trace.push(
-          `card-effect:${sourceTrace}:${source.effectId}:${card.id}:chips+${operation.amount}`,
-        );
+        let applied = true;
+        if (
+          operation.type === 'score-rule' &&
+          operation.numerator !== null &&
+          operation.denominator !== null
+        ) {
+          const draw = nextInteger(rngState, operation.denominator);
+          rngState = draw.state;
+          modifierRolls.push({ sourceId, value: draw.value });
+          applied = draw.value < operation.numerator;
+        }
+        if (!applied) continue;
+        if (operation.type === 'score-rule' && operation.key === 'add-chips') {
+          const stoneIdentity = catalogOperations.some(
+            (entry) =>
+              entry.operation.type === 'baseline' &&
+              entry.operation.key === 'playing-card-has-no-effective-rank-or-suit',
+          );
+          if (!stoneIdentity) cardChips += operation.amount;
+        }
+        if (operation.type === 'score-rule' && operation.key === 'add-mult') {
+          multiplier += operation.amount;
+        }
+        if (operation.type === 'score-rule' && operation.key === 'multiply-mult') {
+          multiplier = multiplyScore(multiplier, operation.amount);
+        }
+        if (operation.type === 'score-rule' && operation.key === 'chance-money') {
+          moneyDelta += operation.amount;
+        }
+        if (operation.type === 'money' && operation.mode === 'add') {
+          moneyDelta += operation.amount;
+        }
+        if (
+          operation.type === 'baseline' &&
+          operation.key === 'post-score-independent-destroy-1-in-4'
+        ) {
+          const draw = nextInteger(rngState, 4);
+          rngState = draw.state;
+          modifierRolls.push({ sourceId, value: draw.value });
+          if (draw.value === 0) destroyedCardIds.add(card.id);
+        }
       }
-      if (operation.type === 'add-multiplier') {
-        operationCount += 1;
-        multiplier += operation.amount;
-        trace.push(
-          `card-effect:${sourceTrace}:${source.effectId}:${card.id}:mult+${operation.amount}`,
-        );
-      }
-      if (operation.type === 'multiply-multiplier') {
-        operationCount += 1;
-        multiplier = multiplyScore(multiplier, operation.factor);
-        trace.push(
-          `card-effect:${sourceTrace}:${source.effectId}:${card.id}:multx${operation.factor}`,
-        );
-      }
-      if (
-        operation.type !== 'retrigger-card' ||
-        (operation.onlyFirst && cardIndex !== 0)
-      ) {
-        continue;
-      }
-      operationCount += operation.count;
-      if (operationCount > MAX_EFFECT_OPERATIONS) {
-        return {
-          ok: false,
-          code: 'effect-budget',
-          message: '效果操作超过安全上限，已拒绝本次结算',
-        };
-      }
-      cardChips += value * operation.count;
-      for (let repeat = 0; repeat < operation.count; repeat += 1) {
-        trace.push(`retrigger:${source.effectId}:${card.id}:chips+${value}`);
+      for (const source of scoredCardEffects.operations) {
+        const operation = source.operation;
+        const sourceTrace = source.copiedBy.length
+          ? `${source.copiedBy.join('>')}=>${source.sourceInstanceId}`
+          : source.sourceInstanceId;
+        if (operation.type === 'add-chips') {
+          operationCount += 1;
+          cardChips += operation.amount;
+          trace.push(
+            `card-effect:${sourceTrace}:${source.effectId}:${card.id}:chips+${operation.amount}`,
+          );
+        }
+        if (operation.type === 'add-multiplier') {
+          operationCount += 1;
+          multiplier += operation.amount;
+          trace.push(
+            `card-effect:${sourceTrace}:${source.effectId}:${card.id}:mult+${operation.amount}`,
+          );
+        }
+        if (operation.type === 'multiply-multiplier') {
+          operationCount += 1;
+          multiplier = multiplyScore(multiplier, operation.factor);
+          trace.push(
+            `card-effect:${sourceTrace}:${source.effectId}:${card.id}:multx${operation.factor}`,
+          );
+        }
       }
     }
   }
@@ -327,6 +530,27 @@ export function resolveHandScoreV2(
     .filter((card): card is RunPlayingCard => card !== undefined);
   for (const card of heldCards) {
     if (debuffed.has(card.id)) continue;
+    const heldOperations = modifierOperations(state, card, 'held-card');
+    const heldRetrigger = modifierOperations(state, card, 'identity').some(
+      ({ operation }) =>
+        operation.type === 'baseline' &&
+        operation.key === 'retrigger-scored-or-held-card-once',
+    );
+    for (let pass = 0; pass < (heldRetrigger ? 2 : 1); pass += 1) {
+      for (const { sourceId, operation } of heldOperations) {
+        operationCount += 1;
+        if (operation.type === 'score-rule' && operation.key === 'add-chips') {
+          cardChips += operation.amount;
+        }
+        if (operation.type === 'score-rule' && operation.key === 'add-mult') {
+          multiplier += operation.amount;
+        }
+        if (operation.type === 'score-rule' && operation.key === 'multiply-mult') {
+          multiplier = multiplyScore(multiplier, operation.amount);
+        }
+        trace.push(`held-modifier:${sourceId}:${card.id}:pass:${pass + 1}`);
+      }
+    }
     for (const source of heldCardEffects.operations) {
       const operation = source.operation;
       operationCount += 1;
@@ -396,11 +620,22 @@ export function resolveHandScoreV2(
       message: '效果操作超过安全上限，已拒绝本次结算',
     };
   }
+  let totalChips = baseChips + cardChips;
+  for (const operation of setupOperations(state)) {
+    if (operation.type !== 'score-rule') continue;
+    if (operation.key === 'average-chips-mult') {
+      const average = (totalChips + multiplier) / 2;
+      totalChips = average;
+      multiplier = average;
+      trace.push('setup:average-chips-mult');
+    }
+    if (operation.key === 'money-chip-cap') {
+      totalChips = Math.min(totalChips, Math.max(0, state.economy.money));
+      trace.push(`setup:money-chip-cap:${totalChips}`);
+    }
+  }
   const score = Math.floor(
-    multiplyScore(
-      multiplyScore(evaluation.baseChips + cardChips, multiplier),
-      finalScoreFactor,
-    ),
+    multiplyScore(multiplyScore(totalChips, multiplier), finalScoreFactor),
   );
   trace.push('window:after-hand', `score:${score}`);
   return {
@@ -409,7 +644,7 @@ export function resolveHandScoreV2(
       handType: evaluation.type,
       handName: evaluation.name,
       handLevel: evaluation.level,
-      baseChips: evaluation.baseChips,
+      baseChips,
       cardChips,
       multiplier,
       score,
@@ -417,5 +652,9 @@ export function resolveHandScoreV2(
       scoringCardIds: evaluation.scoringCardIds.filter((cardId) => cardMap.has(cardId)),
       trace,
     },
+    rngState,
+    moneyDelta,
+    destroyedCardIds: [...destroyedCardIds],
+    modifierRolls,
   };
 }

@@ -6,11 +6,12 @@ import type {
   OwnedConsumableV2,
   OwnedJokerV2,
   RunContentSnapshot,
+  RunModeV2,
   RunPlayingCard,
   RunStateV2,
 } from '../model/runV2';
 import { CONTENT_VERSION_V2, RUN_SCHEMA_VERSION_V2 } from '../model/runV2';
-import { createRandomState } from '../rng/random';
+import { createRandomState, type RandomState } from '../rng/random';
 import { DEFAULT_HAND_LEVELS } from '../poker/evaluate';
 import { materializeAnte } from './ante';
 
@@ -21,6 +22,9 @@ export interface CreateCampaignRunConfig {
   readonly targetScaleBasisPoints?: number;
   readonly startingJokerContentIds?: readonly string[];
   readonly startingConsumableContentIds?: readonly string[];
+  readonly startingDeck?: readonly RunPlayingCard[];
+  readonly initialRngState?: RandomState;
+  readonly mode?: RunModeV2;
 }
 
 function toRunCard(card: ReturnType<typeof createStandardDeck>[number]): RunPlayingCard {
@@ -35,10 +39,14 @@ function toRunCard(card: ReturnType<typeof createStandardDeck>[number]): RunPlay
   };
 }
 
-function createOwnedJoker(definition: JokerDefinitionV2, index: number): OwnedJokerV2 {
+function createOwnedJoker(
+  definition: JokerDefinitionV2,
+  index: number,
+  production: boolean,
+): OwnedJokerV2 {
   return {
     instanceId: stableId<'joker-instance'>(
-      `fixture:run-economy:joker-instance:opening:${index}:${definition.contentId}`,
+      `${production ? 'bxqp' : 'fixture:run-economy'}:joker-instance:opening:${index}:${definition.contentId}`,
     ),
     contentId: definition.contentId,
     name: definition.name,
@@ -56,10 +64,11 @@ function createOwnedJoker(definition: JokerDefinitionV2, index: number): OwnedJo
 function createOwnedConsumable(
   definition: ConsumableDefinitionV2,
   index: number,
+  production: boolean,
 ): OwnedConsumableV2 {
   return {
     instanceId: stableId<'consumable-instance'>(
-      `fixture:run-economy:consumable-instance:opening:${index}:${definition.contentId}`,
+      `${production ? 'bxqp' : 'fixture:run-economy'}:consumable-instance:opening:${index}:${definition.contentId}`,
     ),
     contentId: definition.contentId,
     name: definition.name,
@@ -106,15 +115,21 @@ export function createCampaignRun(config: CreateCampaignRunConfig): RunStateV2 {
     },
   );
 
-  const randomState = createRandomState(config.seed);
+  const startingDeck = config.startingDeck ?? createStandardDeck().map(toRunCard);
+  if (startingDeck.length === 0) throw new RangeError('起始牌组不能为空');
+  if (new Set(startingDeck.map(({ id }) => id)).size !== startingDeck.length) {
+    throw new RangeError('起始牌组实例编号不能重复');
+  }
+  const randomState = config.initialRngState ?? createRandomState(config.seed);
   const ante = materializeAnte(config.content, 1, randomState, [], []);
+  const production = config.mode?.startsWith('production-') ?? false;
 
   return {
     schemaVersion: RUN_SCHEMA_VERSION_V2,
     contentVersion: CONTENT_VERSION_V2,
     runId: stableId<'run'>(`run:campaign:${config.seed}`),
     checkpointId: 0,
-    mode: 'fixture-campaign',
+    mode: config.mode ?? 'fixture-campaign',
     seed: config.seed,
     rngState: ante.rngState,
     phase: { kind: 'blind-select' },
@@ -150,11 +165,15 @@ export function createCampaignRun(config: CreateCampaignRunConfig): RunStateV2 {
       handLevels: { ...DEFAULT_HAND_LEVELS },
     },
     content: config.content,
-    deck: { cards: createStandardDeck().map(toRunCard) },
+    deck: { cards: [...startingDeck] },
     round: null,
     inventory: {
-      jokers: jokerDefinitions.map(createOwnedJoker),
-      consumables: consumableDefinitions.map(createOwnedConsumable),
+      jokers: jokerDefinitions.map((definition, index) =>
+        createOwnedJoker(definition, index, production),
+      ),
+      consumables: consumableDefinitions.map((definition, index) =>
+        createOwnedConsumable(definition, index, production),
+      ),
       voucherIds: [],
       tags: [],
     },

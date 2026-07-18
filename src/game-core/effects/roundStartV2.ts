@@ -1,4 +1,5 @@
 import type { CardId } from '../model/ids';
+import { isRunStateV3 } from '../model/runV3';
 import type { OwnedTagV2, RoundStateV2, RunStateV2 } from '../model/runV2';
 import type { RandomState } from '../rng/random';
 import { pickStable } from '../rng/weighted';
@@ -89,6 +90,12 @@ function applyOperation(
       };
     }
     case 'draw-face-down': {
+      if (operation.count >= round.handIds.length) {
+        return {
+          round: { ...round, faceDownCardIds: round.handIds },
+          rngState,
+        };
+      }
       const chosen = chooseStableCardIds(round.handIds, operation.count, rngState);
       return {
         round: { ...round, faceDownCardIds: chosen.ids },
@@ -127,6 +134,7 @@ export function applyRoundStartEffectsV2(
     const resolved = resolveEffectOperations(effect, 'round-start', state);
     if (!resolved.ok) return resolved;
     for (const operation of resolved.operations) {
+      if (isRunStateV3(state) && operation.type === 'force-card-choice') continue;
       ({ round, rngState } = applyOperation(round, operation, rngState));
     }
   }

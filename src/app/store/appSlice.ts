@@ -1,6 +1,8 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 
 import { createRunEconomyFixtureRun } from '../../content/fixtures/runEconomy';
+import { PRODUCTION_CATALOG } from '../../content/productionCatalog';
+import { createProductionRunV3 } from '../../content/runtime/runSetupV3';
 import type { PresentationEventV2, RunCommandV2 } from '../../game-core/commands/typesV2';
 import type { ProfileId } from '../../game-core/model/ids';
 import type { RunStateV2 } from '../../game-core/model/runV2';
@@ -175,6 +177,37 @@ export const startLocalFixtureRun = createAsyncThunk<
     const profile = getState().app.profiles.find((item) => item.id === activeProfileId);
     if (!profile) throw new Error('当前档案不存在');
     const run = createRunEconomyFixtureRun({ seed: argument.seed });
+    const updatedProfile: ProfileRecord = {
+      ...profile,
+      activeRunId: run.runId,
+      updatedAtEpochMs: argument.nowEpochMs,
+    };
+    await extra.repository.commitCheckpoint(updatedProfile, run);
+    return {
+      profile: updatedProfile,
+      profiles: sortedProfiles(
+        getState().app.profiles.map((item) =>
+          item.id === updatedProfile.id ? updatedProfile : item,
+        ),
+      ),
+      run,
+    };
+  } catch (error) {
+    return rejectWithValue(`开局失败：${errorMessage(error)}`);
+  }
+});
+
+export const startLocalProductionRun = createAsyncThunk<
+  { profile: ProfileRecord; profiles: ProfileRecord[]; run: RunStateV2 },
+  { seed: string; nowEpochMs: number },
+  AppThunkConfig
+>('app/start-production-run', async (argument, { extra, getState, rejectWithValue }) => {
+  try {
+    const activeProfileId = getState().app.activeProfileId;
+    if (!activeProfileId) throw new Error('请先选择档案');
+    const profile = getState().app.profiles.find((item) => item.id === activeProfileId);
+    if (!profile) throw new Error('当前档案不存在');
+    const run = createProductionRunV3(PRODUCTION_CATALOG, { seed: argument.seed });
     const updatedProfile: ProfileRecord = {
       ...profile,
       activeRunId: run.runId,
@@ -378,6 +411,21 @@ const appSlice = createSlice({
         status: 'playing',
       }))
       .addCase(startLocalFixtureRun.rejected, (state, action) => {
+        state.busy = false;
+        state.error = action.payload ?? action.error.message ?? '开局失败';
+      })
+      .addCase(startLocalProductionRun.pending, (state) => {
+        state.busy = true;
+        state.error = null;
+      })
+      .addCase(startLocalProductionRun.fulfilled, (state, action): AppState => ({
+        ...state,
+        busy: false,
+        profiles: action.payload.profiles,
+        run: action.payload.run,
+        status: 'playing',
+      }))
+      .addCase(startLocalProductionRun.rejected, (state, action) => {
         state.busy = false;
         state.error = action.payload ?? action.error.message ?? '开局失败';
       })

@@ -14,6 +14,10 @@ const BlindSelectScreen = lazy(async () => ({
 const ChoiceScreen = lazy(async () => ({
   default: (await import('../presentation/screens/ChoiceScreen')).ChoiceScreen,
 }));
+const CatalogAuditScreen = lazy(async () => ({
+  default: (await import('../presentation/catalog/CatalogAuditScreen'))
+    .CatalogAuditScreen,
+}));
 const GameTableScreen = lazy(async () => ({
   default: (await import('../presentation/screens/GameTableScreen')).GameTableScreen,
 }));
@@ -80,6 +84,9 @@ function GameApplication() {
   const dispatch = useAppDispatch();
   const initialized = useRef(false);
   const { status, error, run } = useAppSelector((state) => state.app);
+  const catalogAudit =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('catalog-audit') === '1';
 
   useEffect(() => {
     if (initialized.current) return;
@@ -93,28 +100,34 @@ function GameApplication() {
         <StageDecor />
         {status === 'loading' ? <WelcomeStage /> : null}
         <Suspense fallback={<WelcomeStage />}>
-          {status === 'profiles' ? <ProfileScreen /> : null}
-          {status === 'playing' && run?.phase.kind === 'blind-select' ? (
+          {catalogAudit ? <CatalogAuditScreen /> : null}
+          {!catalogAudit && status === 'profiles' ? <ProfileScreen /> : null}
+          {!catalogAudit && status === 'playing' && run?.phase.kind === 'blind-select' ? (
             <BlindSelectScreen />
           ) : null}
-          {status === 'playing' && run?.phase.kind === 'round' ? (
+          {!catalogAudit && status === 'playing' && run?.phase.kind === 'round' ? (
             <GameTableScreen />
           ) : null}
-          {status === 'playing' && run?.phase.kind === 'round-reward' ? (
+          {!catalogAudit && status === 'playing' && run?.phase.kind === 'round-reward' ? (
             <RewardScreen />
           ) : null}
-          {status === 'playing' && run?.phase.kind === 'shop' ? <ShopScreen /> : null}
-          {status === 'playing' && run?.phase.kind === 'choice' ? <ChoiceScreen /> : null}
-          {status === 'playing' && run?.phase.kind === 'run-won' ? (
+          {!catalogAudit && status === 'playing' && run?.phase.kind === 'shop' ? (
+            <ShopScreen />
+          ) : null}
+          {!catalogAudit && status === 'playing' && run?.phase.kind === 'choice' ? (
+            <ChoiceScreen />
+          ) : null}
+          {!catalogAudit && status === 'playing' && run?.phase.kind === 'run-won' ? (
             <RunWonScreen />
           ) : null}
-          {status === 'playing' &&
+          {!catalogAudit &&
+          status === 'playing' &&
           run &&
           (run.phase.kind === 'run-lost' || run.phase.kind === 'finished') ? (
             <ResultScreen />
           ) : null}
         </Suspense>
-        {status === 'playing' ? (
+        {!catalogAudit && status === 'playing' ? (
           <button
             type="button"
             className={styles.profileNav}

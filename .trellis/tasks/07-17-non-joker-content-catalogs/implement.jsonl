@@ -1,1 +1,7 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/frontend/gameplay-contracts.md","reason":"Preserve deterministic command, effect-window, serialization, and atomic persistence contracts while extending V2 to V3."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Keep catalog schemas, engine snapshots, IndexedDB migration, Redux orchestration, and audit presentation aligned at every boundary."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Drive all 230 rows through shared validators, eligibility services, rule patches, and exhaustive operation registries instead of family-specific duplication."}
+{"file":".trellis/tasks/07-17-non-joker-content-catalogs/research/current-engine-surface.md","reason":"Anchor implementation to the existing V2 engine, fixture, effect registry, modifier fields, and persistence surface."}
+{"file":".trellis/tasks/07-17-non-joker-content-catalogs/research/frozen-catalog-matrix.md","reason":"Supply the exact 230-row count ledger and frozen numerical and interaction contracts for every owned family."}
+{"file":".trellis/tasks/07-17-chinese-joker-card-web-game/research/gameplay-scope.md","reason":"Maintain the approved whole-game catalog boundary, one-to-one mechanical reference policy, and acceptance-matrix requirements."}
+{"file":".trellis/tasks/07-17-chinese-joker-card-web-game/research/visual-direction.md","reason":"Keep all original offline catalog assets and audit presentation consistent with the approved midnight-variety-stage identity."}

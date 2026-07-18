@@ -1,4 +1,5 @@
 import type { CardId } from '../model/ids';
+import { isRunStateV3 } from '../model/runV3';
 import type { RunPlayingCard, RunStateV2 } from '../model/runV2';
 import { resolveEffectOperations } from '../effects/registry';
 
@@ -28,6 +29,9 @@ export function selectDiscardPileCardsV2(state: RunStateV2): RunPlayingCard[] {
 }
 
 export function selectBossRerollCostV2(state: RunStateV2): number | null {
+  if (isRunStateV3(state) && state.rulesV3.bossRerollCost !== null) {
+    return state.rulesV3.bossRerollCost;
+  }
   for (const voucherId of state.inventory.voucherIds) {
     const voucher = state.content.vouchers.find((entry) => entry.id === voucherId);
     for (const effect of voucher?.effects ?? []) {

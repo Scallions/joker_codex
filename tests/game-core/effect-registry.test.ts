@@ -89,6 +89,61 @@ describe('类型化效果注册表', () => {
       ['set-rank', 'set-rank', { rank: 'ace' }],
       ['level-hand', 'level-hand', { handType: 'pair', amount: 1 }],
       ['record-observation', 'record-observation', { key: 'hands', value: 1 }],
+      ['bxqp:rule-patch', 'patch-rule', { key: 'hand-size', mode: 'add', value: 1 }],
+      [
+        'bxqp:card-modifier',
+        'set-card-modifier',
+        { family: 'seal', modifierId: 'bxqp:seal:echo-knot' },
+      ],
+      ['bxqp:card-transform', 'transform-card-field', { field: 'suit', value: 'hearts' }],
+      [
+        'bxqp:card-copy',
+        'copy-card-state',
+        { source: 'selected', destination: 'new-playing-cards', count: 2 },
+      ],
+      [
+        'bxqp:playing-card-create',
+        'create-playing-cards',
+        { count: 3, rankPool: 'face', enhancementPolicy: 'random' },
+      ],
+      [
+        'bxqp:content-create',
+        'create-content-family',
+        {
+          family: 'tarot',
+          count: 1,
+          rarity: 'any',
+          capacityRequired: true,
+          stickerPolicy: 'none',
+        },
+      ],
+      [
+        'bxqp:hand-level',
+        'level-all-hands',
+        { hand: null, levels: 1, chips: 0, mult: 0 },
+      ],
+      [
+        'bxqp:money',
+        'catalog-money',
+        { mode: 'cap-add', amount: 1, cap: 20, historyKey: 'current-nonnegative-money' },
+      ],
+      [
+        'bxqp:score-rule',
+        'catalog-score-rule',
+        { key: 'halve-base', amount: 0.5, numerator: null, denominator: null },
+      ],
+      ['bxqp:shop-rule', 'catalog-shop-rule', { key: 'family-weight', value: 'tarot:2' }],
+      [
+        'bxqp:blind-rule',
+        'catalog-blind-rule',
+        { key: 'hand-type-no-repeat', value: true },
+      ],
+      [
+        'bxqp:tag-rule',
+        'catalog-tag-rule',
+        { timing: 'next-shop', key: 'voucher', value: 1 },
+      ],
+      ['bxqp:restriction', 'catalog-rule', { key: 'ban-content', values: 'one|two' }],
     ] as const satisfies readonly [
       string,
       EffectOperation['type'],
@@ -103,13 +158,11 @@ describe('类型化效果注册表', () => {
     for (const [handlerSuffix, operationType, parameters] of cases) {
       const window =
         handlerSuffix === 'schedule-deferred' ? 'after-hand' : 'item-acquired';
+      const handlerId = handlerSuffix.startsWith('bxqp:')
+        ? `bxqp:handler:${handlerSuffix.slice('bxqp:'.length)}`
+        : `fixture:run-economy:handler:${handlerSuffix}`;
       const resolved = resolveEffectOperations(
-        effect(
-          `test:${handlerSuffix}`,
-          `fixture:run-economy:handler:${handlerSuffix}`,
-          parameters,
-          [window],
-        ),
+        effect(`test:${handlerSuffix}`, handlerId, parameters, [window]),
         window,
         null,
         DEFAULT_EFFECT_HANDLER_REGISTRY,

@@ -2,6 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
 import { createRunEconomyFixtureRun } from '../../src/content/fixtures/runEconomy';
+import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
+import { createProductionRunV3 } from '../../src/content/runtime/runSetupV3';
 import { executeCommandV2 } from '../../src/game-core/commands/executeCommandV2';
 import type { RunCommandV2 } from '../../src/game-core/commands/typesV2';
 import { resolveHandScoreV2 } from '../../src/game-core/effects/scoreHandV2';
@@ -29,10 +31,13 @@ function combinations<T>(values: readonly T[], maximum = 5): T[][] {
   return output;
 }
 
-function firstHandWinningFixture(prefix: string) {
+function firstHandWinningProductionFixture(
+  prefix: string,
+  options: { readonly requireOpenablePack?: boolean } = {},
+) {
   for (let index = 0; index < 300; index += 1) {
     const seed = `${prefix}-${String(index)}`;
-    const initial = createRunEconomyFixtureRun({ seed });
+    const initial = createProductionRunV3(PRODUCTION_CATALOG, { seed });
     const round = apply(initial, {
       type: 'select-blind',
       checkpointId: initial.checkpointId,
@@ -40,12 +45,43 @@ function firstHandWinningFixture(prefix: string) {
     });
     for (const cards of combinations(selectHandCardsV2(round))) {
       const score = resolveHandScoreV2(round, cards);
-      if (score.ok && score.breakdown.score >= round.round!.targetScore) {
-        return { seed, initial, round, cardIds: cards.map((card) => card.id) };
+      if (!score.ok || score.breakdown.score < round.round!.targetScore) continue;
+
+      let completed = round;
+      for (const card of cards) {
+        completed = apply(completed, {
+          type: 'toggle-card',
+          checkpointId: completed.checkpointId,
+          cardId: card.id,
+        });
       }
+      completed = apply(completed, {
+        type: 'play-selected',
+        checkpointId: completed.checkpointId,
+      });
+      if (completed.phase.kind !== 'round-reward') continue;
+      if (options.requireOpenablePack) {
+        const shop = apply(completed, {
+          type: 'claim-round-reward',
+          checkpointId: completed.checkpointId,
+        });
+        if (!firstOpenablePack(shop)) continue;
+      }
+      return { seed, initial, round, cardIds: cards.map((card) => card.id) };
     }
   }
   throw new Error('未找到首手可破幕的确定性种子');
+}
+
+function firstOpenablePack(state: RunStateV2) {
+  return state.shop?.packOffers.find(
+    (offer) =>
+      executeCommandV2(state, {
+        type: 'buy-pack',
+        checkpointId: state.checkpointId,
+        offerId: offer.id,
+      }).ok,
+  );
 }
 
 function winFixtureBlind(state: RunStateV2): RunStateV2 {
@@ -182,7 +218,7 @@ async function readActiveRun(page: Page): Promise<RunStateV2> {
 test('固定种子在选择、出牌与弃牌边界都恢复相同检查点', async ({ page }) => {
   const seed = 'browser-boundary-seed';
   await createProfileAndRun(page, seed, '边界戏主', false);
-  let expected = createRunEconomyFixtureRun({ seed });
+  let expected: RunStateV2 = createProductionRunV3(PRODUCTION_CATALOG, { seed });
   expect(await readActiveRun(page)).toEqual(expected);
 
   await page.getByRole('button', { name: '登台应战' }).click();
@@ -218,7 +254,9 @@ test('固定种子在选择、出牌与弃牌边界都恢复相同检查点', as
 });
 
 test('固定强手可破幕、领赏、进入夜市并打开已物化卡包', async ({ page }) => {
-  const fixture = firstHandWinningFixture('browser-win');
+  const fixture = firstHandWinningProductionFixture('browser-win', {
+    requireOpenablePack: true,
+  });
   await createProfileAndRun(page, fixture.seed, '胜局戏主');
   for (const cardId of fixture.cardIds) {
     await page.locator(`[data-card-id="${cardId}"]`).click();
@@ -231,7 +269,8 @@ test('固定强手可破幕、领赏、进入夜市并打开已物化卡包', as
   await expect(page.getByText('百戏夜市 · 幕间奇货')).toBeVisible();
 
   const state = await readActiveRun(page);
-  const pack = state.shop!.packOffers[0]!;
+  const pack = firstOpenablePack(state);
+  if (!pack) throw new Error('确定性牌局没有可正常拆封的卡包');
   await page.getByRole('button', { name: `购买 ${pack.name}` }).click();
   await expect(page.getByText('卡包已拆 · 选项已落印')).toBeVisible();
   const choice = (await readActiveRun(page)).pendingChoice?.current;
@@ -364,7 +403,7 @@ test('1280×720 基准画面覆盖名簿、盲注、牌桌、奖励、夜市与�
     fullPage: true,
   });
 
-  const fixture = firstHandWinningFixture('browser-visual');
+  const fixture = firstHandWinningProductionFixture('browser-visual');
   await page.getByRole('button', { name: '在此建档' }).first().click();
   await page.getByLabel('档案名').fill('画面戏主');
   await page.getByRole('button', { name: '落印建档' }).click();

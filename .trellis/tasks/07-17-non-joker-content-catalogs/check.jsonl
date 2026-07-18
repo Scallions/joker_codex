@@ -1,1 +1,7 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/frontend/gameplay-contracts.md","reason":"Verify determinism, effect ordering, invariant validation, atomic checkpoints, migration, and browser parity remain intact."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review V3 data flow and validation ownership across catalog, engine, persistence, application, and presentation boundaries."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Detect duplicated mechanics, drifting count tables, content-ID behavior branches, and non-exhaustive operation handling."}
+{"file":".trellis/tasks/07-17-non-joker-content-catalogs/research/current-engine-surface.md","reason":"Check that migrated V2 runs and existing fixture handlers retain their established observable behavior."}
+{"file":".trellis/tasks/07-17-non-joker-content-catalogs/research/frozen-catalog-matrix.md","reason":"Audit exact counts, numerical rules, boundaries, dependencies, and booster row-to-profile mapping against the frozen baseline."}
+{"file":".trellis/tasks/07-17-chinese-joker-card-web-game/research/gameplay-scope.md","reason":"Confirm task ownership stays within non-Joker catalogs and supplies the contracts later progression and Joker tasks require."}
+{"file":".trellis/tasks/07-17-chinese-joker-card-web-game/research/visual-direction.md","reason":"Review original Chinese identity, local asset provenance, live gameplay text, and 午夜百戏 visual consistency."}

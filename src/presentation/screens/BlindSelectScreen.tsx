@@ -3,12 +3,14 @@ import { motion } from 'motion/react';
 import { submitRunCommand } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import type { BlindPosition, MaterializedBlind } from '../../game-core/model/runV2';
-import { formatScore, getBlindTarget } from '../../game-core/score/score';
+import { isRunStateV3 } from '../../game-core/model/runV3';
+import { formatScore } from '../../game-core/score/score';
 import { selectBossRerollCostV2 } from '../../game-core/selectors/runV2';
 import {
   getBlindDefinitionForPosition,
   materializeBlind,
 } from '../../game-core/rules/ante';
+import { blindRewardForRun, getBlindTargetForRun } from '../../game-core/rules/runtimeV3';
 import styles from './DecisionScreen.module.css';
 
 const POSITIONS: readonly BlindPosition[] = ['small', 'big', 'boss'];
@@ -35,7 +37,9 @@ export function BlindSelectScreen() {
   const canRerollBoss =
     run.progress.blindPosition === 'boss' &&
     bossRerollCost !== null &&
-    run.progress.bossRerollCount === 0;
+    (!isRunStateV3(run) ||
+      run.rulesV3.bossRerollLimitPerAnte === null ||
+      run.progress.bossRerollCount < run.rulesV3.bossRerollLimitPerAnte);
 
   return (
     <motion.div
@@ -60,11 +64,8 @@ export function BlindSelectScreen() {
           const current = index === currentIndex;
           const past = index < currentIndex;
           const tag = index < 2 ? tags[index] : null;
-          const target = getBlindTarget(
-            run.progress.ante,
-            blind.targetMultiplier,
-            run.rules.targetScaleBasisPoints,
-          );
+          const target = getBlindTargetForRun(run, blind.targetMultiplier);
+          const reward = blindRewardForRun(run, blind.kind, blind.reward);
           return (
             <article
               className={styles.blind}
@@ -84,7 +85,7 @@ export function BlindSelectScreen() {
                 </div>
                 <div>
                   <span>破幕赏</span>
-                  <strong>¥{blind.reward}</strong>
+                  <strong>¥{reward}</strong>
                 </div>
               </div>
               {tag ? <span className={styles.tag}>跳过可得 · {tag.name}</span> : null}

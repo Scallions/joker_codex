@@ -41,7 +41,13 @@ export type EffectOperation =
   | { readonly type: 'enable-card'; readonly cardId: string }
   | { readonly type: 'create-item'; readonly contentId: string }
   | { readonly type: 'transform-card'; readonly enhancementId: string | null }
-  | { readonly type: 'destroy-card'; readonly money: number }
+  | {
+      readonly type: 'destroy-card';
+      readonly money: number;
+      readonly selection?: string;
+      readonly count?: number;
+      readonly destructibleOnly?: boolean;
+    }
   | { readonly type: 'add-hands'; readonly amount: number }
   | { readonly type: 'set-hands'; readonly value: number }
   | { readonly type: 'set-discards'; readonly value: number }
@@ -66,6 +72,85 @@ export type EffectOperation =
     }
   | {
       readonly type: 'record-observation';
+      readonly key: string;
+      readonly value: string | number | boolean;
+    }
+  | {
+      readonly type: 'patch-rule';
+      readonly key: string;
+      readonly mode: 'set' | 'add' | 'multiply';
+      readonly value: number | boolean;
+    }
+  | {
+      readonly type: 'set-card-modifier';
+      readonly family: 'enhancement' | 'seal' | 'edition' | 'sticker';
+      readonly modifierId: string;
+      readonly selection: string;
+      readonly count: number;
+      readonly numerator: number | null;
+      readonly denominator: number | null;
+    }
+  | {
+      readonly type: 'transform-card-field';
+      readonly field: 'suit' | 'rank' | 'full-state' | 'debuff' | 'face-down';
+      readonly value: string | boolean;
+      readonly selection: string;
+      readonly count: number;
+    }
+  | {
+      readonly type: 'copy-card-state';
+      readonly source: string;
+      readonly destination: string;
+      readonly count: number;
+    }
+  | {
+      readonly type: 'create-playing-cards';
+      readonly count: number;
+      readonly rankPool: 'face' | 'ace' | 'number';
+      readonly enhancementPolicy: 'random';
+    }
+  | {
+      readonly type: 'create-content-family';
+      readonly family: 'joker' | 'tarot' | 'planet' | 'spectral' | 'playing-card';
+      readonly count: number;
+      readonly rarity: string;
+      readonly capacityRequired: boolean;
+      readonly stickerPolicy: string;
+    }
+  | { readonly type: 'level-all-hands'; readonly amount: number }
+  | {
+      readonly type: 'catalog-money';
+      readonly mode: string;
+      readonly amount: number;
+      readonly cap: number | null;
+      readonly historyKey: string | null;
+    }
+  | {
+      readonly type: 'catalog-score-rule';
+      readonly key: string;
+      readonly amount: number;
+      readonly numerator: number | null;
+      readonly denominator: number | null;
+    }
+  | {
+      readonly type: 'catalog-shop-rule';
+      readonly key: string;
+      readonly value: string | number | boolean;
+    }
+  | {
+      readonly type: 'catalog-blind-rule';
+      readonly key: string;
+      readonly value: string | number | boolean;
+    }
+  | {
+      readonly type: 'catalog-tag-rule';
+      readonly timing: string;
+      readonly key: string;
+      readonly value: string | number;
+    }
+  | {
+      readonly type: 'catalog-rule';
+      readonly category: string;
       readonly key: string;
       readonly value: string | number | boolean;
     };
@@ -102,6 +187,23 @@ function directionParameter(effect: EffectReference): 'left' | 'right' | null {
   return direction === 'left' || direction === 'right' ? direction : null;
 }
 
+function booleanParameter(effect: EffectReference, key: string): boolean | null {
+  const value = effect.parameters[key];
+  return typeof value === 'boolean' ? value : null;
+}
+
+function primitiveParameter(
+  effect: EffectReference,
+  key: string,
+): string | number | boolean | null {
+  const value = effect.parameters[key];
+  return typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+    ? value
+    : null;
+}
+
 function numericOperation(
   effect: EffectReference,
   key: string,
@@ -121,7 +223,262 @@ function stringOperation(
   return value === null ? [] : [create(value)];
 }
 
+const CATALOG_EFFECT_HANDLERS = {
+  'bxqp:handler:baseline': (effect) => {
+    const key = stringParameter(effect, 'key');
+    return key === null
+      ? []
+      : [{ type: 'record-observation', key: `baseline:${key}`, value: true }];
+  },
+  'bxqp:handler:rule-patch': (effect) => {
+    const key = stringParameter(effect, 'key');
+    const mode = stringParameter(effect, 'mode');
+    const value = primitiveParameter(effect, 'value');
+    return key !== null &&
+      (mode === 'set' || mode === 'add' || mode === 'multiply') &&
+      (typeof value === 'number' || typeof value === 'boolean')
+      ? [{ type: 'patch-rule', key, mode, value }]
+      : [];
+  },
+  'bxqp:handler:deck-recipe': (effect) => {
+    const recipe = stringParameter(effect, 'recipe');
+    return recipe === null
+      ? []
+      : [
+          {
+            type: 'catalog-rule',
+            category: 'deck-recipe',
+            key: recipe,
+            value: numberParameter(effect, 'count', true) ?? 0,
+          },
+        ];
+  },
+  'bxqp:handler:target-curve': (effect) => {
+    const curveId = stringParameter(effect, 'curveId');
+    return curveId === null
+      ? []
+      : [
+          {
+            type: 'catalog-rule',
+            category: 'target-curve',
+            key: curveId,
+            value: stringParameter(effect, 'anteOneThroughEight') ?? '',
+          },
+        ];
+  },
+  'bxqp:handler:sticker-roll': (effect) => {
+    const stickerId = stringParameter(effect, 'stickerId');
+    return stickerId === null
+      ? []
+      : [
+          {
+            type: 'catalog-rule',
+            category: 'sticker-roll',
+            key: stickerId,
+            value: `${numberParameter(effect, 'numerator', true) ?? 0}/${numberParameter(effect, 'denominator', true) ?? 1}`,
+          },
+        ];
+  },
+  'bxqp:handler:card-modifier': (effect) => {
+    const family = stringParameter(effect, 'family');
+    const modifierId = stringParameter(effect, 'modifierId');
+    const selection = stringParameter(effect, 'selection') ?? 'selected';
+    const count = numberParameter(effect, 'count', true) ?? 0;
+    return modifierId !== null &&
+      (family === 'enhancement' ||
+        family === 'seal' ||
+        family === 'edition' ||
+        family === 'sticker')
+      ? [
+          {
+            type: 'set-card-modifier',
+            family,
+            modifierId,
+            selection,
+            count,
+            numerator: numberParameter(effect, 'numerator', true),
+            denominator: numberParameter(effect, 'denominator', true),
+          },
+        ]
+      : [];
+  },
+  'bxqp:handler:playing-card-create': (effect) => {
+    const count = numberParameter(effect, 'count', true);
+    const rankPool = stringParameter(effect, 'rankPool');
+    const enhancementPolicy = stringParameter(effect, 'enhancementPolicy');
+    return count !== null &&
+      (rankPool === 'face' || rankPool === 'ace' || rankPool === 'number') &&
+      enhancementPolicy === 'random'
+      ? [{ type: 'create-playing-cards', count, rankPool, enhancementPolicy }]
+      : [];
+  },
+  'bxqp:handler:card-transform': (effect) => {
+    const field = stringParameter(effect, 'field');
+    const value = primitiveParameter(effect, 'value');
+    const selection = stringParameter(effect, 'selection') ?? 'selected';
+    const count = numberParameter(effect, 'count', true) ?? 0;
+    return (typeof value === 'string' || typeof value === 'boolean') &&
+      (field === 'suit' ||
+        field === 'rank' ||
+        field === 'full-state' ||
+        field === 'debuff' ||
+        field === 'face-down')
+      ? [{ type: 'transform-card-field', field, value, selection, count }]
+      : [];
+  },
+  'bxqp:handler:card-destroy': (effect) => [
+    {
+      type: 'destroy-card',
+      money: 0,
+      selection: stringParameter(effect, 'selection') ?? 'selected',
+      count: numberParameter(effect, 'count', true) ?? 0,
+      destructibleOnly: booleanParameter(effect, 'destructibleOnly') ?? true,
+    },
+  ],
+  'bxqp:handler:card-copy': (effect) => {
+    const source = stringParameter(effect, 'source');
+    const destination = stringParameter(effect, 'destination');
+    const count = numberParameter(effect, 'count', true);
+    return source !== null && destination !== null && count !== null
+      ? [{ type: 'copy-card-state', source, destination, count }]
+      : [];
+  },
+  'bxqp:handler:content-create': (effect) => {
+    const family = stringParameter(effect, 'family');
+    const count = numberParameter(effect, 'count', true);
+    const rarity = stringParameter(effect, 'rarity');
+    const capacityRequired = booleanParameter(effect, 'capacityRequired');
+    const stickerPolicy = stringParameter(effect, 'stickerPolicy');
+    return count !== null &&
+      rarity !== null &&
+      capacityRequired !== null &&
+      stickerPolicy !== null &&
+      (family === 'joker' ||
+        family === 'tarot' ||
+        family === 'planet' ||
+        family === 'spectral' ||
+        family === 'playing-card')
+      ? [
+          {
+            type: 'create-content-family',
+            family,
+            count,
+            rarity,
+            capacityRequired,
+            stickerPolicy,
+          },
+        ]
+      : [];
+  },
+  'bxqp:handler:money': (effect) => {
+    const mode = stringParameter(effect, 'mode');
+    const amount = numberParameter(effect, 'amount');
+    if (mode === null || amount === null) return [];
+    if (mode === 'add') return [{ type: 'add-money', amount }];
+    if (mode === 'set-zero') return [{ type: 'set-money', value: 0 }];
+    return [
+      {
+        type: 'catalog-money',
+        mode,
+        amount,
+        cap: numberParameter(effect, 'cap'),
+        historyKey: stringParameter(effect, 'historyKey'),
+      },
+    ];
+  },
+  'bxqp:handler:hand-level': (effect) => {
+    const handType = stringParameter(effect, 'hand');
+    const amount = numberParameter(effect, 'levels', true);
+    if (amount === null) return [];
+    return handType !== null && POKER_HAND_TYPES.includes(handType as PokerHandType)
+      ? [{ type: 'level-hand', handType: handType as PokerHandType, amount }]
+      : [{ type: 'level-all-hands', amount }];
+  },
+  'bxqp:handler:score-rule': (effect) => {
+    const key = stringParameter(effect, 'key');
+    const amount = numberParameter(effect, 'amount');
+    if (key === null || amount === null) return [];
+    if (key === 'add-chips') return [{ type: 'add-chips', amount }];
+    if (key === 'add-mult') return [{ type: 'add-multiplier', amount }];
+    if (key === 'multiply-mult') {
+      return [{ type: 'multiply-multiplier', factor: amount }];
+    }
+    return [
+      {
+        type: 'catalog-score-rule',
+        key,
+        amount,
+        numerator: numberParameter(effect, 'numerator', true),
+        denominator: numberParameter(effect, 'denominator', true),
+      },
+    ];
+  },
+  'bxqp:handler:shop-rule': (effect) => {
+    const key = stringParameter(effect, 'key');
+    const value = primitiveParameter(effect, 'value');
+    return key === null || value === null
+      ? []
+      : [{ type: 'catalog-shop-rule', key, value }];
+  },
+  'bxqp:handler:pack-rule': (effect) => {
+    const profileId = stringParameter(effect, 'profileId');
+    return profileId === null
+      ? []
+      : [{ type: 'record-observation', key: 'pack-profile', value: profileId }];
+  },
+  'bxqp:handler:blind-rule': (effect) => {
+    const key = stringParameter(effect, 'key');
+    const value = primitiveParameter(effect, 'value');
+    if (key === null || value === null) return [];
+    if (key === 'require-play-count' && typeof value === 'number') {
+      return [{ type: 'require-play-count', count: value }];
+    }
+    if (key === 'zero-discards') return [{ type: 'set-discards', value: 0 }];
+    if (key === 'one-hand') return [{ type: 'set-hands', value: 1 }];
+    if (key === 'force-selected-card' && typeof value === 'number') {
+      return [{ type: 'force-card-choice', count: value }];
+    }
+    if (key === 'first-hand-face-down') {
+      return [{ type: 'draw-face-down', count: 100 }];
+    }
+    return [{ type: 'catalog-blind-rule', key, value }];
+  },
+  'bxqp:handler:tag-rule': (effect) => {
+    const timing = stringParameter(effect, 'timing');
+    const key = stringParameter(effect, 'key');
+    const value = primitiveParameter(effect, 'value');
+    if (
+      timing === null ||
+      key === null ||
+      (typeof value !== 'string' && typeof value !== 'number')
+    ) {
+      return [];
+    }
+    if (key === 'free-reroll') return [{ type: 'free-reroll' }];
+    if (key === 'free-pack') return [{ type: 'create-free-pack' }];
+    if (key === 'money' && typeof value === 'number') {
+      return [{ type: 'add-money', amount: value }];
+    }
+    return [{ type: 'catalog-tag-rule', timing, key, value }];
+  },
+  'bxqp:handler:restriction': (effect) => {
+    const key = stringParameter(effect, 'key');
+    const values = stringParameter(effect, 'values');
+    return key === null || values === null
+      ? []
+      : [
+          {
+            type: 'catalog-rule',
+            category: 'restriction',
+            key,
+            value: values,
+          },
+        ];
+  },
+} satisfies EffectHandlerRegistry;
+
 const DEFAULT_EFFECT_HANDLERS = {
+  ...CATALOG_EFFECT_HANDLERS,
   'fixture:run-economy:handler:add-chips': (effect) =>
     numericOperation(effect, 'amount', (amount) => ({ type: 'add-chips', amount })),
   'fixture:run-economy:handler:add-multiplier': (effect) =>

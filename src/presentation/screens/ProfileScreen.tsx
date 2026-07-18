@@ -9,7 +9,7 @@ import {
   importLocalProfile,
   renameLocalProfile,
   selectLocalProfile,
-  startLocalFixtureRun,
+  startLocalProductionRun,
 } from '../../app/store/appSlice';
 import type { ProfileSlot } from '../../persistence/profiles';
 import { importProfileFromJson } from '../../persistence/profileTransfer';
@@ -118,7 +118,7 @@ export function ProfileScreen() {
     }
     const now = Date.now();
     void dispatch(
-      startLocalFixtureRun({
+      startLocalProductionRun({
         seed: seedText.trim() || `百戏-${activeProfile.slot}-${now.toString(36)}`,
         nowEpochMs: now,
       }),

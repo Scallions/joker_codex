@@ -3,7 +3,7 @@
   "name": "non-joker-content-catalogs",
   "title": "Non-Joker Content Catalogs",
   "description": "Implement mapped decks, blinds, consumables, vouchers, tags, packs, modifiers, editions, seals, and related contracts.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

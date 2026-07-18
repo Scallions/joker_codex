@@ -6,7 +6,9 @@ import {
 } from './registry';
 import { materializeItemV2 } from '../economy/shopV2';
 import { stableId } from '../model/ids';
+import { materializeJokerStickersV3 } from '../model/runV3';
 import type { EffectReference, EffectWindow, RunStateV2 } from '../model/runV2';
+import { applyStateOperationV3 } from './applyStateOperationV3';
 
 export interface AdditionalEffectSourceV2 {
   readonly instanceId: string;
@@ -22,6 +24,8 @@ export interface RunWindowOptionsV2 {
   readonly includeJokers?: boolean;
   readonly includeConsumables?: boolean;
   readonly additionalSources?: readonly AdditionalEffectSourceV2[];
+  /** Cards materialized by the draw immediately preceding this window. */
+  readonly blindDrawnCardIds?: readonly string[];
 }
 
 export type RunWindowResolutionV2 =
@@ -111,6 +115,7 @@ function applyOperation(
   state: RunStateV2,
   entry: ResolvedEffectOperation,
   window: EffectWindow,
+  blindDrawnCardIds?: readonly string[],
 ): RunWindowResolutionV2 {
   const operation = entry.operation;
   let next = state;
@@ -257,6 +262,7 @@ function applyOperation(
     next = { ...next, rngState: materialized.rngState };
     const item = materialized.item;
     if (item.kind === 'joker') {
+      const instanceId = stableId<'joker-instance'>(`joker:${identity}`);
       next = {
         ...next,
         inventory: {
@@ -264,7 +270,7 @@ function applyOperation(
           jokers: [
             ...next.inventory.jokers,
             {
-              instanceId: stableId<'joker-instance'>(`joker:${identity}`),
+              instanceId,
               contentId: item.contentId,
               name: item.name,
               description: item.description,
@@ -279,6 +285,7 @@ function applyOperation(
           ],
         },
       };
+      next = materializeJokerStickersV3(next, instanceId, identity);
     }
     if (item.kind === 'consumable') {
       next = {
@@ -353,6 +360,16 @@ function applyOperation(
       },
     };
   }
+  const catalogApplied = applyStateOperationV3(next, operation, {
+    window,
+    sourceInstanceId: entry.sourceInstanceId,
+    effectId: entry.effectId,
+    ...(entry.sourceInstanceId.startsWith('blind:') && blindDrawnCardIds !== undefined
+      ? { selectedIds: blindDrawnCardIds }
+      : {}),
+  });
+  if (!catalogApplied.ok) return catalogApplied;
+  if (catalogApplied.handled) next = catalogApplied.state;
   return { ok: true, state: next, operations: [entry] };
 }
 
@@ -364,7 +381,12 @@ export function applyRunWindowEffectsV2(
   const sources = collectSources(state, window, options);
   const resolved = resolveEffectQueue(sources, window, { state });
   if (!resolved.ok) return resolved;
-  const applied = applyResolvedRunOperationsV2(state, window, resolved.operations);
+  const applied = applyResolvedRunOperationsV2(
+    state,
+    window,
+    resolved.operations,
+    options.blindDrawnCardIds,
+  );
   if (!applied.ok) return applied;
   let next = applied.state;
   if (options.includeDeferredTags !== false) {
@@ -392,10 +414,11 @@ export function applyResolvedRunOperationsV2(
   state: RunStateV2,
   window: EffectWindow,
   operations: readonly ResolvedEffectOperation[],
+  blindDrawnCardIds?: readonly string[],
 ): RunWindowResolutionV2 {
   let next = state;
   for (const entry of operations) {
-    const applied = applyOperation(next, entry, window);
+    const applied = applyOperation(next, entry, window, blindDrawnCardIds);
     if (!applied.ok) return applied;
     next = applied.state;
   }

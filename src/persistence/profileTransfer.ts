@@ -1,19 +1,38 @@
 import { validateRunStateV2 } from '../game-core/invariants/validateRunStateV2';
+import { validateRunStateV3 } from '../game-core/invariants/validateRunStateV3';
 import {
   CONTENT_VERSION_V2,
   RUN_SCHEMA_VERSION_V2,
   type RunStateV2,
 } from '../game-core/model/runV2';
+import {
+  RUN_SCHEMA_VERSION_V3,
+  isRunStateV3,
+  type RunStateV3,
+} from '../game-core/model/runV3';
 import { migrateRunV1ToV2 } from './migrations/migrateRunV1ToV2';
+import { migrateRunV2ToV3 } from './migrations/migrateRunV2ToV3';
 import type { ProfileRecord } from './profiles';
 import { profileRecordSchema, profileTransferEnvelopeSchema } from './schemas';
-import { decodeRunStateV2FromTransfer, encodeRunStateV2ForTransfer } from './scoreWire';
+import {
+  decodeRunStateV2FromTransfer,
+  decodeRunStateV3FromTransfer,
+  encodeRunStateV3ForTransfer,
+} from './scoreWire';
 
 const MAX_IMPORT_CHARACTERS = 2_000_000;
 
 interface ProfileTransferPayloadV2 {
   readonly schemaVersion: typeof RUN_SCHEMA_VERSION_V2;
   readonly contentVersion: typeof CONTENT_VERSION_V2;
+  readonly profile: ProfileRecord;
+  readonly run: unknown;
+}
+
+interface ProfileTransferPayloadV3 {
+  readonly schemaVersion: typeof RUN_SCHEMA_VERSION_V3;
+  readonly envelopeVersion: 'profile-transfer-3';
+  readonly runContentVersion: RunStateV3['contentVersion'] | null;
   readonly profile: ProfileRecord;
   readonly run: unknown;
 }
@@ -56,31 +75,33 @@ function assertProfileRunPair(profile: ProfileRecord, run: RunStateV2 | null): v
     throw new Error('档案引用了另一局牌');
   }
   if (run) {
-    const validation = validateRunStateV2(run);
+    const validation = isRunStateV3(run)
+      ? validateRunStateV3(run)
+      : validateRunStateV2(run);
     if (!validation.ok) {
       throw new Error(`牌局状态无效：${validation.violations.join('；')}`);
     }
   }
 }
 
-function payloadV2(
-  profile: ProfileRecord,
-  run: RunStateV2 | null,
-): ProfileTransferPayloadV2 {
-  return {
-    schemaVersion: RUN_SCHEMA_VERSION_V2,
-    contentVersion: CONTENT_VERSION_V2,
-    profile,
-    run: run ? encodeRunStateV2ForTransfer(run) : null,
-  };
+function normalizeTransferRun(run: RunStateV2 | null): RunStateV3 | null {
+  if (run === null) return null;
+  return isRunStateV3(run) ? run : migrateRunV2ToV3(run);
 }
 
 export function exportProfileToJson(
   profile: ProfileRecord,
   run: RunStateV2 | null,
 ): string {
-  assertProfileRunPair(profile, run);
-  const payload = payloadV2(profile, run);
+  const normalizedRun = normalizeTransferRun(run);
+  assertProfileRunPair(profile, normalizedRun);
+  const payload: ProfileTransferPayloadV3 = {
+    schemaVersion: RUN_SCHEMA_VERSION_V3,
+    envelopeVersion: 'profile-transfer-3',
+    runContentVersion: normalizedRun?.contentVersion ?? null,
+    profile,
+    run: normalizedRun ? encodeRunStateV3ForTransfer(normalizedRun) : null,
+  };
   return JSON.stringify({ ...payload, checksum: checksum(payload) });
 }
 
@@ -103,7 +124,44 @@ function importV2(envelope: Record<string, unknown>): ImportedProfile {
     run: envelope.run ?? null,
   };
   if (checksum(payload) !== envelope.checksum) throw new Error('档案校验失败');
-  const run = payload.run === null ? null : decodeRunStateV2FromTransfer(payload.run);
+  const v2Run = payload.run === null ? null : decodeRunStateV2FromTransfer(payload.run);
+  const run = v2Run === null ? null : migrateRunV2ToV3(v2Run);
+  assertProfileRunPair(profile, run);
+  return { profile, run };
+}
+
+function importV3(envelope: Record<string, unknown>): ImportedProfile {
+  if (
+    envelope.schemaVersion !== RUN_SCHEMA_VERSION_V3 ||
+    envelope.envelopeVersion !== 'profile-transfer-3' ||
+    typeof envelope.checksum !== 'string' ||
+    !/^[a-f0-9]{8}$/.test(envelope.checksum)
+  ) {
+    throw new Error('档案格式无效');
+  }
+  const parsedProfile = profileRecordSchema.safeParse(envelope.profile);
+  if (!parsedProfile.success) throw new Error('档案格式无效');
+  const profile = parsedProfile.data;
+  const payload: ProfileTransferPayloadV3 = {
+    schemaVersion: RUN_SCHEMA_VERSION_V3,
+    envelopeVersion: 'profile-transfer-3',
+    runContentVersion:
+      envelope.runContentVersion === 'run-economy-2' ||
+      envelope.runContentVersion === 'catalog-baseline-3' ||
+      envelope.runContentVersion === null
+        ? envelope.runContentVersion
+        : null,
+    profile,
+    run: envelope.run ?? null,
+  };
+  if (payload.runContentVersion !== envelope.runContentVersion) {
+    throw new Error('档案格式无效');
+  }
+  if (checksum(payload) !== envelope.checksum) throw new Error('档案校验失败');
+  const run = payload.run === null ? null : decodeRunStateV3FromTransfer(payload.run);
+  if (run?.contentVersion !== payload.runContentVersion) {
+    throw new Error('档案内容版本不匹配');
+  }
   assertProfileRunPair(profile, run);
   return { profile, run };
 }
@@ -115,7 +173,7 @@ function importV1(value: unknown): ImportedProfile {
   if (checksum(payload) !== suppliedChecksum) throw new Error('档案校验失败');
   const profile = parsed.data.profile;
   const legacy = parsed.data.run;
-  const run = legacy ? migrateRunV1ToV2(legacy) : null;
+  const run = legacy ? migrateRunV2ToV3(migrateRunV1ToV2(legacy)) : null;
   assertProfileRunPair(profile, run);
   return { profile, run };
 }
@@ -132,7 +190,7 @@ export function importProfileFromJson(text: string): ImportedProfile {
     throw new Error('档案格式无效');
   }
   const envelope = unknownEnvelope as Record<string, unknown>;
-  return envelope.schemaVersion === RUN_SCHEMA_VERSION_V2
-    ? importV2(envelope)
-    : importV1(unknownEnvelope);
+  if (envelope.schemaVersion === RUN_SCHEMA_VERSION_V3) return importV3(envelope);
+  if (envelope.schemaVersion === RUN_SCHEMA_VERSION_V2) return importV2(envelope);
+  return importV1(unknownEnvelope);
 }

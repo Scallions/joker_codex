@@ -284,6 +284,7 @@ const shopSchema = z
     cardOffers: z.array(shopCardOfferSchema).max(20),
     packOffers: z.array(shopPackOfferSchema).max(20),
     voucherOffer: shopVoucherOfferSchema.nullable(),
+    extraVoucherOffers: z.array(shopVoucherOfferSchema).max(20).optional(),
     rerollCount: nonnegativeIntegerSchema,
     rerollCost: nonnegativeIntegerSchema,
     purchasedOfferIds: z.array(idSchema),
@@ -299,7 +300,7 @@ const packChoiceFrameSchema = z
     id: choiceIdSchema,
     kind: z.literal('pack'),
     optional: z.literal(true),
-    returnPhase: z.literal('shop'),
+    returnPhase: z.enum(['shop', 'blind-select']),
     packId: idSchema,
     packOfferId: packOfferIdSchema,
     options: z.array(packChoiceOptionSchema).max(20),
@@ -313,7 +314,7 @@ const targetChoiceFrameSchema = z
     id: choiceIdSchema,
     kind: z.literal('targets'),
     optional: z.boolean(),
-    returnPhase: z.enum(['round', 'shop']),
+    returnPhase: z.enum(['round', 'shop', 'blind-select']),
     sourceInstanceId: idSchema,
     effectId: idSchema,
     targetKind: z.enum(['playing-card', 'joker', 'consumable']),
@@ -504,4 +505,4 @@ const rawRunStateV2Schema = z
   })
   .strict();
 
-export const runStateV2Schema: z.ZodType<RunStateV2> = rawRunStateV2Schema;
+export const runStateV2Schema = rawRunStateV2Schema as unknown as z.ZodType<RunStateV2>;

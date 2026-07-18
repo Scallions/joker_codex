@@ -13,6 +13,10 @@ export function ShopScreen() {
   const checkpointId = run.checkpointId;
   const available = run.economy.money + run.rules.allowedDebt;
   const rerollPrice = shop.freeRerollAvailable ? 0 : shop.rerollCost;
+  const voucherOffers = [
+    ...(shop.voucherOffer ? [shop.voucherOffer] : []),
+    ...(shop.extraVoucherOffers ?? []),
+  ];
 
   return (
     <motion.div
@@ -132,27 +136,28 @@ export function ShopScreen() {
             ) : null}
           </div>
 
-          {shop.voucherOffer ? (
-            <article className={styles.soldOut}>
-              <strong>{shop.voucherOffer.name}</strong> · {shop.voucherOffer.description}
+          {voucherOffers.map((offer, index) => (
+            <article className={styles.soldOut} key={offer.id}>
+              <strong>{offer.name}</strong> · {offer.description}
+              {index > 0 ? ' · 戏签加挂' : null}
               <button
                 type="button"
-                aria-label={`兑换 ${shop.voucherOffer.name}`}
-                disabled={busy || available < shop.voucherOffer.price}
+                aria-label={`兑换 ${offer.name}`}
+                disabled={busy || available < offer.price}
                 onClick={() =>
                   void dispatch(
                     submitRunCommand({
                       type: 'buy-voucher',
                       checkpointId,
-                      offerId: shop.voucherOffer!.id,
+                      offerId: offer.id,
                     }),
                   )
                 }
               >
-                兑换木牌 · ¥{shop.voucherOffer.price}
+                兑换木牌 · ¥{offer.price}
               </button>
             </article>
-          ) : null}
+          ))}
         </section>
 
         <aside className={styles.inventory}>

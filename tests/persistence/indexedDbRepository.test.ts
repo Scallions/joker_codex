@@ -4,8 +4,11 @@ import { deleteDB, openDB } from 'idb';
 
 import { createFixtureRun } from '../../src/content/fixtures/foundation';
 import { createRunEconomyFixtureRun } from '../../src/content/fixtures/runEconomy';
+import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
+import { createProductionRunV3 } from '../../src/content/runtime/runSetupV3';
 import { executeCommandV2 } from '../../src/game-core/commands/executeCommandV2';
 import { IndexedDbGameRepository } from '../../src/persistence/indexedDbRepository';
+import { migrateRunV2ToV3 } from '../../src/persistence/migrations/migrateRunV2ToV3';
 import { createProfile } from '../../src/persistence/profiles';
 
 describe('IndexedDB 档案仓库', () => {
@@ -33,8 +36,12 @@ describe('IndexedDB 档案仓库', () => {
     if (!command.ok) throw new Error(command.rejection.message);
     await repository.commitCheckpoint(firstProfile, command.state);
 
-    expect(await repository.loadRun(firstProfile.id)).toEqual(command.state);
-    expect(await repository.loadRecoveryRun(firstProfile.id)).toEqual(firstRun);
+    expect(await repository.loadRun(firstProfile.id)).toEqual(
+      migrateRunV2ToV3(command.state),
+    );
+    expect(await repository.loadRecoveryRun(firstProfile.id)).toEqual(
+      migrateRunV2ToV3(firstRun),
+    );
     expect(await repository.loadRun(secondProfile.id)).toBeUndefined();
     expect(
       (await repository.listProfiles()).map((profile) => profile.displayName),
@@ -64,14 +71,18 @@ describe('IndexedDB 档案仓库', () => {
     await repository.replaceProfile(importedProfile, importedRun);
 
     expect(await repository.getProfile(importedProfile.id)).toEqual(importedProfile);
-    expect(await repository.loadRun(importedProfile.id)).toEqual(importedRun);
-    expect(await repository.loadRecoveryRun(importedProfile.id)).toEqual(oldRun);
+    expect(await repository.loadRun(importedProfile.id)).toEqual(
+      migrateRunV2ToV3(importedRun),
+    );
+    expect(await repository.loadRecoveryRun(importedProfile.id)).toEqual(
+      migrateRunV2ToV3(oldRun),
+    );
 
     repository.close();
     await deleteDB(databaseName);
   });
 
-  it('首次读取 V1 牌局时原子保留恢复点并写回 V2', async () => {
+  it('首次读取 V1 牌局时原子保留恢复点并写回 V3', async () => {
     const databaseName = 'baixiqipai-test-v1-migration';
     await deleteDB(databaseName);
     const repository = new IndexedDbGameRepository(databaseName);
@@ -88,21 +99,57 @@ describe('IndexedDB 档案仓库', () => {
 
     const migrated = await repository.loadRun(profile.id);
     expect(migrated).toMatchObject({
-      schemaVersion: 2,
-      mode: 'migrated-foundation',
+      schemaVersion: 3,
+      mode: 'migrated-run-economy',
       runId: legacy.runId,
       checkpointId: legacy.checkpointId,
     });
     expect(await repository.loadRecoveryRun(profile.id)).toMatchObject({
-      schemaVersion: 2,
-      mode: 'migrated-foundation',
+      schemaVersion: 3,
+      mode: 'migrated-run-economy',
       runId: legacy.runId,
+      migrationV3: { sourceSchemaVersion: 1 },
     });
 
     const storedDatabase = await openDB(databaseName, 1);
     const stored = (await storedDatabase.get('runs', profile.id)) as unknown;
-    expect(stored).toMatchObject({ schemaVersion: 2 });
+    expect(stored).toMatchObject({
+      schemaVersion: 3,
+      migrationV3: { sourceSchemaVersion: 1 },
+    });
     storedDatabase.close();
+    repository.close();
+    await deleteDB(databaseName);
+  });
+
+  it('生产 V3 检查点与上一恢复点都按完整 230 项快照精确往返', async () => {
+    const databaseName = 'baixiqipai-test-production-v3';
+    await deleteDB(databaseName);
+    const repository = new IndexedDbGameRepository(databaseName);
+    await repository.initialize();
+    const initial = createProductionRunV3(PRODUCTION_CATALOG, {
+      seed: 'repository-production-v3',
+      deckId: 'bxqp:deck:shifting-cast',
+    });
+    const profile = {
+      ...createProfile(1, '生产档', 300),
+      activeRunId: initial.runId,
+    };
+    await repository.commitCheckpoint(profile, initial);
+    const selected = executeCommandV2(initial, {
+      type: 'select-blind',
+      checkpointId: initial.checkpointId,
+      position: 'small',
+    });
+    if (!selected.ok) throw new Error(selected.rejection.message);
+    await repository.commitCheckpoint(profile, selected.state);
+
+    expect(await repository.loadRun(profile.id)).toEqual(selected.state);
+    expect(await repository.loadRecoveryRun(profile.id)).toEqual(initial);
+    expect(
+      ((await repository.loadRun(profile.id)) as typeof initial).productionContentV3.rows,
+    ).toHaveLength(230);
+
     repository.close();
     await deleteDB(databaseName);
   });

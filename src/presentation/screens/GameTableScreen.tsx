@@ -5,6 +5,7 @@ import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import type { Rank, Suit } from '../../game-core/model/cards';
 import type { RunPlayingCard } from '../../game-core/model/runV2';
 import { evaluatePokerHand } from '../../game-core/poker/evaluate';
+import { canSellJokerForRun, hasActiveBlindRule } from '../../game-core/rules/runtimeV3';
 import { formatScore } from '../../game-core/score/score';
 import { selectHandCardsV2 } from '../../game-core/selectors/runV2';
 import styles from './GameTableScreen.module.css';
@@ -136,6 +137,9 @@ export function GameTableScreen() {
         )
       : null;
   const selectedCount = round.selectedCardIds.length;
+  const concealJokers = hasActiveBlindRule(run, 'conceal-reorder-jokers');
+  const sellToEnable = hasActiveBlindRule(run, 'debuff-until-joker-sold');
+  const canDiscardForced = hasActiveBlindRule(run, 'force-selected-card');
 
   return (
     <motion.div
@@ -169,11 +173,29 @@ export function GameTableScreen() {
               initial={{ y: -14, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: index * 0.04 }}
-              title={joker.description}
+              title={concealJokers ? '压轴幕布遮住了这张奇牌' : joker.description}
             >
               <span>奇牌 {index + 1}</span>
-              <strong>{joker.name}</strong>
-              <em>{joker.debuffed ? '压制' : '生效'}</em>
+              <strong>{concealJokers ? '幕后剪影' : joker.name}</strong>
+              <em>{concealJokers ? '覆面' : joker.debuffed ? '压制' : '生效'}</em>
+              {sellToEnable ? (
+                <button
+                  type="button"
+                  className={styles.blindSaleButton}
+                  disabled={busy || !canSellJokerForRun(run, joker.instanceId)}
+                  onClick={() =>
+                    void dispatch(
+                      submitRunCommand({
+                        type: 'sell-joker',
+                        checkpointId: run.checkpointId,
+                        jokerInstanceId: joker.instanceId,
+                      }),
+                    )
+                  }
+                >
+                  售出解禁
+                </button>
+              ) : null}
             </motion.article>
           ))}
           {Array.from(
@@ -358,7 +380,10 @@ export function GameTableScreen() {
             busy ||
             selectedCount === 0 ||
             round.discardsRemaining === 0 ||
-            round.forcedSelectedCardIds.some((id) => round.selectedCardIds.includes(id))
+            (!canDiscardForced &&
+              round.forcedSelectedCardIds.some((id) =>
+                round.selectedCardIds.includes(id),
+              ))
           }
           onClick={() =>
             void dispatch(

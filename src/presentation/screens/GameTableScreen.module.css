@@ -111,6 +111,22 @@
   font-weight: 900;
 }
 
+.blindSaleButton {
+  justify-self: center;
+  margin-top: 0.2rem;
+  padding: 0.12rem 0.32rem;
+  border: 1px solid rgba(255, 217, 121, 0.56);
+  background: rgba(27, 8, 19, 0.52);
+  color: #ffe5a0;
+  font-size: 0.54rem;
+  cursor: pointer;
+}
+
+.blindSaleButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .emptyJokerSlot {
   display: grid;
   place-items: center;

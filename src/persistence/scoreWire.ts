@@ -1,5 +1,7 @@
 import type { RunStateV2 } from '../game-core/model/runV2';
+import type { RunStateV3 } from '../game-core/model/runV3';
 import { runStateV2Schema } from './schemasV2';
+import { runStateV3Schema } from './schemasV3';
 
 const SCORE_KEYS = new Set([
   'targetScore',
@@ -55,9 +57,20 @@ export function encodeRunStateV2ForTransfer(run: RunStateV2): unknown {
   return encode(run, null);
 }
 
+export function encodeRunStateV3ForTransfer(run: RunStateV3): unknown {
+  return encode(run, null);
+}
+
 export function decodeRunStateV2FromTransfer(value: unknown): RunStateV2 {
   const decoded = decode(value, null);
   const parsed = runStateV2Schema.safeParse(decoded);
   if (!parsed.success) throw new Error('牌局传输格式无效');
+  return parsed.data;
+}
+
+export function decodeRunStateV3FromTransfer(value: unknown): RunStateV3 {
+  const decoded = decode(value, null);
+  const parsed = runStateV3Schema.safeParse(decoded);
+  if (!parsed.success) throw new Error('V3 牌局传输格式无效');
   return parsed.data;
 }

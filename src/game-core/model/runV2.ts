@@ -17,7 +17,14 @@ import type {
 export const RUN_SCHEMA_VERSION_V2 = 2 as const;
 export const CONTENT_VERSION_V2 = 'run-economy-2' as const;
 
-export type RunModeV2 = 'fixture-campaign' | 'migrated-foundation';
+export type ExecutableRunSchemaVersion = 2 | 3;
+export type ExecutableRunContentVersion = 'run-economy-2' | 'catalog-baseline-3';
+export type RunModeV2 =
+  | 'fixture-campaign'
+  | 'migrated-foundation'
+  | 'migrated-run-economy'
+  | 'production-campaign'
+  | 'production-challenge';
 export type HandSortModeV2 = 'rank' | 'suit';
 export type BlindPosition = 'small' | 'big' | 'boss';
 export type BlindKind = BlindPosition | 'finisher';
@@ -344,6 +351,7 @@ export interface ShopStateV2 {
   readonly cardOffers: readonly ShopCardOfferV2[];
   readonly packOffers: readonly ShopPackOfferV2[];
   readonly voucherOffer: ShopVoucherOfferV2 | null;
+  readonly extraVoucherOffers?: readonly ShopVoucherOfferV2[];
   readonly rerollCount: number;
   readonly rerollCost: number;
   readonly purchasedOfferIds: readonly string[];
@@ -360,7 +368,7 @@ export interface PackChoiceFrame {
   readonly id: ChoiceId;
   readonly kind: 'pack';
   readonly optional: true;
-  readonly returnPhase: 'shop';
+  readonly returnPhase: 'shop' | 'blind-select';
   readonly packId: string;
   readonly packOfferId: PackOfferId;
   readonly options: readonly PackChoiceOption[];
@@ -373,7 +381,7 @@ export interface TargetChoiceFrame {
   readonly id: ChoiceId;
   readonly kind: 'targets';
   readonly optional: boolean;
-  readonly returnPhase: 'round' | 'shop';
+  readonly returnPhase: 'round' | 'shop' | 'blind-select';
   readonly sourceInstanceId: string;
   readonly effectId: string;
   readonly targetKind: Exclude<TargetKind, 'none'>;
@@ -447,8 +455,8 @@ export interface RunResultV2 {
 }
 
 export interface RunStateV2 {
-  readonly schemaVersion: typeof RUN_SCHEMA_VERSION_V2;
-  readonly contentVersion: typeof CONTENT_VERSION_V2;
+  readonly schemaVersion: ExecutableRunSchemaVersion;
+  readonly contentVersion: ExecutableRunContentVersion;
   readonly runId: RunId;
   readonly checkpointId: number;
   readonly mode: RunModeV2;

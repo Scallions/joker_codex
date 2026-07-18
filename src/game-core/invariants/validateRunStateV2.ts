@@ -7,6 +7,7 @@ import {
   type RunStateV2,
   type TargetKind,
 } from '../model/runV2';
+import { isRunStateV3 } from '../model/runV3';
 import { POKER_HAND_TYPES } from '../poker/evaluate';
 
 export type RunValidationResultV2 =
@@ -347,7 +348,12 @@ export function validateRunStateV2(state: RunStateV2): RunValidationResultV2 {
   ) {
     violations.push('持有奇牌必须引用合法定义并具有有效数值');
   }
-  if (usedJokerSlots > state.rules.jokerSlots) {
+  const closedBalconyCapacity =
+    isRunStateV3(state) &&
+    state.rulesV3.excludedRuleKeys.includes('capacity-after-ante-four') &&
+    state.progress.ante >= 4 &&
+    state.rules.jokerSlots === 0;
+  if (usedJokerSlots > state.rules.jokerSlots && !closedBalconyCapacity) {
     violations.push('持有奇牌超过当前栏位容量');
   }
   if (
@@ -414,6 +420,7 @@ export function validateRunStateV2(state: RunStateV2): RunValidationResultV2 {
       ...state.shop.cardOffers.map((offer) => offer.id),
       ...state.shop.packOffers.map((offer) => offer.id),
       ...(state.shop.voucherOffer ? [state.shop.voucherOffer.id] : []),
+      ...(state.shop.extraVoucherOffers ?? []).map((offer) => offer.id),
     ];
     if (
       (state.phase.kind !== 'shop' && state.phase.kind !== 'choice') ||
@@ -438,7 +445,11 @@ export function validateRunStateV2(state: RunStateV2): RunValidationResultV2 {
       ) ||
       (state.shop.voucherOffer !== null &&
         (!isNonnegativeInteger(state.shop.voucherOffer.price) ||
-          !voucherById.has(state.shop.voucherOffer.voucherId)))
+          !voucherById.has(state.shop.voucherOffer.voucherId))) ||
+      (state.shop.extraVoucherOffers ?? []).some(
+        (offer) =>
+          !isNonnegativeInteger(offer.price) || !voucherById.has(offer.voucherId),
+      )
     ) {
       violations.push('商店可见商品必须引用冻结内容并具有合法价格');
     }

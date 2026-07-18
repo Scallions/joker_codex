@@ -1,0 +1,229 @@
+.screen {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 0.7rem;
+  padding: 2.1rem 3.2rem 1.7rem;
+  background:
+    radial-gradient(circle at 78% 18%, rgb(190 49 56 / 18%), transparent 24%),
+    linear-gradient(145deg, #090d25, #161e43 55%, #0a102d);
+  color: #f5e6c1;
+}
+
+.header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  border-bottom: 1px solid rgb(211 165 76 / 30%);
+  padding-bottom: 0.7rem;
+}
+
+.header p,
+.header h1,
+.ledger span,
+.ledger strong {
+  margin: 0;
+}
+
+.header p {
+  color: #bd9859;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+}
+
+.header h1 {
+  margin-top: 0.18rem;
+  font:
+    800 2rem 'STKaiti',
+    'KaiTi',
+    serif;
+  letter-spacing: 0.12em;
+}
+
+.ledger {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+}
+
+.ledger strong {
+  color: #efc36c;
+  font:
+    800 2.4rem/1 'DIN Alternate',
+    sans-serif;
+}
+
+.ledger span {
+  color: rgb(235 219 183 / 58%);
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+}
+
+.filters {
+  display: flex;
+  gap: 0.28rem;
+  overflow: clip;
+}
+
+.filters button,
+.pagination button {
+  border: 1px solid rgb(210 165 78 / 25%);
+  background: rgb(7 11 31 / 65%);
+  color: #a98f61;
+  cursor: pointer;
+  font: inherit;
+}
+
+.filters button {
+  padding: 0.38rem 0.5rem;
+  font-size: 0.52rem;
+  white-space: nowrap;
+}
+
+.filters button[data-active='true'] {
+  border-color: #c64a45;
+  background: #7d2530;
+  color: #fff0ca;
+}
+
+.grid {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 0.58rem;
+}
+
+.card {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 5.4rem 1fr;
+  grid-template-rows: 1fr auto;
+  overflow: clip;
+  border: 1px solid rgb(212 171 89 / 27%);
+  background: linear-gradient(145deg, rgb(31 42 82 / 96%), rgb(13 20 49 / 96%));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 2%);
+}
+
+.artwork {
+  position: relative;
+  grid-row: 1 / 3;
+  overflow: clip;
+  border-right: 1px solid rgb(214 170 84 / 20%);
+  background: #0b112d;
+}
+
+.artwork img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.42;
+}
+
+.artwork :global(.catalog-glyph) {
+  position: absolute;
+  inset: 0.55rem;
+  width: calc(100% - 1.1rem);
+  height: calc(100% - 1.1rem);
+  filter: drop-shadow(0 4px 6px rgb(0 0 0 / 45%));
+}
+
+.artwork > span {
+  position: absolute;
+  bottom: 0.3rem;
+  left: 0.36rem;
+  color: rgb(241 215 159 / 72%);
+  font: 700 0.48rem monospace;
+  letter-spacing: 0.08em;
+}
+
+.copy {
+  min-width: 0;
+  padding: 0.52rem 0.62rem 0.25rem;
+}
+
+.copy small {
+  color: #ad8c55;
+  font-size: 0.45rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.copy h2 {
+  margin: 0.1rem 0 0.2rem;
+  overflow: hidden;
+  color: #f3dfae;
+  font:
+    800 0.88rem/1.1 'STKaiti',
+    'KaiTi',
+    serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copy p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: rgb(228 219 195 / 64%);
+  font-size: 0.5rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.card footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.26rem 0.6rem 0.34rem;
+  color: #c69951;
+  font-size: 0.45rem;
+}
+
+.card code {
+  overflow: hidden;
+  color: rgb(208 199 177 / 35%);
+  font-size: 0.38rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: rgb(229 213 180 / 56%);
+  font-size: 0.6rem;
+}
+
+.pagination div {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.pagination button {
+  min-width: 4.4rem;
+  padding: 0.36rem 0.55rem;
+  font-size: 0.55rem;
+}
+
+.pagination button:disabled {
+  cursor: default;
+  opacity: 0.28;
+}
+
+.pagination strong {
+  min-width: 3.5rem;
+  color: #e5c27a;
+  text-align: center;
+}
