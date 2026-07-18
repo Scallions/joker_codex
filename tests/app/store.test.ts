@@ -11,13 +11,13 @@ import {
   submitRunCommand,
 } from '../../src/app/store/appSlice';
 import type { ProfileId } from '../../src/game-core/model/ids';
-import type { RunState } from '../../src/game-core/model/run';
+import type { RunStateV2 } from '../../src/game-core/model/runV2';
 import type { GameRepository } from '../../src/persistence/repository';
 import type { ProfileRecord } from '../../src/persistence/profiles';
 
 function memoryRepository(): GameRepository {
   const profiles = new Map<string, ProfileRecord>();
-  const runs = new Map<string, RunState>();
+  const runs = new Map<string, RunStateV2>();
   let activeProfileId: ProfileId | null = null;
 
   return {
@@ -87,15 +87,28 @@ describe('应用状态纵切片', () => {
     await store
       .dispatch(
         submitRunCommand({
-          type: 'toggle-card',
+          type: 'select-blind',
           checkpointId: before.checkpointId,
-          cardId: before.hand[0]!.id,
+          position: 'small',
+        }),
+      )
+      .unwrap();
+    const round = store.getState().app.run;
+    const cardId = round?.round?.handIds[0];
+    if (!round || !cardId) throw new Error('缺少活动回合');
+
+    await store
+      .dispatch(
+        submitRunCommand({
+          type: 'toggle-card',
+          checkpointId: round.checkpointId,
+          cardId,
         }),
       )
       .unwrap();
 
-    expect(store.getState().app.run?.checkpointId).toBe(1);
-    expect(store.getState().app.run?.selectedCardIds).toEqual([before.hand[0]!.id]);
+    expect(store.getState().app.run?.checkpointId).toBe(2);
+    expect(store.getState().app.run?.round?.selectedCardIds).toEqual([cardId]);
   });
 
   it('切换档案时只恢复该档案自己的进行中牌局', async () => {

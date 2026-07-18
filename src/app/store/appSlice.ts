@@ -1,9 +1,9 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 
-import { createFixtureRun } from '../../content/fixtures/foundation';
-import type { PresentationEvent, RunCommand } from '../../game-core/commands/types';
+import { createRunEconomyFixtureRun } from '../../content/fixtures/runEconomy';
+import type { PresentationEventV2, RunCommandV2 } from '../../game-core/commands/typesV2';
 import type { ProfileId } from '../../game-core/model/ids';
-import type { RunState } from '../../game-core/model/run';
+import type { RunStateV2 } from '../../game-core/model/runV2';
 import {
   createProfile,
   renameProfile,
@@ -25,8 +25,8 @@ export interface AppState {
   readonly error: string | null;
   readonly profiles: readonly ProfileRecord[];
   readonly activeProfileId: ProfileId | null;
-  readonly run: RunState | null;
-  readonly presentationEvents: readonly PresentationEvent[];
+  readonly run: RunStateV2 | null;
+  readonly presentationEvents: readonly PresentationEventV2[];
 }
 
 interface ApplicationRootState {
@@ -61,7 +61,7 @@ export const initializeApplication = createAsyncThunk<
   {
     profiles: ProfileRecord[];
     activeProfileId: ProfileId | null;
-    run: RunState | null;
+    run: RunStateV2 | null;
   },
   void,
   AppThunkConfig
@@ -105,7 +105,7 @@ export const createLocalProfile = createAsyncThunk<
 });
 
 export const selectLocalProfile = createAsyncThunk<
-  { profileId: ProfileId; run: RunState | null },
+  { profileId: ProfileId; run: RunStateV2 | null },
   ProfileId,
   AppThunkConfig
 >('app/select-profile', async (profileId, { extra, rejectWithValue }) => {
@@ -165,7 +165,7 @@ export const deleteLocalProfile = createAsyncThunk<
 });
 
 export const startLocalFixtureRun = createAsyncThunk<
-  { profile: ProfileRecord; profiles: ProfileRecord[]; run: RunState },
+  { profile: ProfileRecord; profiles: ProfileRecord[]; run: RunStateV2 },
   { seed: string; nowEpochMs: number },
   AppThunkConfig
 >('app/start-fixture-run', async (argument, { extra, getState, rejectWithValue }) => {
@@ -174,7 +174,7 @@ export const startLocalFixtureRun = createAsyncThunk<
     if (!activeProfileId) throw new Error('请先选择档案');
     const profile = getState().app.profiles.find((item) => item.id === activeProfileId);
     if (!profile) throw new Error('当前档案不存在');
-    const run = createFixtureRun(argument.seed);
+    const run = createRunEconomyFixtureRun({ seed: argument.seed });
     const updatedProfile: ProfileRecord = {
       ...profile,
       activeRunId: run.runId,
@@ -196,8 +196,8 @@ export const startLocalFixtureRun = createAsyncThunk<
 });
 
 export const submitRunCommand = createAsyncThunk<
-  { run: RunState; presentationEvents: readonly PresentationEvent[] },
-  RunCommand,
+  { run: RunStateV2; presentationEvents: readonly PresentationEventV2[] },
+  RunCommandV2,
   AppThunkConfig
 >('app/submit-run-command', async (command, { extra, getState, rejectWithValue }) => {
   const state = getState().app;
@@ -249,7 +249,7 @@ export const exportActiveProfile = createAsyncThunk<string, void, AppThunkConfig
 );
 
 export const importLocalProfile = createAsyncThunk<
-  { profiles: ProfileRecord[]; profile: ProfileRecord; run: RunState | null },
+  { profiles: ProfileRecord[]; profile: ProfileRecord; run: RunStateV2 | null },
   string,
   AppThunkConfig
 >('app/import-profile', async (text, { extra, rejectWithValue }) => {

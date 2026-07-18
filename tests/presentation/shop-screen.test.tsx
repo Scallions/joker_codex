@@ -5,23 +5,34 @@ import userEvent from '@testing-library/user-event';
 
 import { App } from '../../src/app/App';
 import { createGameStore } from '../../src/app/store';
-import { createFixtureRun } from '../../src/content/fixtures/foundation';
-import { executeCommand } from '../../src/game-core/commands/executeCommand';
+import { createRunEconomyFixtureRun } from '../../src/content/fixtures/runEconomy';
+import { executeCommandV2 } from '../../src/game-core/commands/executeCommandV2';
+import type { RunCommandV2 } from '../../src/game-core/commands/typesV2';
+import type { RunStateV2 } from '../../src/game-core/model/runV2';
 import { createProfile } from '../../src/persistence/profiles';
 import { createMemoryRepository } from '../helpers/memoryRepository';
 
+function apply(state: RunStateV2, command: RunCommandV2) {
+  const result = executeCommandV2(state, command);
+  if (!result.ok) throw new Error(result.rejection.message);
+  return result.state;
+}
+
 function shopFixture() {
-  let run = { ...createFixtureRun('shop-ui-seed'), targetScore: 1 };
-  const selected = executeCommand(run, {
-    type: 'toggle-card',
-    checkpointId: 0,
-    cardId: run.hand[0]!.id,
+  let run = createRunEconomyFixtureRun({
+    seed: 'shop-ui-seed',
+    startingMoney: 30,
+    targetScaleBasisPoints: 1,
+    startingJokerContentIds: ['fixture:run-economy:item:joker:brass-drum'],
   });
-  if (!selected.ok) throw new Error(selected.rejection.message);
-  run = selected.state;
-  const played = executeCommand(run, { type: 'play-selected', checkpointId: 1 });
-  if (!played.ok) throw new Error(played.rejection.message);
-  run = played.state;
+  run = apply(run, { type: 'select-blind', checkpointId: 0, position: 'small' });
+  run = apply(run, {
+    type: 'toggle-card',
+    checkpointId: run.checkpointId,
+    cardId: run.round!.handIds[0]!,
+  });
+  run = apply(run, { type: 'play-selected', checkpointId: run.checkpointId });
+  run = apply(run, { type: 'claim-round-reward', checkpointId: run.checkpointId });
   const profile = {
     ...createProfile(1, '逛夜市的人', 100),
     activeRunId: run.runId,
@@ -30,7 +41,7 @@ function shopFixture() {
 }
 
 describe('百戏夜市', () => {
-  it('重掷并购买奇牌，所有动作即时写入检查点', async () => {
+  it('换摊并购买普通商品，所有动作即时写入检查点', async () => {
     const user = userEvent.setup();
     const { profile, run } = shopFixture();
     const repository = createMemoryRepository({
@@ -41,12 +52,12 @@ describe('百戏夜市', () => {
     const store = createGameStore(repository);
     render(<App store={store} />);
 
-    expect(await screen.findByText('百戏夜市 · 试演摊位')).toBeInTheDocument();
+    expect(await screen.findByText('百戏夜市 · 幕间奇货')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '重掷商品' }));
-    await user.click(screen.getByRole('button', { name: '购买 压轴鼓师' }));
+    const offer = store.getState().app.run!.shop!.cardOffers[0]!;
+    await user.click(screen.getByRole('button', { name: `购买 ${offer.item.name}` }));
 
-    expect(await screen.findByText('持有奇牌 2 / 5')).toBeInTheDocument();
-    expect(store.getState().app.run?.checkpointId).toBe(4);
-    expect(store.getState().app.run?.money).toBe(9);
+    expect(store.getState().app.run?.checkpointId).toBe(6);
+    expect(store.getState().app.run?.shop?.cardOffers).toHaveLength(1);
   });
 });

@@ -1,1 +1,1 @@
-export const GAME_CORE_VERSION = 1;
+export const GAME_CORE_VERSION = 2;

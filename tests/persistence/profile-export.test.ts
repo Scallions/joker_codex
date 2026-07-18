@@ -1,4 +1,4 @@
-import { createFixtureRun } from '../../src/content/fixtures/foundation';
+import { createRunEconomyFixtureRun } from '../../src/content/fixtures/runEconomy';
 import { createProfile } from '../../src/persistence/profiles';
 import {
   exportProfileToJson,
@@ -7,7 +7,7 @@ import {
 
 describe('档案导入导出', () => {
   it('用版本与校验和完整往返，并拒绝被篡改的中文档案', () => {
-    const run = createFixtureRun('export-seed');
+    const run = createRunEconomyFixtureRun({ seed: 'export-seed' });
     const profile = {
       ...createProfile(1, '掌灯人', 1_700_000_000_000),
       activeRunId: run.runId,

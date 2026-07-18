@@ -29,9 +29,21 @@ describe('演出队列与壳层保护', () => {
     await store
       .dispatch(
         submitRunCommand({
-          type: 'toggle-card',
+          type: 'select-blind',
           checkpointId: run.checkpointId,
-          cardId: run.hand[0]!.id,
+          position: 'small',
+        }),
+      )
+      .unwrap();
+    const round = store.getState().app.run;
+    const cardId = round?.round?.handIds[0];
+    if (!round || !cardId) throw new Error('缺少活动回合');
+    await store
+      .dispatch(
+        submitRunCommand({
+          type: 'toggle-card',
+          checkpointId: round.checkpointId,
+          cardId,
         }),
       )
       .unwrap();

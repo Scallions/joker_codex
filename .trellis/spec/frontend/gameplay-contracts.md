@@ -14,31 +14,64 @@ resume determinism.
 ## 2. Signatures
 
 ```ts
-type CommandResult =
+type CommandResultV2 =
   | {
       readonly ok: true;
-      readonly state: RunState;
-      readonly domainEvents: readonly DomainEvent[];
-      readonly presentationEvents: readonly PresentationEvent[];
+      readonly state: RunStateV2;
+      readonly domainEvents: readonly DomainEventV2[];
+      readonly presentationEvents: readonly PresentationEventV2[];
     }
   | {
       readonly ok: false;
       readonly rejection: { readonly code: RejectionCode; readonly message: string };
     };
 
-function executeCommand(state: RunState, command: RunCommand): CommandResult;
+function executeCommandV2(
+  state: RunStateV2,
+  command: RunCommandV2,
+): CommandResultV2;
 
 function commitRunCommand(
   repository: Pick<GameRepository, "commitCheckpoint">,
   profile: ProfileRecord,
-  current: RunState,
-  command: RunCommand,
+  current: RunStateV2,
+  command: RunCommandV2,
 ): Promise<CommitRunCommandResult>;
 ```
 
-Every `RunCommand` contains the caller's `checkpointId`. Random operations accept
+Every `RunCommandV2` contains the caller's `checkpointId`. Random operations accept
 the PRNG value from `RunState.rngState` and return the next value in the proposed
 state; they never read ambient randomness.
+
+```ts
+type EffectWindow =
+  | "blind-selected" | "round-start" | "before-hand"
+  | "scored-card" | "held-card" | "joker-independent" | "after-hand"
+  | "discard" | "round-end" | "blind-skipped" | "shop-entered"
+  | "shop-rerolled" | "item-acquired" | "pack-opened" | "ante-ended";
+
+interface EffectReference {
+  readonly id: string;
+  readonly handlerId: string;
+  readonly windows: readonly EffectWindow[];
+  readonly priority: number;
+  readonly parameters: Readonly<Record<string, string | number | boolean | null>>;
+}
+
+function resolveEffectQueue(
+  sources: readonly EffectQueueSource[],
+  window: EffectWindow,
+  options?: { maximumDepth?: number; maximumOperations?: number },
+): EffectQueueResolution;
+
+function validateRunStateV2(state: RunStateV2):
+  | { readonly ok: true }
+  | { readonly ok: false; readonly violations: readonly string[] };
+```
+
+Handler IDs are registered in executable code. Durable content stores only
+`EffectReference`; it never stores functions. Queue ancestry is limited to 32 and
+one command may resolve at most 10,000 effect operations.
 
 ```ts
 interface GameRepository {
@@ -49,27 +82,45 @@ interface GameRepository {
   deleteProfile(id: ProfileId): Promise<void>;
   setActiveProfile(id: ProfileId | null): Promise<void>;
   getActiveProfileId(): Promise<ProfileId | null>;
-  loadRun(id: ProfileId): Promise<RunState | undefined>;
-  loadRecoveryRun(id: ProfileId): Promise<RunState | undefined>;
-  commitCheckpoint(profile: ProfileRecord, run: RunState): Promise<void>;
-  replaceProfile(profile: ProfileRecord, run: RunState | null): Promise<void>;
+  loadRun(id: ProfileId): Promise<RunStateV2 | undefined>;
+  loadRecoveryRun(id: ProfileId): Promise<RunStateV2 | undefined>;
+  commitCheckpoint(profile: ProfileRecord, run: RunStateV2): Promise<void>;
+  replaceProfile(profile: ProfileRecord, run: RunStateV2 | null): Promise<void>;
   clearRun(profile: ProfileRecord): Promise<void>;
 }
 ```
 
-IndexedDB V1 owns `meta`, `settings`, `profiles`, `runs`, and `recovery` stores.
-Profile export is a versioned JSON envelope with `profile`, optional `run`, and a
-checksum over the canonical payload.
+Physical IndexedDB version 1 owns `meta`, `settings`, `profiles`, `runs`, and
+`recovery`; the durable run/content schema inside those stores is V2. Profile
+export is a V2 JSON envelope with `profile`, optional `run`, and a checksum over
+the canonical payload. Positive Infinity is encoded by the score wire codec and
+must never pass through raw `JSON.stringify` as `null`.
 
 ## 3. Contracts
 
 - `src/game-core/**` is framework-free and may not import React, Redux, Motion,
   IndexedDB, `idb`, presentation, or application modules.
-- `RunState` is fully serializable. Gameplay identifiers use project-owned branded
+- `RunStateV2` is fully serializable. Gameplay identifiers use project-owned branded
   strings; foundation fixtures use `fixture:` namespaces.
-- Content IDs identify catalog entries; they never select engine behavior. Items
-  carry serializable typed effect payloads (for example
-  `{ type: "set-rank", rank: "ace" }`) that command handlers execute.
+- Content IDs identify catalog entries; they never select engine behavior. Content
+  points to registered handlers by `handlerId`; only handlers emit the exhaustive
+  `EffectOperation` union. Do not route behavior with `contentId` or ad hoc
+  `handlerId === ...` branches.
+- The 15 hook windows are command-routing contracts, not documentation-only tags.
+  Lifecycle commands call the shared bounded queue; scoring preserves the fixed
+  before-hand -> scored-card -> held-card -> joker -> global -> after-hand order.
+- Copy/retrigger uses queue entries and ancestry tokens, never recursive handler
+  calls. Missing handlers, cycles, or operation-budget overflow reject the whole
+  proposal without changing RNG/checkpoint.
+- Visible random results (lineups, shops, generated cards, pack options, boss
+  reroll choices) are materialized into `RunStateV2` before commit. Empty/blocked
+  pools do not consume RNG.
+- Inventory capacity is the sum of instance `slotContribution`. A pack's temporary
+  capacity is consumed once and materialized as an instance-level contribution
+  exemption; it is not a hidden UI allowance.
+- `history.effectObservations` is the serializable observation hook for later
+  progression/catalog children. Each record includes window, source/effect IDs,
+  value, and the checkpoint that committed it.
 - `Math.random()`, current time, browser globals, and mutable module-level state are
   forbidden inside the engine. Time and seed values enter through commands/factories.
 - A valid command returns a new proposed state whose `checkpointId` advances once.
@@ -96,6 +147,13 @@ checksum over the canonical payload.
 | Command is illegal in the current phase | `illegal-phase`; no persistence |
 | Selection is empty or exceeds five cards | Typed rejection; budgets unchanged |
 | Hands/discards/money/capacity exhausted | Typed rejection; checkpoint unchanged |
+| Effect handler is missing | `effect-handler-missing`; reject the proposal |
+| Effect ancestry cycles or exceeds 32 | `effect-cycle`; no partial operations |
+| Effect resolution exceeds 10,000 operations | `effect-budget`; no truncation |
+| Item/pack/blind/tag/voucher reference is absent from frozen content | Invariant or `pool-empty`; do not commit |
+| Pending choice has foreign/duplicate targets or stale choice ID | `invalid-target`/`choice-mismatch`; preserve frame and RNG |
+| Reward ID is already consumed or receipt total does not equal its lines | Invariant failure; do not persist |
+| Money would fall below `-allowedDebt` | `insufficient-funds`; preserve offer and RNG |
 | Proposed state violates card, ID, budget, or phase invariants | Do not persist or reveal it |
 | IndexedDB transaction rejects | Keep the exact prior React state; report Chinese error |
 | Import exceeds size, fails JSON/Zod/checksum, or mismatches IDs | Reject before confirmation; keep all slots intact |
@@ -105,10 +163,14 @@ checksum over the canonical payload.
 
 - Good: the same seed plus command sequence yields byte-equivalent canonical state
   in the pure scenario runner, Chromium, and WebKit, including RNG/checkpoint values.
+- Good: a new fixture adds a serializable `EffectReference` and registered pure
+  handler; existing routing invokes it at the declared window without a command
+  switch change.
 - Base: a rejected command returns a Chinese domain error while the current run,
   random state, budgets, and save remain unchanged.
-- Bad: a component calculates score or draws cards, a thunk updates Redux before
-  `commitCheckpoint` resolves, or a migration silently invents missing gameplay data.
+- Bad: a component calculates score or draws cards, a handler mutates state or calls
+  itself, a thunk updates Redux before `commitCheckpoint` resolves, or a migration
+  silently invents missing gameplay data.
 
 ## 6. Tests Required
 
@@ -116,6 +178,14 @@ checksum over the canonical payload.
 - Table tests for all 12 poker classifications plus permutation properties.
 - Command tests for success, stale checkpoint, illegal phase, exhausted budgets,
   deterministic replay, win/loss, shop actions, and invariant preservation.
+- One registry matrix must cover every `EffectOperation` and all 15 windows. Command
+  integration must prove lifecycle windows produce durable observations; score
+  goldens must freeze source/copy/retrigger ordering and cycle/budget rejection.
+- Accepted campaign/economy commands must pass `validateRunStateV2` and a V2 Zod
+  structured-clone round trip after every checkpoint. Rejections must compare the
+  entire prior state, RNG, offers, inventory, and checkpoint.
+- Property tests mix legal and rejected V2 commands and assert the same invariants;
+  include regression coverage for face-down/forced/selected IDs after zone moves.
 - Repository tests for checkpoint/recovery, injected write failure, three-profile
   isolation, atomic replacement, and invalid import non-mutation.
 - Component tests assert screens dispatch commands and show committed state/errors.
@@ -131,19 +201,31 @@ checksum over the canonical payload.
 
 ```ts
 // UI exposes an uncommitted proposal and domain code reads ambient randomness.
-const result = executeCommand(run, command);
+const result = executeCommandV2(run, command);
 if (result.ok) dispatch(runChanged(result.state));
 await repository.commitCheckpoint(profile, result.state);
-const roll = Math.random();
+
+// Catalog IDs must not select executable behavior.
+if (effect.handlerId === "fixture:some-handler") mutateRun(run);
 ```
 
 ### Correct
 
 ```ts
-const result = executeCommand(run, command);
+const result = executeCommandV2(run, command);
 if (!result.ok) return result;
 
-validateRunState(result.state);
+const validation = validateRunStateV2(result.state);
+if (!validation.ok) return invariantFailure(validation.violations);
 await repository.commitCheckpoint(profile, result.state);
 return result; // reducer reveals this checkpoint only after persistence succeeds
+```
+
+Handlers stay pure and return primitives; the queue applies them after cycle/budget
+validation:
+
+```ts
+registry["fixture:run-economy:handler:add-money"] = (effect) => [
+  { type: "add-money", amount: readSafeInteger(effect, "amount") },
+];
 ```

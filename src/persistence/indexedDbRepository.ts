@@ -1,15 +1,20 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
-import { validateRunState } from '../game-core/invariants/validateRunState';
+import { validateRunStateV2 } from '../game-core/invariants/validateRunStateV2';
 import type { ProfileId } from '../game-core/model/ids';
+import type { RunState as RunStateV1 } from '../game-core/model/run';
 import {
-  CONTENT_VERSION,
-  RUN_SCHEMA_VERSION,
-  type RunState,
-} from '../game-core/model/run';
+  CONTENT_VERSION_V2,
+  RUN_SCHEMA_VERSION_V2,
+  type RunStateV2,
+} from '../game-core/model/runV2';
+import { migrateRunV1ToV2 } from './migrations/migrateRunV1ToV2';
 import type { ProfileRecord } from './profiles';
 import type { GameRepository } from './repository';
 import { profileRecordSchema, runStateSchema } from './schemas';
+import { runStateV2Schema } from './schemasV2';
+
+type StoredRun = RunStateV1 | RunStateV2;
 
 export interface DeviceSettings {
   readonly masterVolume: number;
@@ -19,14 +24,14 @@ export interface DeviceSettings {
 }
 
 interface DatabaseMeta {
-  readonly schemaVersion: typeof RUN_SCHEMA_VERSION;
-  readonly contentVersion: typeof CONTENT_VERSION;
+  readonly schemaVersion: number;
+  readonly contentVersion: string;
   readonly activeProfileId: ProfileId | null;
 }
 
 interface RecoveryRecord {
   readonly profileId: ProfileId;
-  readonly run: RunState;
+  readonly run: StoredRun;
 }
 
 interface BaixiDatabase extends DBSchema {
@@ -45,7 +50,7 @@ interface BaixiDatabase extends DBSchema {
   };
   runs: {
     key: string;
-    value: RunState;
+    value: StoredRun;
   };
   recovery: {
     key: string;
@@ -85,12 +90,28 @@ export class IndexedDbGameRepository implements GameRepository {
     if (!(await metaStore.get('state'))) {
       await metaStore.put(
         {
-          schemaVersion: RUN_SCHEMA_VERSION,
-          contentVersion: CONTENT_VERSION,
+          schemaVersion: RUN_SCHEMA_VERSION_V2,
+          contentVersion: CONTENT_VERSION_V2,
           activeProfileId: null,
         },
         'state',
       );
+    } else {
+      const meta = await metaStore.get('state');
+      if (
+        meta &&
+        (meta.schemaVersion !== RUN_SCHEMA_VERSION_V2 ||
+          meta.contentVersion !== CONTENT_VERSION_V2)
+      ) {
+        await metaStore.put(
+          {
+            ...meta,
+            schemaVersion: RUN_SCHEMA_VERSION_V2,
+            contentVersion: CONTENT_VERSION_V2,
+          },
+          'state',
+        );
+      }
     }
     if (!(await settingsStore.get('device'))) {
       await settingsStore.put(DEFAULT_SETTINGS, 'device');
@@ -157,23 +178,66 @@ export class IndexedDbGameRepository implements GameRepository {
     return (await database.get('meta', 'state'))?.activeProfileId ?? null;
   }
 
-  async loadRun(profileId: ProfileId): Promise<RunState | undefined> {
+  async loadRun(profileId: ProfileId): Promise<RunStateV2 | undefined> {
     const database = await this.#databasePromise;
-    return database.get('runs', profileId);
+    const transaction = database.transaction(
+      ['profiles', 'runs', 'recovery'],
+      'readwrite',
+    );
+    const runs = transaction.objectStore('runs');
+    const raw = await runs.get(profileId);
+    if (!raw) {
+      await transaction.done;
+      return undefined;
+    }
+    const current = runStateV2Schema.safeParse(raw);
+    if (current.success) {
+      const run = current.data;
+      const validation = validateRunStateV2(run);
+      if (!validation.ok) {
+        transaction.abort();
+        throw new Error(`牌局状态无效：${validation.violations.join('；')}`);
+      }
+      await transaction.done;
+      return run;
+    }
+    const legacy = runStateSchema.safeParse(raw);
+    if (!legacy.success) {
+      transaction.abort();
+      throw new Error('本地牌局格式无效');
+    }
+    const legacyRun = legacy.data;
+    const migrated = migrateRunV1ToV2(legacyRun);
+    const validation = validateRunStateV2(migrated);
+    if (!validation.ok) {
+      transaction.abort();
+      throw new Error(`迁移牌局无效：${validation.violations.join('；')}`);
+    }
+    await transaction
+      .objectStore('recovery')
+      .put({ profileId, run: legacyRun }, profileId);
+    await runs.put(migrated, profileId);
+    await transaction.done;
+    return migrated;
   }
 
-  async loadRecoveryRun(profileId: ProfileId): Promise<RunState | undefined> {
+  async loadRecoveryRun(profileId: ProfileId): Promise<RunStateV2 | undefined> {
     const database = await this.#databasePromise;
-    return (await database.get('recovery', profileId))?.run;
+    const raw = (await database.get('recovery', profileId))?.run;
+    if (!raw) return undefined;
+    const current = runStateV2Schema.safeParse(raw);
+    if (current.success) return current.data;
+    const legacy = runStateSchema.safeParse(raw);
+    return legacy.success ? migrateRunV1ToV2(legacy.data) : undefined;
   }
 
-  async commitCheckpoint(profile: ProfileRecord, run: RunState): Promise<void> {
+  async commitCheckpoint(profile: ProfileRecord, run: RunStateV2): Promise<void> {
     const parsedProfile = profileRecordSchema.safeParse(profile);
-    const parsedRun = runStateSchema.safeParse(run);
+    const parsedRun = runStateV2Schema.safeParse(run);
     if (!parsedProfile.success || !parsedRun.success)
       throw new Error('拒绝保存无效检查点');
     if (profile.activeRunId !== run.runId) throw new Error('档案与牌局不匹配');
-    const validation = validateRunState(run);
+    const validation = validateRunStateV2(run);
     if (!validation.ok) throw new Error(`拒绝保存：${validation.violations.join('；')}`);
 
     const database = await this.#databasePromise;
@@ -195,9 +259,9 @@ export class IndexedDbGameRepository implements GameRepository {
     await transaction.done;
   }
 
-  async replaceProfile(profile: ProfileRecord, run: RunState | null): Promise<void> {
+  async replaceProfile(profile: ProfileRecord, run: RunStateV2 | null): Promise<void> {
     const parsedProfile = profileRecordSchema.safeParse(profile);
-    const parsedRun = run === null ? null : runStateSchema.safeParse(run);
+    const parsedRun = run === null ? null : runStateV2Schema.safeParse(run);
     if (!parsedProfile.success || (parsedRun && !parsedRun.success)) {
       throw new Error('拒绝导入无效档案');
     }
@@ -208,7 +272,7 @@ export class IndexedDbGameRepository implements GameRepository {
       throw new Error('导入档案引用了另一局牌');
     }
     if (run) {
-      const validation = validateRunState(run);
+      const validation = validateRunStateV2(run);
       if (!validation.ok)
         throw new Error(`拒绝导入：${validation.violations.join('；')}`);
     }

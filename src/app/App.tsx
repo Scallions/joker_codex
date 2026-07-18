@@ -1,17 +1,40 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Provider } from 'react-redux';
 
 import { IndexedDbGameRepository } from '../persistence/indexedDbRepository';
-import { GameTableScreen } from '../presentation/screens/GameTableScreen';
-import { ProfileScreen } from '../presentation/screens/ProfileScreen';
-import { ResultScreen } from '../presentation/screens/ResultScreen';
-import { ShopScreen } from '../presentation/screens/ShopScreen';
-import { PresentationQueue } from '../presentation/PresentationQueue';
 import { ApplicationErrorBoundary } from './ApplicationErrorBoundary';
 import { createGameStore, type GameStore } from './store';
-import { initializeApplication } from './store/appSlice';
+import { initializeApplication, showProfiles } from './store/appSlice';
 import { useAppDispatch, useAppSelector } from './store/hooks';
 import styles from './App.module.css';
+
+const BlindSelectScreen = lazy(async () => ({
+  default: (await import('../presentation/screens/BlindSelectScreen')).BlindSelectScreen,
+}));
+const ChoiceScreen = lazy(async () => ({
+  default: (await import('../presentation/screens/ChoiceScreen')).ChoiceScreen,
+}));
+const GameTableScreen = lazy(async () => ({
+  default: (await import('../presentation/screens/GameTableScreen')).GameTableScreen,
+}));
+const ProfileScreen = lazy(async () => ({
+  default: (await import('../presentation/screens/ProfileScreen')).ProfileScreen,
+}));
+const RewardScreen = lazy(async () => ({
+  default: (await import('../presentation/screens/RewardScreen')).RewardScreen,
+}));
+const ResultScreen = lazy(async () => ({
+  default: (await import('../presentation/screens/ResultScreen')).ResultScreen,
+}));
+const RunWonScreen = lazy(async () => ({
+  default: (await import('../presentation/screens/RunWonScreen')).RunWonScreen,
+}));
+const ShopScreen = lazy(async () => ({
+  default: (await import('../presentation/screens/ShopScreen')).ShopScreen,
+}));
+const PresentationQueue = lazy(async () => ({
+  default: (await import('../presentation/PresentationQueue')).PresentationQueue,
+}));
 
 export interface AppProps {
   readonly store?: GameStore;
@@ -69,13 +92,41 @@ function GameApplication() {
       <section className={styles.stage}>
         <StageDecor />
         {status === 'loading' ? <WelcomeStage /> : null}
-        {status === 'profiles' ? <ProfileScreen /> : null}
-        {status === 'playing' && run?.phase === 'round' ? <GameTableScreen /> : null}
-        {status === 'playing' && run?.phase === 'shop' ? <ShopScreen /> : null}
-        {status === 'playing' && run && (run.phase === 'won' || run.phase === 'lost') ? (
-          <ResultScreen />
+        <Suspense fallback={<WelcomeStage />}>
+          {status === 'profiles' ? <ProfileScreen /> : null}
+          {status === 'playing' && run?.phase.kind === 'blind-select' ? (
+            <BlindSelectScreen />
+          ) : null}
+          {status === 'playing' && run?.phase.kind === 'round' ? (
+            <GameTableScreen />
+          ) : null}
+          {status === 'playing' && run?.phase.kind === 'round-reward' ? (
+            <RewardScreen />
+          ) : null}
+          {status === 'playing' && run?.phase.kind === 'shop' ? <ShopScreen /> : null}
+          {status === 'playing' && run?.phase.kind === 'choice' ? <ChoiceScreen /> : null}
+          {status === 'playing' && run?.phase.kind === 'run-won' ? (
+            <RunWonScreen />
+          ) : null}
+          {status === 'playing' &&
+          run &&
+          (run.phase.kind === 'run-lost' || run.phase.kind === 'finished') ? (
+            <ResultScreen />
+          ) : null}
+        </Suspense>
+        {status === 'playing' ? (
+          <button
+            type="button"
+            className={styles.profileNav}
+            aria-label="返回戏主名簿"
+            onClick={() => dispatch(showProfiles())}
+          >
+            戏主名簿
+          </button>
         ) : null}
-        <PresentationQueue />
+        <Suspense fallback={null}>
+          <PresentationQueue />
+        </Suspense>
         {error ? <p className={styles.errorBanner}>{error}</p> : null}
       </section>
     </main>

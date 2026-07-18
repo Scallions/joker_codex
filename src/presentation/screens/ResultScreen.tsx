@@ -2,14 +2,16 @@ import { motion } from 'motion/react';
 
 import { finishLocalRun } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
+import { formatScore } from '../../game-core/score/score';
 import styles from './ResultScreen.module.css';
 
 export function ResultScreen() {
   const dispatch = useAppDispatch();
   const { run, busy } = useAppSelector((state) => state.app);
-  if (!run || (run.phase !== 'won' && run.phase !== 'lost')) return null;
+  if (!run || (run.phase.kind !== 'run-lost' && run.phase.kind !== 'finished'))
+    return null;
 
-  const won = run.phase === 'won';
+  const won = run.phase.kind === 'finished';
   return (
     <motion.div
       className={`${styles.screen} ${won ? styles.won : styles.lost}`}
@@ -43,19 +45,19 @@ export function ResultScreen() {
       <dl className={styles.summary}>
         <div>
           <dt>最终得分</dt>
-          <dd>{run.roundScore}</dd>
+          <dd>{formatScore(run.result?.score ?? run.round?.score ?? 0)}</dd>
         </div>
         <div>
           <dt>目标</dt>
-          <dd>{run.targetScore}</dd>
+          <dd>{formatScore(run.round?.targetScore ?? 0)}</dd>
         </div>
         <div>
           <dt>剩余出牌</dt>
-          <dd>{run.handsRemaining}</dd>
+          <dd>{run.round?.handsRemaining ?? 0}</dd>
         </div>
         <div>
           <dt>戏票</dt>
-          <dd>¥{run.money}</dd>
+          <dd>¥{run.economy.money}</dd>
         </div>
       </dl>
 

@@ -9,6 +9,7 @@ import {
   createLocalProfile,
   initializeApplication,
   startLocalFixtureRun,
+  submitRunCommand,
 } from '../../src/app/store/appSlice';
 import { createMemoryRepository } from '../helpers/memoryRepository';
 
@@ -23,9 +24,19 @@ describe('午夜百戏牌桌', () => {
     await store
       .dispatch(startLocalFixtureRun({ seed: 'table-ui-seed', nowEpochMs: 200 }))
       .unwrap();
+    const initial = store.getState().app.run!;
+    await store
+      .dispatch(
+        submitRunCommand({
+          type: 'select-blind',
+          checkpointId: initial.checkpointId,
+          position: 'small',
+        }),
+      )
+      .unwrap();
     render(<App store={store} />);
 
-    expect(await screen.findByText('幕一 · 试演盲注')).toBeInTheDocument();
+    expect(await screen.findByText('小幕试锋')).toBeInTheDocument();
     const cards = screen.getAllByTestId('playing-card');
     expect(cards).toHaveLength(8);
     await user.click(cards[0]!);
@@ -33,8 +44,8 @@ describe('午夜百戏牌桌', () => {
     await user.click(screen.getByRole('button', { name: '出牌' }));
 
     expect(await screen.findByText(/本手 ·/)).toBeInTheDocument();
-    expect(store.getState().app.run?.checkpointId).toBe(2);
-    expect(store.getState().app.run?.roundScore).toBeGreaterThan(0);
+    expect(store.getState().app.run?.checkpointId).toBe(3);
+    expect(store.getState().app.run?.round?.score).toBeGreaterThan(0);
   });
 
   it('返回名簿后可从原检查点继续未完牌局', async () => {
@@ -47,13 +58,23 @@ describe('午夜百戏牌桌', () => {
     await store
       .dispatch(startLocalFixtureRun({ seed: 'resume-ui-seed', nowEpochMs: 200 }))
       .unwrap();
+    const initial = store.getState().app.run!;
+    await store
+      .dispatch(
+        submitRunCommand({
+          type: 'select-blind',
+          checkpointId: initial.checkpointId,
+          position: 'small',
+        }),
+      )
+      .unwrap();
     render(<App store={store} />);
 
     await user.click(await screen.findByRole('button', { name: '返回戏主名簿' }));
     expect(await screen.findByText('三方戏台，三份命数')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '继续未完牌局' }));
 
-    expect(await screen.findByText('幕一 · 试演盲注')).toBeInTheDocument();
-    expect(store.getState().app.run?.checkpointId).toBe(0);
+    expect(await screen.findByText('小幕试锋')).toBeInTheDocument();
+    expect(store.getState().app.run?.checkpointId).toBe(1);
   });
 });

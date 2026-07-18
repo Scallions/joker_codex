@@ -1,9 +1,10 @@
 import 'fake-indexeddb/auto';
 
-import { deleteDB } from 'idb';
+import { deleteDB, openDB } from 'idb';
 
 import { createFixtureRun } from '../../src/content/fixtures/foundation';
-import { executeCommand } from '../../src/game-core/commands/executeCommand';
+import { createRunEconomyFixtureRun } from '../../src/content/fixtures/runEconomy';
+import { executeCommandV2 } from '../../src/game-core/commands/executeCommandV2';
 import { IndexedDbGameRepository } from '../../src/persistence/indexedDbRepository';
 import { createProfile } from '../../src/persistence/profiles';
 
@@ -14,7 +15,7 @@ describe('IndexedDB 档案仓库', () => {
     const repository = new IndexedDbGameRepository(databaseName);
     await repository.initialize();
 
-    const firstRun = createFixtureRun('profile-one');
+    const firstRun = createRunEconomyFixtureRun({ seed: 'profile-one' });
     const firstProfile = {
       ...createProfile(1, '甲档', 100),
       activeRunId: firstRun.runId,
@@ -24,10 +25,10 @@ describe('IndexedDB 档案仓库', () => {
     await repository.saveProfile(secondProfile);
     await repository.commitCheckpoint(firstProfile, firstRun);
 
-    const command = executeCommand(firstRun, {
-      type: 'toggle-card',
+    const command = executeCommandV2(firstRun, {
+      type: 'select-blind',
       checkpointId: 0,
-      cardId: firstRun.hand[0]!.id,
+      position: 'small',
     });
     if (!command.ok) throw new Error(command.rejection.message);
     await repository.commitCheckpoint(firstProfile, command.state);
@@ -48,14 +49,14 @@ describe('IndexedDB 档案仓库', () => {
     await deleteDB(databaseName);
     const repository = new IndexedDbGameRepository(databaseName);
     await repository.initialize();
-    const oldRun = createFixtureRun('before-import');
+    const oldRun = createRunEconomyFixtureRun({ seed: 'before-import' });
     const oldProfile = {
       ...createProfile(1, '原档', 100),
       activeRunId: oldRun.runId,
     };
     await repository.commitCheckpoint(oldProfile, oldRun);
 
-    const importedRun = createFixtureRun('after-import');
+    const importedRun = createRunEconomyFixtureRun({ seed: 'after-import' });
     const importedProfile = {
       ...createProfile(1, '新档', 200),
       activeRunId: importedRun.runId,
@@ -66,6 +67,42 @@ describe('IndexedDB 档案仓库', () => {
     expect(await repository.loadRun(importedProfile.id)).toEqual(importedRun);
     expect(await repository.loadRecoveryRun(importedProfile.id)).toEqual(oldRun);
 
+    repository.close();
+    await deleteDB(databaseName);
+  });
+
+  it('首次读取 V1 牌局时原子保留恢复点并写回 V2', async () => {
+    const databaseName = 'baixiqipai-test-v1-migration';
+    await deleteDB(databaseName);
+    const repository = new IndexedDbGameRepository(databaseName);
+    await repository.initialize();
+    const legacy = createFixtureRun('repository-migration');
+    const profile = {
+      ...createProfile(1, '旧档', 100),
+      activeRunId: legacy.runId,
+    };
+    await repository.saveProfile(profile);
+    const rawDatabase = await openDB(databaseName, 1);
+    await rawDatabase.put('runs', legacy, profile.id);
+    rawDatabase.close();
+
+    const migrated = await repository.loadRun(profile.id);
+    expect(migrated).toMatchObject({
+      schemaVersion: 2,
+      mode: 'migrated-foundation',
+      runId: legacy.runId,
+      checkpointId: legacy.checkpointId,
+    });
+    expect(await repository.loadRecoveryRun(profile.id)).toMatchObject({
+      schemaVersion: 2,
+      mode: 'migrated-foundation',
+      runId: legacy.runId,
+    });
+
+    const storedDatabase = await openDB(databaseName, 1);
+    const stored = (await storedDatabase.get('runs', profile.id)) as unknown;
+    expect(stored).toMatchObject({ schemaVersion: 2 });
+    storedDatabase.close();
     repository.close();
     await deleteDB(databaseName);
   });

@@ -3,11 +3,15 @@ import { useEffect } from 'react';
 
 import { clearPresentationEvents, consumePresentationEvent } from '../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../app/store/hooks';
-import type { PresentationEvent } from '../game-core/commands/types';
+import type { PresentationEventV2 } from '../game-core/commands/typesV2';
 import styles from './PresentationQueue.module.css';
 
-function eventLabel(event: PresentationEvent): string {
+function eventLabel(event: PresentationEventV2): string {
   switch (event.type) {
+    case 'blind-curtain':
+      return `开幕 · ${event.name}`;
+    case 'tag-received':
+      return `戏签 · ${event.name}`;
     case 'card-selection':
       return '选牌落定';
     case 'cards-swept':
@@ -20,20 +24,18 @@ function eventLabel(event: PresentationEvent): string {
       return '盲注已破';
     case 'run-failed':
       return '锣声暂止';
-    case 'card-overprint':
-      return '移花换点';
     case 'cards-reordered':
       return event.mode === 'rank' ? '按点数理牌' : '按花色理牌';
     case 'coin-spent':
       return `支出 ¥${String(event.amount)}`;
     case 'item-arrived':
       return '奇货入箱';
-    case 'placard-moved':
-      return '奇牌换位';
     case 'coin-received':
       return `收入 ¥${String(event.amount)}`;
     case 'curtain-call':
       return '今夜谢幕';
+    case 'reward-receipt':
+      return `赏银 ¥${String(event.amount)}`;
   }
 }
 

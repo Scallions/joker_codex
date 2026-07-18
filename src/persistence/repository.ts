@@ -1,5 +1,5 @@
 import type { ProfileId } from '../game-core/model/ids';
-import type { RunState } from '../game-core/model/run';
+import type { RunStateV2 } from '../game-core/model/runV2';
 import type { ProfileRecord } from './profiles';
 
 export interface GameRepository {
@@ -10,9 +10,9 @@ export interface GameRepository {
   deleteProfile(profileId: ProfileId): Promise<void>;
   setActiveProfile(profileId: ProfileId | null): Promise<void>;
   getActiveProfileId(): Promise<ProfileId | null>;
-  loadRun(profileId: ProfileId): Promise<RunState | undefined>;
-  loadRecoveryRun(profileId: ProfileId): Promise<RunState | undefined>;
-  commitCheckpoint(profile: ProfileRecord, run: RunState): Promise<void>;
-  replaceProfile(profile: ProfileRecord, run: RunState | null): Promise<void>;
+  loadRun(profileId: ProfileId): Promise<RunStateV2 | undefined>;
+  loadRecoveryRun(profileId: ProfileId): Promise<RunStateV2 | undefined>;
+  commitCheckpoint(profile: ProfileRecord, run: RunStateV2): Promise<void>;
+  replaceProfile(profile: ProfileRecord, run: RunStateV2 | null): Promise<void>;
   clearRun(profile: ProfileRecord): Promise<void>;
 }

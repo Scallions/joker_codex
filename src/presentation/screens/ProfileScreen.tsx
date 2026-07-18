@@ -245,7 +245,7 @@ export function ProfileScreen() {
           <strong>{activeProfile?.displayName ?? '未选择'}</strong>
         </div>
         <label className={styles.seedField}>
-          <span>试玩种子（可选）</span>
+          <span>演出种子（可选）</span>
           <input
             value={seedText}
             maxLength={64}
@@ -263,7 +263,7 @@ export function ProfileScreen() {
             ? '正在落印…'
             : activeProfile?.activeRunId
               ? '继续未完牌局'
-              : '开始今夜试玩'}
+              : '开始八幕演出'}
         </button>
       </footer>
 

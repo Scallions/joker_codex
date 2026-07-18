@@ -1,8 +1,22 @@
 import { z } from 'zod';
 
-import { CONTENT_VERSION, RUN_SCHEMA_VERSION } from '../game-core/model/run';
+import { stableId } from '../game-core/model/ids';
+import {
+  CONTENT_VERSION,
+  RUN_SCHEMA_VERSION,
+  type RunState,
+} from '../game-core/model/run';
+import type { ProfileRecord } from './profiles';
 
 const stableIdSchema = z.string().min(1).max(160);
+const brandedIdSchema = <Kind extends string>() =>
+  stableIdSchema.transform((value) => stableId<Kind>(value));
+const cardIdSchema = brandedIdSchema<'playing-card'>();
+const runIdSchema = brandedIdSchema<'run'>();
+const jokerInstanceIdSchema = brandedIdSchema<'joker-instance'>();
+const consumableInstanceIdSchema = brandedIdSchema<'consumable-instance'>();
+const shopOfferIdSchema = brandedIdSchema<'shop-offer'>();
+const profileIdSchema = brandedIdSchema<'profile'>();
 const rankSchema = z.enum([
   '2',
   '3',
@@ -21,7 +35,7 @@ const rankSchema = z.enum([
 
 const cardSchema = z
   .object({
-    id: stableIdSchema,
+    id: cardIdSchema,
     suit: z.enum(['spades', 'hearts', 'clubs', 'diamonds']),
     rank: rankSchema,
     enhancement: z.enum(['none', 'wild', 'stone']),
@@ -30,7 +44,7 @@ const cardSchema = z
 
 const jokerSchema = z
   .object({
-    instanceId: stableIdSchema,
+    instanceId: jokerInstanceIdSchema,
     contentId: stableIdSchema,
     name: z.string().min(1).max(40),
     description: z.string().min(1).max(240),
@@ -48,7 +62,7 @@ const consumableEffectSchema = z
 
 const consumableSchema = z
   .object({
-    instanceId: stableIdSchema,
+    instanceId: consumableInstanceIdSchema,
     contentId: stableIdSchema,
     name: z.string().min(1).max(40),
     description: z.string().min(1).max(240),
@@ -87,10 +101,10 @@ const shopItemDefinitionSchema = z.discriminatedUnion('kind', [
 ]);
 
 const shopJokerOfferSchema = shopJokerDefinitionSchema
-  .extend({ id: stableIdSchema })
+  .extend({ id: shopOfferIdSchema })
   .strict();
 const shopConsumableOfferSchema = shopConsumableDefinitionSchema
-  .extend({ id: stableIdSchema })
+  .extend({ id: shopOfferIdSchema })
   .strict();
 const shopOfferSchema = z.discriminatedUnion('kind', [
   shopJokerOfferSchema,
@@ -118,16 +132,16 @@ const scoreBreakdownSchema = z
     cardChips: z.number().nonnegative().finite(),
     multiplier: z.number().positive().finite(),
     score: z.number().nonnegative().finite(),
-    playedCardIds: z.array(stableIdSchema).max(5),
-    scoringCardIds: z.array(stableIdSchema).max(5),
+    playedCardIds: z.array(cardIdSchema).max(5),
+    scoringCardIds: z.array(cardIdSchema).max(5),
   })
   .strict();
 
-export const runStateSchema = z
+const rawRunStateSchema = z
   .object({
     schemaVersion: z.literal(RUN_SCHEMA_VERSION),
     contentVersion: z.literal(CONTENT_VERSION),
-    runId: stableIdSchema,
+    runId: runIdSchema,
     checkpointId: z.number().int().nonnegative(),
     seed: z.string().min(1).max(256),
     rngState: z.number().int().min(1).max(0xffff_ffff),
@@ -141,7 +155,7 @@ export const runStateSchema = z
     drawPile: z.array(cardSchema).max(52),
     hand: z.array(cardSchema).max(20),
     discardPile: z.array(cardSchema).max(52),
-    selectedCardIds: z.array(stableIdSchema).max(5),
+    selectedCardIds: z.array(cardIdSchema).max(5),
     sortMode: z.enum(['rank', 'suit']),
     jokers: z.array(jokerSchema).max(5),
     consumables: z.array(consumableSchema).max(2),
@@ -158,16 +172,20 @@ export const runStateSchema = z
   })
   .strict();
 
-export const profileRecordSchema = z
+export const runStateSchema: z.ZodType<RunState> = rawRunStateSchema;
+
+const rawProfileRecordSchema = z
   .object({
-    id: stableIdSchema,
+    id: profileIdSchema,
     slot: z.union([z.literal(1), z.literal(2), z.literal(3)]),
     displayName: z.string().trim().min(1).max(12),
     createdAtEpochMs: z.number().int().nonnegative(),
     updatedAtEpochMs: z.number().int().nonnegative(),
-    activeRunId: stableIdSchema.nullable(),
+    activeRunId: runIdSchema.nullable(),
   })
   .strict();
+
+export const profileRecordSchema: z.ZodType<ProfileRecord> = rawProfileRecordSchema;
 
 export const profileTransferEnvelopeSchema = z
   .object({

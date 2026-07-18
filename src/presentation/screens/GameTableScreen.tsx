@@ -1,9 +1,12 @@
 import { AnimatePresence, motion } from 'motion/react';
 
-import { finishLocalRun, showProfiles, submitRunCommand } from '../../app/store/appSlice';
+import { finishLocalRun, submitRunCommand } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
-import type { PlayingCard, Rank, Suit } from '../../game-core/model/cards';
-import { selectHandPreview } from '../../game-core/selectors/hand';
+import type { Rank, Suit } from '../../game-core/model/cards';
+import type { RunPlayingCard } from '../../game-core/model/runV2';
+import { evaluatePokerHand } from '../../game-core/poker/evaluate';
+import { formatScore } from '../../game-core/score/score';
+import { selectHandCardsV2 } from '../../game-core/selectors/runV2';
 import styles from './GameTableScreen.module.css';
 
 const SUIT_LABEL: Record<Suit, string> = {
@@ -37,10 +40,12 @@ const RANK_LABEL: Record<Rank, string> = {
 };
 
 interface CardButtonProps {
-  readonly card: PlayingCard;
+  readonly card: RunPlayingCard;
   readonly index: number;
   readonly count: number;
   readonly selected: boolean;
+  readonly forced: boolean;
+  readonly faceDown: boolean;
   readonly disabled: boolean;
   readonly onSelect: () => void;
 }
@@ -50,6 +55,8 @@ function CardButton({
   index,
   count,
   selected,
+  forced,
+  faceDown,
   disabled,
   onSelect,
 }: CardButtonProps) {
@@ -63,8 +70,10 @@ function CardButton({
       className={`${styles.card} ${red ? styles.redCard : ''} ${
         selected ? styles.selectedCard : ''
       }`}
-      aria-label={`${SUIT_NAME[card.suit]} ${RANK_LABEL[card.rank]}`}
-      disabled={disabled}
+      aria-label={
+        faceDown ? '覆面戏牌' : `${SUIT_NAME[card.suit]} ${RANK_LABEL[card.rank]}`
+      }
+      disabled={disabled || forced}
       onClick={onSelect}
       initial={false}
       animate={{
@@ -75,17 +84,20 @@ function CardButton({
       whileTap={{ scale: 0.97 }}
       transition={{ type: 'spring', stiffness: 430, damping: 28 }}
     >
-      <span className={styles.cardCorner}>
-        <strong>{RANK_LABEL[card.rank]}</strong>
-        <i>{SUIT_LABEL[card.suit]}</i>
-      </span>
-      <span className={styles.cardSuit}>{SUIT_LABEL[card.suit]}</span>
+      {faceDown ? (
+        <span className={styles.cardSuit}>戏</span>
+      ) : (
+        <>
+          <span className={styles.cardCorner}>
+            <strong>{RANK_LABEL[card.rank]}</strong>
+            <i>{SUIT_LABEL[card.suit]}</i>
+          </span>
+          <span className={styles.cardSuit}>{SUIT_LABEL[card.suit]}</span>
+        </>
+      )}
       <span className={styles.cardFiber} aria-hidden="true" />
-      {card.enhancement !== 'none' ? (
-        <span className={styles.enhancement}>
-          {card.enhancement === 'wild' ? '百搭' : '石'}
-        </span>
-      ) : null}
+      {forced ? <span className={styles.enhancement}>强制</span> : null}
+      {card.enhancementId ? <span className={styles.enhancement}>异</span> : null}
     </motion.button>
   );
 }
@@ -93,29 +105,43 @@ function CardButton({
 export function GameTableScreen() {
   const dispatch = useAppDispatch();
   const { run, busy, activeProfileId, profiles } = useAppSelector((state) => state.app);
-  if (!run) return null;
+  if (!run || run.phase.kind !== 'round' || !run.round) return null;
 
+  const round = run.round;
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId);
-  const preview = selectHandPreview(run);
-  const selectedId = run.selectedCardIds[0];
-  const selectedCount = run.selectedCardIds.length;
-
-  const toggleCard = (card: PlayingCard) => {
-    void dispatch(
-      submitRunCommand({
-        type: 'toggle-card',
-        checkpointId: run.checkpointId,
-        cardId: card.id,
-      }),
-    );
-  };
+  const hand = selectHandCardsV2(run);
+  const cardMap = new Map(run.deck.cards.map((card) => [card.id, card]));
+  const selectedCards = round.selectedCardIds.flatMap((id) => {
+    const card = cardMap.get(id);
+    return card ? [card] : [];
+  });
+  const preview =
+    selectedCards.length > 0
+      ? evaluatePokerHand(
+          selectedCards.map((card) => ({
+            id: card.id,
+            suit: card.suit,
+            rank: card.rank,
+            enhancement: card.enhancementId?.endsWith(':wild')
+              ? 'wild'
+              : card.enhancementId?.endsWith(':stone')
+                ? 'stone'
+                : 'none',
+          })),
+          {
+            straightSize: run.rules.straightSize,
+            flushSize: run.rules.flushSize,
+            handLevels: run.rules.handLevels,
+          },
+        )
+      : null;
+  const selectedCount = round.selectedCardIds.length;
 
   return (
     <motion.div
       className={styles.table}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.28 }}
     >
       <header className={styles.inventoryRail}>
         <div className={styles.brandPlate}>
@@ -124,16 +150,9 @@ export function GameTableScreen() {
           <div className={styles.sessionControls}>
             <button
               type="button"
-              aria-label="返回戏主名簿"
-              onClick={() => dispatch(showProfiles())}
-            >
-              名簿
-            </button>
-            <button
-              type="button"
               disabled={busy}
               onClick={() => {
-                if (window.confirm('确定放弃这局试玩吗？最后检查点仍会留作恢复记录。')) {
+                if (window.confirm('确定放弃这局演出吗？最后检查点仍会留作恢复记录。')) {
                   void dispatch(finishLocalRun());
                 }
               }}
@@ -143,46 +162,47 @@ export function GameTableScreen() {
           </div>
         </div>
         <div className={styles.jokerSlots}>
-          {run.jokers.map((joker, index) => (
+          {run.inventory.jokers.map((joker, index) => (
             <motion.article
               className={styles.jokerPlacard}
               key={joker.instanceId}
               initial={{ y: -14, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: index * 0.06 }}
+              transition={{ delay: index * 0.04 }}
               title={joker.description}
             >
               <span>奇牌 {index + 1}</span>
               <strong>{joker.name}</strong>
-              <em>×{joker.handMultiplier}</em>
+              <em>{joker.debuffed ? '压制' : '生效'}</em>
             </motion.article>
           ))}
-          {Array.from({ length: Math.max(0, 5 - run.jokers.length) }, (_, index) => (
-            <div className={styles.emptyJokerSlot} key={`empty-joker-${String(index)}`}>
-              空
-            </div>
-          ))}
+          {Array.from(
+            { length: Math.max(0, run.rules.jokerSlots - run.inventory.jokers.length) },
+            (_, index) => (
+              <div className={styles.emptyJokerSlot} key={`empty-joker-${String(index)}`}>
+                空
+              </div>
+            ),
+          )}
         </div>
         <div className={styles.consumableSlots}>
-          {run.consumables.map((item) => (
+          {run.inventory.consumables.map((item) => (
             <button
               type="button"
               aria-label={`使用 ${item.name}`}
               key={item.instanceId}
               className={styles.consumable}
-              disabled={busy || selectedCount !== 1}
+              disabled={busy}
               title={item.description}
-              onClick={() => {
-                if (!selectedId) return;
+              onClick={() =>
                 void dispatch(
                   submitRunCommand({
-                    type: 'use-consumable',
+                    type: 'begin-consumable-choice',
                     checkpointId: run.checkpointId,
                     consumableInstanceId: item.instanceId,
-                    cardId: selectedId,
                   }),
-                );
-              }}
+                )
+              }
             >
               <span>道具</span>
               <strong>{item.name}</strong>
@@ -193,29 +213,29 @@ export function GameTableScreen() {
 
       <aside className={styles.ledger}>
         <div className={styles.ledgerTitle}>
-          <span>试演账簿</span>
-          <strong>第 1 幕</strong>
+          <span>{run.progress.endless ? '无尽账簿' : '八幕账簿'}</span>
+          <strong>第 {run.progress.ante} 幕</strong>
         </div>
         <dl>
           <div>
             <dt>目标</dt>
-            <dd>{run.targetScore}</dd>
+            <dd>{formatScore(round.targetScore)}</dd>
           </div>
           <div className={styles.scoreRow}>
             <dt>当前</dt>
-            <dd>{run.roundScore}</dd>
+            <dd>{formatScore(round.score)}</dd>
           </div>
           <div>
             <dt>出牌</dt>
-            <dd>{run.handsRemaining}</dd>
+            <dd>{round.handsRemaining}</dd>
           </div>
           <div>
             <dt>弃牌</dt>
-            <dd>{run.discardsRemaining}</dd>
+            <dd>{round.discardsRemaining}</dd>
           </div>
           <div className={styles.moneyRow}>
             <dt>戏票</dt>
-            <dd>¥{run.money}</dd>
+            <dd>¥{run.economy.money}</dd>
           </div>
         </dl>
         <p>检查点 #{run.checkpointId}</p>
@@ -223,22 +243,21 @@ export function GameTableScreen() {
 
       <section className={styles.centerStage}>
         <div className={styles.blindBanner}>
-          <span>基础试演 · 需达成 {run.targetScore} 分</span>
-          <strong>幕一 · 试演盲注</strong>
+          <span>需达成 {formatScore(round.targetScore)} 分</span>
+          <strong>{round.blind.name}</strong>
         </div>
         <div className={styles.scoreSeal}>
           <span>本幕得分</span>
-          <strong>{run.roundScore}</strong>
+          <strong>{formatScore(round.score)}</strong>
           <i aria-hidden="true">百戏</i>
           <AnimatePresence mode="wait">
             {run.lastHand ? (
               <motion.p
                 key={run.checkpointId}
-                initial={{ scale: 1.4, opacity: 0, rotate: -5 }}
-                animate={{ scale: 1, opacity: 1, rotate: -2 }}
-                exit={{ opacity: 0 }}
+                initial={{ scale: 1.4, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
               >
-                本手 · {run.lastHand.handName} +{run.lastHand.score}
+                本手 · {run.lastHand.handName} +{formatScore(run.lastHand.score)}
               </motion.p>
             ) : (
               <p>朱砂印静候落分</p>
@@ -282,20 +301,34 @@ export function GameTableScreen() {
             </button>
           </div>
           <p>
-            {preview ? `预判 · ${preview.name}` : '请选择 1 至 5 张牌'}
-            <span>已选 {selectedCount} / 5</span>
+            {preview
+              ? `预判 · ${preview.name} Lv.${preview.level}`
+              : '请选择 1 至 5 张牌'}
+            <span>
+              已选 {selectedCount} / {run.rules.maximumSelectedCards}
+            </span>
           </p>
-          <span>牌堆余 {run.drawPile.length}</span>
+          <span>牌堆余 {round.drawPileIds.length}</span>
         </div>
         <div className={styles.handFan}>
-          {run.hand.map((card, index) => (
+          {hand.map((card, index) => (
             <CardButton
               card={card}
               index={index}
-              count={run.hand.length}
-              selected={run.selectedCardIds.includes(card.id)}
+              count={hand.length}
+              selected={round.selectedCardIds.includes(card.id)}
+              forced={round.forcedSelectedCardIds.includes(card.id)}
+              faceDown={round.faceDownCardIds.includes(card.id)}
               disabled={busy}
-              onSelect={() => toggleCard(card)}
+              onSelect={() =>
+                void dispatch(
+                  submitRunCommand({
+                    type: 'toggle-card',
+                    checkpointId: run.checkpointId,
+                    cardId: card.id,
+                  }),
+                )
+              }
               key={card.id}
             />
           ))}
@@ -310,10 +343,7 @@ export function GameTableScreen() {
           disabled={busy || selectedCount === 0}
           onClick={() =>
             void dispatch(
-              submitRunCommand({
-                type: 'play-selected',
-                checkpointId: run.checkpointId,
-              }),
+              submitRunCommand({ type: 'play-selected', checkpointId: run.checkpointId }),
             )
           }
         >
@@ -324,7 +354,12 @@ export function GameTableScreen() {
           type="button"
           aria-label="弃牌"
           className={styles.discardButton}
-          disabled={busy || selectedCount === 0 || run.discardsRemaining === 0}
+          disabled={
+            busy ||
+            selectedCount === 0 ||
+            round.discardsRemaining === 0 ||
+            round.forcedSelectedCardIds.some((id) => round.selectedCardIds.includes(id))
+          }
           onClick={() =>
             void dispatch(
               submitRunCommand({

@@ -1,11 +1,11 @@
 import type { ProfileId } from '../../src/game-core/model/ids';
-import type { RunState } from '../../src/game-core/model/run';
+import type { RunStateV2 } from '../../src/game-core/model/runV2';
 import type { ProfileRecord } from '../../src/persistence/profiles';
 import type { GameRepository } from '../../src/persistence/repository';
 
 interface MemoryRepositorySeed {
   readonly profiles?: readonly ProfileRecord[];
-  readonly runs?: ReadonlyArray<readonly [ProfileId, RunState]>;
+  readonly runs?: ReadonlyArray<readonly [ProfileId, RunStateV2]>;
   readonly activeProfileId?: ProfileId | null;
 }
 
@@ -13,8 +13,8 @@ export function createMemoryRepository(seed: MemoryRepositorySeed = {}): GameRep
   const profiles = new Map<string, ProfileRecord>(
     (seed.profiles ?? []).map((profile) => [profile.id, profile]),
   );
-  const runs = new Map<string, RunState>(seed.runs ?? []);
-  const recovery = new Map<string, RunState>();
+  const runs = new Map<string, RunStateV2>(seed.runs ?? []);
+  const recovery = new Map<string, RunStateV2>();
   let activeProfileId: ProfileId | null = seed.activeProfileId ?? null;
 
   return {
