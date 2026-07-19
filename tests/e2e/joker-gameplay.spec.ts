@@ -3,12 +3,14 @@ import { writeFile } from 'node:fs/promises';
 
 import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
 import { createProductionRunV4 } from '../../src/content/runtime/runSetupV4';
+import { createProductionRunV5 } from '../../src/content/runtime/runSetupV5';
 import { executeCommandV2 } from '../../src/game-core/commands/executeCommandV2';
 import { acquireContentByIdV3 } from '../../src/game-core/effects/applyStateOperationV3';
 import { createShopV2, materializeItemV2 } from '../../src/game-core/economy/shopV2';
 import { stableId } from '../../src/game-core/model/ids';
 import type { RunStateV2 } from '../../src/game-core/model/runV2';
 import { isRunStateV4, type RunStateV4 } from '../../src/game-core/model/runV4';
+import { isRunStateV5, type RunStateV5 } from '../../src/game-core/model/runV5';
 import { createProfile } from '../../src/persistence/profiles';
 import { exportProfileToJson } from '../../src/persistence/profileTransfer';
 
@@ -115,10 +117,33 @@ function createJ044TableFixture(): RunStateV4 {
   return requireV4(selected.state);
 }
 
+function createJ100TableFixture(): RunStateV5 {
+  const initial = createProductionRunV5(PRODUCTION_CATALOG, {
+    seed: 'browser-joker-100-table',
+  });
+  const acquired = acquireContentByIdV3(
+    initial,
+    'bxqp:joker:100',
+    'browser-joker-100-table',
+  );
+  if (!acquired.ok || !isRunStateV5(acquired.state)) {
+    throw new Error(acquired.ok ? 'J100 获取后未保持 V5' : acquired.message);
+  }
+  const selected = executeCommandV2(acquired.state, {
+    type: 'select-blind',
+    checkpointId: acquired.state.checkpointId,
+    position: 'small',
+  });
+  if (!selected.ok || !isRunStateV5(selected.state)) {
+    throw new Error(selected.ok ? 'J100 盲注未保持 V5' : selected.rejection.message);
+  }
+  return selected.state;
+}
+
 async function importFixtureRun(
   page: Page,
   testInfo: TestInfo,
-  run: RunStateV4,
+  run: RunStateV2,
   label: string,
 ) {
   const profile = {
@@ -204,6 +229,23 @@ test('牌桌展示生产 J044 的审定插画和已提交能力状态', async ({
   await settleStage(page);
   expect(remoteRequests).toEqual([]);
   await testInfo.attach(`joker-table-${testInfo.project.name}`, {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+});
+
+test('V5 牌桌展示生产 J100 的本地插画和可恢复当前值', async ({ page }, testInfo) => {
+  const remoteRequests = collectRemoteRequests(page);
+  await importFixtureRun(page, testInfo, createJ100TableFixture(), 'joker-100-table');
+  await expect(page.getByRole('button', { name: '出牌' })).toBeVisible();
+  await expectApprovedJokerImage(page.getByTestId('joker-art-bxqp:joker:100'), '100');
+  await expect(page.getByText('当前 ×2')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('当前 ×2')).toBeVisible();
+  await expectApprovedJokerImage(page.getByTestId('joker-art-bxqp:joker:100'), '100');
+  await settleStage(page);
+  expect(remoteRequests).toEqual([]);
+  await testInfo.attach(`joker-100-table-${testInfo.project.name}`, {
     body: await page.screenshot(),
     contentType: 'image/png',
   });

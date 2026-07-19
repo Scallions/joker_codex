@@ -7,12 +7,15 @@ import {
 import { materializeItemV2 } from '../economy/shopV2';
 import { stableId } from '../model/ids';
 import { materializeJokerStickersV3 } from '../model/runV3';
+import { isRunStateV5 } from '../model/runV5';
 import type { EffectReference, EffectWindow, RunStateV2 } from '../model/runV2';
 import {
   applyStateOperationV3,
+  initializeAcquiredJokerTargetsV5,
   type StateOperationFailureCodeV3,
 } from './applyStateOperationV3';
 import { canAffordRunStateV3 } from '../rules/jokerPassiveCapabilitiesV3';
+import type { JokerEventContextV5 } from '../rules/jokerEventFactsV5';
 
 export interface AdditionalEffectSourceV2 {
   readonly instanceId: string;
@@ -30,6 +33,7 @@ export interface RunWindowOptionsV2 {
   readonly additionalSources?: readonly AdditionalEffectSourceV2[];
   /** Cards materialized by the draw immediately preceding this window. */
   readonly blindDrawnCardIds?: readonly string[];
+  readonly eventContext?: JokerEventContextV5;
 }
 
 export type RunWindowResolutionV2 =
@@ -57,7 +61,11 @@ function collectSources(
   options: RunWindowOptionsV2,
 ): readonly EffectQueueSource[] {
   const sources: EffectQueueSource[] = [];
-  if (options.includeBlind !== false && state.round) {
+  const bossRulesDisabled =
+    isRunStateV5(state) &&
+    state.jokerRuntimeV5.bossDisabledForRound &&
+    (state.round?.blind.kind === 'boss' || state.round?.blind.kind === 'finisher');
+  if (options.includeBlind !== false && state.round && !bossRulesDisabled) {
     sources.push({
       instanceId: `blind:${state.round.blind.definitionId}`,
       position: 0,
@@ -119,6 +127,7 @@ function applyOperation(
   entry: ResolvedEffectOperation,
   window: EffectWindow,
   blindDrawnCardIds?: readonly string[],
+  eventContext?: JokerEventContextV5,
 ): RunWindowResolutionV2 {
   const operation = entry.operation;
   let next = state;
@@ -296,6 +305,9 @@ function applyOperation(
         },
       };
       next = materializeJokerStickersV3(next, instanceId, identity);
+      const targeted = initializeAcquiredJokerTargetsV5(next, instanceId, item.effects);
+      if (!targeted.ok) return targeted;
+      next = targeted.state;
     }
     if (item.kind === 'consumable') {
       next = {
@@ -374,9 +386,11 @@ function applyOperation(
     window,
     sourceInstanceId: entry.sourceInstanceId,
     effectId: entry.effectId,
+    copiedBy: entry.copiedBy,
     ...(entry.sourceInstanceId.startsWith('blind:') && blindDrawnCardIds !== undefined
       ? { selectedIds: blindDrawnCardIds }
       : {}),
+    ...(eventContext ? { eventContext } : {}),
   });
   if (!catalogApplied.ok) return catalogApplied;
   if (catalogApplied.handled) next = catalogApplied.state;
@@ -396,6 +410,7 @@ export function applyRunWindowEffectsV2(
     window,
     resolved.operations,
     options.blindDrawnCardIds,
+    options.eventContext,
   );
   if (!applied.ok) return applied;
   let next = applied.state;
@@ -425,10 +440,30 @@ export function applyResolvedRunOperationsV2(
   window: EffectWindow,
   operations: readonly ResolvedEffectOperation[],
   blindDrawnCardIds?: readonly string[],
+  eventContext?: JokerEventContextV5,
 ): RunWindowResolutionV2 {
   let next = state;
+  const appliedSharedTargets = new Set<string>();
   for (const entry of operations) {
-    const applied = applyOperation(next, entry, window, blindDrawnCardIds);
+    if (
+      entry.copiedBy.length === 0 &&
+      entry.sourcePosition >= 1_000 &&
+      entry.sourcePosition < 2_000
+    ) {
+      const liveSource = next.inventory.jokers.find(
+        (joker) => joker.instanceId === entry.sourceInstanceId,
+      );
+      if (!liveSource || liveSource.debuffed) continue;
+    }
+    if (
+      entry.operation.type === 'joker-set-target' &&
+      entry.operation.scope === 'shared'
+    ) {
+      const targetKey = `${entry.operation.target}:${entry.operation.policy}`;
+      if (appliedSharedTargets.has(targetKey)) continue;
+      appliedSharedTargets.add(targetKey);
+    }
+    const applied = applyOperation(next, entry, window, blindDrawnCardIds, eventContext);
     if (!applied.ok) return applied;
     next = applied.state;
   }

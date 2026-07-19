@@ -1,11 +1,32 @@
 import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
 import { createProductionRunV4 } from '../../src/content/runtime/runSetupV4';
+import { createProductionRunV5 } from '../../src/content/runtime/runSetupV5';
+import { executeCommandV2 } from '../../src/game-core/commands/executeCommandV2';
 import { acquireContentByIdV3 } from '../../src/game-core/effects/applyStateOperationV3';
 import { isRunStateV4 } from '../../src/game-core/model/runV4';
+import { isRunStateV5, type RunStateV5 } from '../../src/game-core/model/runV5';
 import {
   selectJokerPresentation,
   selectOwnedJokerPresentation,
 } from '../../src/presentation/selectors/jokerPresentation';
+
+function acquireV5(state: RunStateV5, ordinal: number): RunStateV5 {
+  const contentId = `bxqp:joker:${ordinal.toString().padStart(3, '0')}`;
+  const acquired = acquireContentByIdV3(state, contentId, `presentation:${ordinal}`);
+  if (!acquired.ok || !isRunStateV5(acquired.state)) {
+    throw new Error(acquired.ok ? '没有保持 V5' : acquired.message);
+  }
+  return acquired.state;
+}
+
+function ownedPresentation(state: RunStateV5, ordinal: number) {
+  const contentId = `bxqp:joker:${ordinal.toString().padStart(3, '0')}`;
+  const joker = state.inventory.jokers.find(
+    (candidate) => candidate.contentId === contentId,
+  );
+  if (!joker) throw new Error(`没有持有 ${contentId}`);
+  return selectOwnedJokerPresentation(state, joker);
+}
 
 describe('奇牌展示选择器', () => {
   it('从生产目录统一解析图像、中文身份、风味与稀有度', () => {
@@ -91,5 +112,88 @@ describe('奇牌展示选择器', () => {
     expect(selectOwnedJokerPresentation(saleAcquired.state, saleJoker)).toMatchObject({
       currentValue: '当前售价 ¥2',
     });
+  });
+
+  it('按通用状态键展示百分倍率、目标、赏金与手牌上限', () => {
+    expect(selectJokerPresentation('bxqp:joker:055')?.currentValue).toBe('当前 ×1');
+    expect(selectJokerPresentation('bxqp:joker:060')?.currentValue).toBe('当前：高牌');
+    expect(selectJokerPresentation('bxqp:joker:074')?.currentValue).toBe('当前 1 戏票');
+    expect(selectJokerPresentation('bxqp:joker:080')?.currentValue).toBe(
+      '当前 +5 手牌上限',
+    );
+    expect(selectJokerPresentation('bxqp:joker:083')?.currentValue).toBe('当前：A');
+    expect(selectJokerPresentation('bxqp:joker:100')?.currentValue).toBe('当前 ×2');
+  });
+
+  it('从已提交运行态投影牌堆、初始牌组、历史、钱与共享目标', () => {
+    const base = (seed: string): RunStateV5 => {
+      const initial = createProductionRunV5(PRODUCTION_CATALOG, { seed });
+      return {
+        ...initial,
+        rules: { ...initial.rules, jokerSlots: 10 },
+      };
+    };
+
+    let drawPile = acquireV5(base('presentation-draw-pile'), 53);
+    const selected = executeCommandV2(drawPile, {
+      type: 'select-blind',
+      checkpointId: drawPile.checkpointId,
+      position: 'small',
+    });
+    expect(selected.ok).toBe(true);
+    if (!selected.ok || !isRunStateV5(selected.state)) return;
+    drawPile = selected.state;
+    expect(ownedPresentation(drawPile, 53)?.currentValue).toBe(
+      `当前 +${drawPile.round!.drawPileIds.length * 2} 筹码`,
+    );
+
+    let initialDelta = acquireV5(base('presentation-initial-size'), 81);
+    initialDelta = {
+      ...initialDelta,
+      deck: { cards: initialDelta.deck.cards.slice(0, -2) },
+    };
+    expect(ownedPresentation(initialDelta, 81)?.currentValue).toBe('当前 +8 倍率');
+
+    let history = acquireV5(base('presentation-history'), 86);
+    history = {
+      ...history,
+      history: {
+        ...history.history,
+        effectObservations: [
+          ...history.history.effectObservations,
+          {
+            window: 'consumable-used',
+            key: 'tarot-used',
+            value: 'bxqp:tarot:001',
+            sourceInstanceId: 'presentation:tarot:1',
+            effectId: 'presentation:tarot-used:1',
+            checkpointId: history.checkpointId,
+          },
+          {
+            window: 'consumable-used',
+            key: 'tarot-used',
+            value: 'bxqp:tarot:002',
+            sourceInstanceId: 'presentation:tarot:2',
+            effectId: 'presentation:tarot-used:2',
+            checkpointId: history.checkpointId,
+          },
+        ],
+      },
+    };
+    expect(ownedPresentation(history, 86)?.currentValue).toBe('当前 +2 倍率');
+
+    let money = acquireV5(base('presentation-money'), 93);
+    money = { ...money, economy: { ...money.economy, money: 7 } };
+    expect(ownedPresentation(money, 93)?.currentValue).toBe('当前 +14 筹码');
+
+    let target = acquireV5(base('presentation-shared-suit'), 99);
+    target = {
+      ...target,
+      jokerRuntimeV5: {
+        ...target.jokerRuntimeV5,
+        sharedRoundTargetSuit: 'spades',
+      },
+    };
+    expect(ownedPresentation(target, 99)?.currentValue).toBe('当前：黑桃');
   });
 });

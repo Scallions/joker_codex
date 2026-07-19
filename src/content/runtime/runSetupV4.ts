@@ -48,7 +48,20 @@ export function createProductionRunV4(
 ): RunStateV4 {
   const legacyBase = createProductionRunV3(catalog, options);
   const setup = compileRunSetupV3(catalog, options);
-  const productionContent = createProductionRunContent(catalog);
+  const v4Rows = catalog.rows.filter(
+    (row) => row.family !== 'joker' || row.ordinal <= 50,
+  );
+  const v4Catalog: ProductionCatalog = {
+    ...catalog,
+    rows: v4Rows,
+    assets: catalog.assets.filter((asset) =>
+      v4Rows.some((row) => row.id === asset.contentId),
+    ),
+    contracts: catalog.contracts.filter((record) =>
+      v4Rows.some((row) => row.id === record.contentId),
+    ),
+  };
+  const productionContent = createProductionRunContent(v4Catalog);
   const jokerDefinitions = new Map(
     productionContent.items
       .filter((item): item is JokerDefinitionV2 => item.kind === 'joker')
@@ -101,7 +114,7 @@ export function createProductionRunV4(
     inventory: { ...legacyBase.inventory, jokers: allJokers },
     productionContentV3: {
       contentVersion: CONTENT_VERSION_V4,
-      rows: catalog.rows.map((definition) => ({
+      rows: v4Rows.map((definition) => ({
         definition,
         name: catalog.localization[definition.nameKey] as string,
         description: catalog.localization[definition.descriptionKey] as string,

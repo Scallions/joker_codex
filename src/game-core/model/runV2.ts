@@ -17,9 +17,9 @@ import type {
 export const RUN_SCHEMA_VERSION_V2 = 2 as const;
 export const CONTENT_VERSION_V2 = 'run-economy-2' as const;
 
-export type ExecutableRunSchemaVersion = 2 | 3 | 4;
+export type ExecutableRunSchemaVersion = 2 | 3 | 4 | 5;
 export type ExecutableRunContentVersion =
-  'run-economy-2' | 'catalog-baseline-3' | 'joker-catalog-1';
+  'run-economy-2' | 'catalog-baseline-3' | 'joker-catalog-1' | 'joker-catalog-2';
 export type RunModeV2 =
   | 'fixture-campaign'
   | 'migrated-foundation'
@@ -45,7 +45,13 @@ export const EFFECT_WINDOWS = [
   'shop-rerolled',
   'item-acquired',
   'pack-opened',
+  'pack-skipped',
+  'item-sold',
+  'playing-card-added',
+  'playing-card-modifier-succeeded',
+  'other-joker-resolved',
   'ante-ended',
+  'consumable-used',
   'passive',
 ] as const;
 

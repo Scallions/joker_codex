@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 
 import { PRODUCTION_CATALOG } from '../../content/productionCatalog';
 import {
+  EXPECTED_JOKER_CATALOG_TOTAL,
   EXPECTED_NON_JOKER_CATALOG_TOTAL,
   type JokerEnsemble,
   type JokerRarity,
@@ -35,6 +36,11 @@ const ENSEMBLE_NAMES: Readonly<Record<JokerEnsemble, string>> = {
   'backstage-machinery': '幕后机关',
   'music-acrobatics': '乐舞杂技',
   'midnight-spirits': '夜场精怪',
+  'creation-secret': '造化秘戏',
+  'disordered-machine': '失序机关',
+  'cloud-traveler': '云路贵客',
+  'night-market-ledger': '夜市账房',
+  'strange-beast-finale': '异兽散场',
 };
 const ENSEMBLES = Object.keys(ENSEMBLE_NAMES) as readonly JokerEnsemble[];
 const RARITY_NAMES: Readonly<Record<JokerRarity, string>> = {
@@ -95,10 +101,14 @@ export function CatalogAuditScreen({
           <h1>{ledger === 'joker' ? '奇牌图鉴总账' : '非奇牌图鉴总账'}</h1>
         </div>
         <div className={styles.ledger}>
-          <strong>{ledger === 'joker' ? 50 : EXPECTED_NON_JOKER_CATALOG_TOTAL}</strong>
+          <strong>
+            {ledger === 'joker'
+              ? EXPECTED_JOKER_CATALOG_TOTAL
+              : EXPECTED_NON_JOKER_CATALOG_TOTAL}
+          </strong>
           <span>
             {ledger === 'joker'
-              ? '张原创奇牌 · 5 班目 · 零远程素材'
+              ? '张原创奇牌 · 10 班目 · 零远程素材'
               : '项本地内容 · 13 家族 · 零远程素材'}
           </span>
         </div>

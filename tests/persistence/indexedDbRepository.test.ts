@@ -7,10 +7,11 @@ import { createRunEconomyFixtureRun } from '../../src/content/fixtures/runEconom
 import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
 import { createProductionRunV3 } from '../../src/content/runtime/runSetupV3';
 import { executeCommandV2 } from '../../src/game-core/commands/executeCommandV2';
-import { isRunStateV4 } from '../../src/game-core/model/runV4';
+import { isRunStateV5 } from '../../src/game-core/model/runV5';
 import { IndexedDbGameRepository } from '../../src/persistence/indexedDbRepository';
 import { migrateRunV2ToV3 } from '../../src/persistence/migrations/migrateRunV2ToV3';
 import { migrateRunV3ToV4 } from '../../src/persistence/migrations/migrateRunV3ToV4';
+import { migrateRunV4ToV5 } from '../../src/persistence/migrations/migrateRunV4ToV5';
 import { createProfile } from '../../src/persistence/profiles';
 
 describe('IndexedDB 档案仓库', () => {
@@ -38,12 +39,12 @@ describe('IndexedDB 档案仓库', () => {
     if (!command.ok) throw new Error(command.rejection.message);
     await repository.commitCheckpoint(firstProfile, command.state);
 
-    expect(isRunStateV4((await repository.loadRun(firstProfile.id))!)).toBe(true);
+    expect(isRunStateV5((await repository.loadRun(firstProfile.id))!)).toBe(true);
     expect(await repository.loadRun(firstProfile.id)).toEqual(
-      migrateRunV3ToV4(migrateRunV2ToV3(command.state)),
+      migrateRunV4ToV5(migrateRunV3ToV4(migrateRunV2ToV3(command.state))),
     );
     expect(await repository.loadRecoveryRun(firstProfile.id)).toEqual(
-      migrateRunV3ToV4(migrateRunV2ToV3(firstRun)),
+      migrateRunV4ToV5(migrateRunV3ToV4(migrateRunV2ToV3(firstRun))),
     );
     expect(await repository.loadRun(secondProfile.id)).toBeUndefined();
     expect(
@@ -75,10 +76,10 @@ describe('IndexedDB 档案仓库', () => {
 
     expect(await repository.getProfile(importedProfile.id)).toEqual(importedProfile);
     expect(await repository.loadRun(importedProfile.id)).toEqual(
-      migrateRunV3ToV4(migrateRunV2ToV3(importedRun)),
+      migrateRunV4ToV5(migrateRunV3ToV4(migrateRunV2ToV3(importedRun))),
     );
     expect(await repository.loadRecoveryRun(importedProfile.id)).toEqual(
-      migrateRunV3ToV4(migrateRunV2ToV3(oldRun)),
+      migrateRunV4ToV5(migrateRunV3ToV4(migrateRunV2ToV3(oldRun))),
     );
 
     repository.close();
@@ -102,13 +103,13 @@ describe('IndexedDB 档案仓库', () => {
 
     const migrated = await repository.loadRun(profile.id);
     expect(migrated).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       mode: 'migrated-run-economy',
       runId: legacy.runId,
       checkpointId: legacy.checkpointId,
     });
     expect(await repository.loadRecoveryRun(profile.id)).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       mode: 'migrated-run-economy',
       runId: legacy.runId,
       migrationV3: { sourceSchemaVersion: 1 },
@@ -117,7 +118,7 @@ describe('IndexedDB 档案仓库', () => {
     const storedDatabase = await openDB(databaseName, 1);
     const stored = (await storedDatabase.get('runs', profile.id)) as unknown;
     expect(stored).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       migrationV3: { sourceSchemaVersion: 1 },
     });
     storedDatabase.close();
@@ -148,10 +149,10 @@ describe('IndexedDB 档案仓库', () => {
     await repository.commitCheckpoint(profile, selected.state);
 
     expect(await repository.loadRun(profile.id)).toEqual(
-      migrateRunV3ToV4(selected.state),
+      migrateRunV4ToV5(migrateRunV3ToV4(selected.state)),
     );
     expect(await repository.loadRecoveryRun(profile.id)).toEqual(
-      migrateRunV3ToV4(initial),
+      migrateRunV4ToV5(migrateRunV3ToV4(initial)),
     );
     expect(
       ((await repository.loadRun(profile.id)) as typeof initial).productionContentV3.rows,

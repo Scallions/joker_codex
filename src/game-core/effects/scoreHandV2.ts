@@ -1,13 +1,14 @@
 import { getCardChipValue, evaluatePokerHand } from '../poker/evaluate';
 import type { CatalogOperation, CatalogTrigger } from '../../content/schema/catalog';
-import type { CardId, JokerInstanceId } from '../model/ids';
-import { isRunStateV3, isRunStateV4, type RunStateV4 } from '../model/runV3';
+import { stableId, type CardId, type JokerInstanceId } from '../model/ids';
+import { isAbilityStateRun, isRunStateV3, type AbilityStateRun } from '../model/runV3';
 import type {
   EffectWindow,
   RunPlayingCard,
   RunStateV2,
   ScoreBreakdownV2,
 } from '../model/runV2';
+import { isRunStateV5 } from '../model/runV5';
 import { nextInteger, type RandomState } from '../rng/random';
 import { multiplyScore } from '../score/score';
 import {
@@ -15,6 +16,7 @@ import {
   projectEffectivePlayingCardV3,
 } from '../poker/effectiveCardV3';
 import { buildHandFactsV3, type HandFactsV3 } from '../poker/handFactsV3';
+import type { JokerEventContextV5 } from '../rules/jokerEventFactsV5';
 import { resolveJokerPassiveCapabilities } from '../rules/jokerPassiveCapabilitiesV3';
 import {
   evaluateJokerPredicateV3,
@@ -22,6 +24,7 @@ import {
   type JokerDslFailureCode,
 } from '../rules/jokerEffectDslV3';
 import { applyStateOperationV3 } from './applyStateOperationV3';
+import { applyResolvedRunOperationsV2 } from './runWindowV2';
 import {
   resolveEffectQueue,
   type EffectOperation,
@@ -68,6 +71,7 @@ function resolveJokerScoreValue(
   cardId: CardId | undefined,
   rngState: RandomState,
   originalStencilCount: number,
+  eventContext?: JokerEventContextV5,
 ):
   | {
       readonly ok: true;
@@ -88,6 +92,7 @@ function resolveJokerScoreValue(
     ...(cardId ? { cardId } : {}),
     rngState,
     originalStencilCount,
+    ...(eventContext ? { eventContext } : {}),
   };
   const predicate = evaluateJokerPredicateV3(operation.predicate, context);
   if (!predicate.ok) return predicate;
@@ -120,9 +125,13 @@ function modifierOperations(
   trigger: CatalogTrigger | 'identity',
 ): readonly { readonly sourceId: string; readonly operation: CatalogOperation }[] {
   if (!isRunStateV3(state)) return [];
-  const ids = [card.enhancementId, card.sealId, card.editionId].filter(
-    (id): id is string => id !== null,
-  );
+  const durable = state.deck.cards.find(({ id }) => id === card.id) ?? card;
+  const mirror = state.modifiersV3.playingCards.find(({ cardId }) => cardId === card.id);
+  const ids = [
+    mirror?.enhancementId ?? durable.enhancementId,
+    mirror?.sealId ?? durable.sealId,
+    mirror?.editionId ?? durable.editionId,
+  ].filter((id): id is string => id !== null);
   return ids.flatMap((id) => {
     const row = state.productionContentV3.rows.find(
       ({ definition }) => definition.id === id,
@@ -185,9 +194,13 @@ function resolveBeforeHandWindow(state: RunStateV2):
       readonly operationCount: number;
     }
   | ScoreResolutionFailure {
+  const bossRulesDisabled =
+    isRunStateV5(state) &&
+    state.jokerRuntimeV5.bossDisabledForRound &&
+    (state.round?.blind.kind === 'boss' || state.round?.blind.kind === 'finisher');
   return resolveEffectQueue(
     [
-      ...(state.round
+      ...(state.round && !bossRulesDisabled
         ? [
             {
               instanceId: `blind:${state.round.blind.definitionId}`,
@@ -326,6 +339,7 @@ export function validateBeforeHandV2(
     {
       straightSize: passives.capabilities.straightSize,
       flushSize: passives.capabilities.flushSize,
+      straightMaximumStep: passives.capabilities.straightMaximumStep,
       handLevels: state.rules.handLevels,
     },
   );
@@ -397,6 +411,23 @@ export function resolveHandScoreV2(
   });
   if (!handFacts.ok) return handFacts;
   const facts = handFacts.facts;
+  const playedEventContext: JokerEventContextV5 = {
+    eventFacts: {
+      kind: 'played-hand',
+      playedCardIds: facts.playedCardIds,
+      firstHandOfRound: (state.round?.handsPlayed ?? 0) === 0,
+      displayedHand: facts.displayedHand,
+      previousRoundHandTypes: state.history.playedHandTypes.slice(
+        -(state.round?.handsPlayed ?? 0),
+      ),
+    },
+    eventCardIdentities: Object.fromEntries(
+      facts.playedCardIds.flatMap((cardId) => {
+        const identity = facts.effectiveCards[cardId];
+        return identity ? [[cardId, identity] as const] : [];
+      }),
+    ),
+  };
   const compatibleCards = cards.map((card) =>
     effectiveCardForPokerV3(card, facts.effectiveCards[card.id]!),
   );
@@ -406,6 +437,7 @@ export function resolveHandScoreV2(
   let evaluation = evaluatePokerHand(compatibleCards, {
     straightSize: passives.capabilities.straightSize,
     flushSize: passives.capabilities.flushSize,
+    straightMaximumStep: passives.capabilities.straightMaximumStep,
     handLevels: state.rules.handLevels,
   });
   for (const source of beforeHand.operations) {
@@ -418,6 +450,7 @@ export function resolveHandScoreV2(
       window: 'before-hand',
       rngState,
       originalStencilCount: 0,
+      eventContext: playedEventContext,
     });
     if (!predicate.ok) return predicate;
     rngState = predicate.rngState;
@@ -442,6 +475,7 @@ export function resolveHandScoreV2(
   evaluation = evaluatePokerHand(compatibleCards, {
     straightSize: passives.capabilities.straightSize,
     flushSize: passives.capabilities.flushSize,
+    straightMaximumStep: passives.capabilities.straightMaximumStep,
     handLevels: proposedState.rules.handLevels,
   });
   const levelDecrease = beforeHandOperations.find(
@@ -457,6 +491,7 @@ export function resolveHandScoreV2(
     evaluation = evaluatePokerHand(compatibleCards, {
       straightSize: passives.capabilities.straightSize,
       flushSize: passives.capabilities.flushSize,
+      straightMaximumStep: passives.capabilities.straightMaximumStep,
       handLevels: {
         ...proposedState.rules.handLevels,
         [evaluation.type]: Math.max(
@@ -467,7 +502,7 @@ export function resolveHandScoreV2(
     });
   }
   const cardMap = new Map(cards.map((card) => [card.id, card]));
-  const scoringIds = new Set(evaluation.scoringCardIds);
+  const scoringIds = new Set(facts.scoringCardIds);
   const scoringCards = cards.filter((card) => scoringIds.has(card.id));
   let operationCount =
     beforeHand.operationCount +
@@ -482,6 +517,7 @@ export function resolveHandScoreV2(
   let finalScoreFactor = 1;
   let moneyDelta = 0;
   const destroyedCardIds = new Set<CardId>();
+  const deferredCloneSources: ResolvedEffectOperation[] = [];
   const trace: string[] = [
     `window:before-hand`,
     `hand:${evaluation.type}`,
@@ -502,6 +538,7 @@ export function resolveHandScoreV2(
     source: ResolvedEffectOperation,
     window: EffectWindow,
     cardId?: CardId,
+    eventContext: JokerEventContextV5 = playedEventContext,
   ): ScoreResolutionFailure | null => {
     if (source.operation.type !== 'joker-score') return null;
     const resolved = resolveJokerScoreValue(
@@ -513,6 +550,7 @@ export function resolveHandScoreV2(
       cardId,
       rngState,
       originalStencilCount,
+      eventContext,
     );
     if (!resolved.ok) return resolved;
     rngState = resolved.rngState;
@@ -548,6 +586,7 @@ export function resolveHandScoreV2(
       window,
       rngState,
       originalStencilCount,
+      eventContext: playedEventContext,
     };
     const predicate = evaluateJokerPredicateV3(operation.predicate, context);
     if (!predicate.ok) return predicate;
@@ -569,7 +608,7 @@ export function resolveHandScoreV2(
         value: roll,
       })),
     );
-    if (!isRunStateV4(proposedState)) {
+    if (!isAbilityStateRun(proposedState)) {
       return {
         ok: false,
         code: 'joker-state-key',
@@ -601,7 +640,7 @@ export function resolveHandScoreV2(
         message: `奇牌能力状态结果无效：${operation.key}`,
       };
     }
-    const changedState: RunStateV4 = {
+    const changedState: AbilityStateRun = {
       ...stateV4,
       modifiersV3: {
         ...stateV4.modifiersV3,
@@ -647,6 +686,7 @@ export function resolveHandScoreV2(
         cardId,
         rngState,
         originalStencilCount,
+        eventContext: playedEventContext,
       });
       if (!predicate.ok) return predicate;
       rngState = predicate.rngState;
@@ -689,6 +729,7 @@ export function resolveHandScoreV2(
       ...(cardId ? { cardId } : {}),
       rngState,
       originalStencilCount,
+      eventContext: playedEventContext,
     });
     if (!predicate.ok) return predicate;
     rngState = predicate.rngState;
@@ -719,8 +760,106 @@ export function resolveHandScoreV2(
     rngState = created.state.rngState;
     return null;
   };
+  const applyProposedStateOperation = (
+    source: ResolvedEffectOperation,
+    window: EffectWindow,
+    cardId?: CardId,
+    eventContext: JokerEventContextV5 = playedEventContext,
+  ): ScoreResolutionFailure | null => {
+    const operation = source.operation;
+    if (
+      source.copiedBy.length > 0 &&
+      'copyFacet' in operation &&
+      operation.copyFacet === 'none'
+    ) {
+      return null;
+    }
+    const applied = applyStateOperationV3({ ...proposedState, rngState }, operation, {
+      window,
+      sourceInstanceId: source.sourceInstanceId,
+      effectId: source.effectId,
+      copiedBy: source.copiedBy,
+      handFacts: facts,
+      eventContext,
+      ...(cardId ? { cardId } : {}),
+    });
+    if (!applied.ok) return applied;
+    if (applied.handled) {
+      proposedState = applied.state;
+      rngState = applied.state.rngState;
+    }
+    return null;
+  };
+  const emitStateOnlyJokerWindow = (
+    window: EffectWindow,
+    eventContext: JokerEventContextV5,
+  ): ScoreResolutionFailure | null => {
+    const resolved = resolveJokerWindow(proposedState, window);
+    if (!resolved.ok) return resolved;
+    operationCount += resolved.operationCount;
+    if (operationCount > MAX_EFFECT_OPERATIONS) {
+      return {
+        ok: false,
+        code: 'effect-budget',
+        message: '效果操作超过安全上限，已拒绝本次结算',
+      };
+    }
+    for (const source of resolved.operations) {
+      operationCount += 1;
+      if (operationCount > MAX_EFFECT_OPERATIONS) {
+        return {
+          ok: false,
+          code: 'effect-budget',
+          message: '效果操作超过安全上限，已拒绝本次结算',
+        };
+      }
+      const failure = applyProposedStateOperation(
+        source,
+        window,
+        undefined,
+        eventContext,
+      );
+      if (failure) return failure;
+    }
+    return null;
+  };
   for (const source of beforeHand.operations) {
     const operation = source.operation;
+    if (
+      operation.type === 'joker-clone-played-card' ||
+      operation.type === 'joker-destroy-event-card'
+    ) {
+      if (!(source.copiedBy.length > 0 && operation.copyFacet === 'none')) {
+        const predicate = evaluateJokerPredicateV3(operation.predicate, {
+          state: proposedState,
+          facts,
+          sourceInstanceId: source.sourceInstanceId as JokerInstanceId,
+          window: 'before-hand',
+          rngState,
+          originalStencilCount,
+          eventContext: playedEventContext,
+        });
+        if (!predicate.ok) return predicate;
+        rngState = predicate.rngState;
+        modifierRolls.push(
+          ...predicate.rolls.map(({ value }) => ({
+            sourceId: source.effectId,
+            value,
+          })),
+        );
+        if (predicate.matched) {
+          if (operation.type === 'joker-clone-played-card') {
+            deferredCloneSources.push(source);
+          } else {
+            for (const cardId of facts.playedCardIds) destroyedCardIds.add(cardId);
+          }
+        }
+      }
+    }
+    if (operation.type === 'joker-create-content') {
+      const createFailure = applyJokerCreateContent(source, 'before-hand');
+      if (createFailure) return createFailure;
+    }
     if (operation.type === 'add-chips') {
       cardChips += operation.amount;
       trace.splice(-1, 0, `before:${source.effectId}:chips+${operation.amount}`);
@@ -754,6 +893,25 @@ export function resolveHandScoreV2(
     }
   }
 
+  // Hand identity and scoring membership are already frozen in `facts`. Card
+  // enhancement mutations now run in Joker/source order before the first card
+  // pass, so later sources observe earlier transformations without changing the
+  // displayed hand that was admitted at command entry.
+  for (const card of scoringCards) {
+    if (debuffed.has(card.id)) continue;
+    for (const source of scoredCardEffects.operations) {
+      if (
+        source.operation.type !== 'joker-state-change-clamped' &&
+        source.operation.type !== 'joker-transform-enhancement'
+      ) {
+        continue;
+      }
+      operationCount += 1;
+      const failure = applyProposedStateOperation(source, 'scored-card', card.id);
+      if (failure) return failure;
+    }
+  }
+
   for (const [cardIndex, card] of scoringCards.entries()) {
     operationCount += 1;
     if (operationCount > MAX_EFFECT_OPERATIONS) {
@@ -767,8 +925,7 @@ export function resolveHandScoreV2(
       trace.push(`card:${card.id}:debuffed`);
       continue;
     }
-    const value = getCardChipValue(compatibleCard(state, card)) + card.bonusChips;
-    const catalogOperations = modifierOperations(state, card, 'scored-card');
+    const catalogOperations = modifierOperations(proposedState, card, 'scored-card');
     const catalogRetriggerSources = catalogOperations
       .filter(
         ({ operation }) =>
@@ -797,12 +954,18 @@ export function resolveHandScoreV2(
     const passes = 1 + retriggerSources.length;
     for (let pass = 0; pass < passes; pass += 1) {
       operationCount += 1;
+      const currentCard =
+        proposedState.deck.cards.find(({ id }) => id === card.id) ?? card;
+      const value =
+        getCardChipValue(compatibleCard(proposedState, currentCard)) +
+        currentCard.bonusChips;
       cardChips += value;
       trace.push(
         pass === 0
           ? `card:${card.id}:chips+${value}`
           : `retrigger:${retriggerSources[pass - 1]}:${card.id}:chips+${value}`,
       );
+      let successfulLuckyBranches = 0;
       for (const { sourceId, operation } of catalogOperations) {
         operationCount += 1;
         let applied = true;
@@ -817,6 +980,14 @@ export function resolveHandScoreV2(
           applied = draw.value < operation.numerator;
         }
         if (!applied) continue;
+        if (
+          sourceId === 'bxqp:enhancement:lucky-knot' &&
+          operation.type === 'score-rule' &&
+          operation.numerator !== null &&
+          operation.denominator !== null
+        ) {
+          successfulLuckyBranches += 1;
+        }
         if (operation.type === 'score-rule' && operation.key === 'add-chips') {
           const stoneIdentity = catalogOperations.some(
             (entry) =>
@@ -847,8 +1018,34 @@ export function resolveHandScoreV2(
           if (draw.value === 0) destroyedCardIds.add(card.id);
         }
       }
+      if (successfulLuckyBranches > 0) {
+        const modifierEventContext: JokerEventContextV5 = {
+          eventFacts: {
+            kind: 'modifier-success',
+            cardId: card.id,
+            modifierId: 'bxqp:enhancement:lucky-knot',
+            successfulBranches: successfulLuckyBranches,
+            passIndex: pass,
+          },
+          eventCardIdentities: {
+            [card.id]: facts.effectiveCards[card.id]!,
+          },
+        };
+        const modifierFailure = emitStateOnlyJokerWindow(
+          'playing-card-modifier-succeeded',
+          modifierEventContext,
+        );
+        if (modifierFailure) return modifierFailure;
+      }
       for (const source of scoredCardEffects.operations) {
         const operation = source.operation;
+        if (
+          operation.type === 'joker-state-change-clamped' ||
+          operation.type === 'joker-transform-enhancement' ||
+          operation.type === 'joker-add-card-bonus'
+        ) {
+          continue;
+        }
         const sourceTrace = source.copiedBy.length
           ? `${source.copiedBy.join('>')}=>${source.sourceInstanceId}`
           : source.sourceInstanceId;
@@ -880,14 +1077,20 @@ export function resolveHandScoreV2(
         const createFailure = applyJokerCreateContent(source, 'scored-card', card.id);
         if (createFailure) return createFailure;
       }
+      for (const source of scoredCardEffects.operations) {
+        if (source.operation.type !== 'joker-add-card-bonus') continue;
+        operationCount += 1;
+        const bonusFailure = applyProposedStateOperation(source, 'scored-card', card.id);
+        if (bonusFailure) return bonusFailure;
+      }
     }
   }
 
   trace.push('window:held-card');
   for (const card of heldCards) {
     if (debuffed.has(card.id)) continue;
-    const heldOperations = modifierOperations(state, card, 'held-card');
-    const heldRetrigger = modifierOperations(state, card, 'identity').some(
+    const heldOperations = modifierOperations(proposedState, card, 'held-card');
+    const heldRetrigger = modifierOperations(proposedState, card, 'identity').some(
       ({ operation }) =>
         operation.type === 'baseline' &&
         operation.key === 'retrigger-scored-or-held-card-once',
@@ -940,35 +1143,125 @@ export function resolveHandScoreV2(
   }
 
   trace.push('window:joker-independent');
+  const independentOperationsByRoot = new Map<string, ResolvedEffectOperation[]>();
   for (const source of independentEffects.operations) {
-    const operation = source.operation;
-    const sourceTrace = source.copiedBy.length
-      ? `${source.copiedBy.join('>')}=>${source.sourceInstanceId}`
-      : source.sourceInstanceId;
-    if (operation.type === 'add-chips') {
-      cardChips += operation.amount;
-      trace.push(`joker:${sourceTrace}:${source.effectId}:chips+${operation.amount}`);
+    const rootInstanceId = source.copiedBy[0] ?? source.sourceInstanceId;
+    const collected = independentOperationsByRoot.get(rootInstanceId) ?? [];
+    collected.push(source);
+    independentOperationsByRoot.set(rootInstanceId, collected);
+  }
+  for (const [position, ownedJoker] of state.inventory.jokers.entries()) {
+    const ownedOperations = independentOperationsByRoot.get(ownedJoker.instanceId) ?? [];
+    for (const source of ownedOperations) {
+      const operation = source.operation;
+      const sourceTrace = source.copiedBy.length
+        ? `${source.copiedBy.join('>')}=>${source.sourceInstanceId}`
+        : source.sourceInstanceId;
+      if (operation.type === 'add-chips') {
+        cardChips += operation.amount;
+        trace.push(`joker:${sourceTrace}:${source.effectId}:chips+${operation.amount}`);
+      }
+      if (operation.type === 'add-multiplier') {
+        multiplier += operation.amount;
+        trace.push(`joker:${sourceTrace}:${source.effectId}:mult+${operation.amount}`);
+      }
+      if (operation.type === 'multiply-multiplier') {
+        multiplier = multiplyScore(multiplier, operation.factor);
+        trace.push(`joker:${sourceTrace}:${source.effectId}:multx${operation.factor}`);
+      }
+      if (operation.type === 'joker-state-change') operationCount += 1;
+      const stateFailure = applyJokerStateChange(source, 'joker-independent');
+      if (stateFailure) return stateFailure;
+      if (operation.type === 'joker-state-change-clamped') {
+        operationCount += 1;
+        const clampedFailure = applyProposedStateOperation(source, 'joker-independent');
+        if (clampedFailure) return clampedFailure;
+      }
+      if (operation.type === 'joker-score') operationCount += 1;
+      const dslFailure = applyJokerScore(source, 'joker-independent');
+      if (dslFailure) return dslFailure;
     }
-    if (operation.type === 'add-multiplier') {
-      multiplier += operation.amount;
-      trace.push(`joker:${sourceTrace}:${source.effectId}:mult+${operation.amount}`);
+
+    const afterRarity = resolveJokerWindow(proposedState, 'other-joker-resolved');
+    if (!afterRarity.ok) return afterRarity;
+    if (
+      !afterRarity.operations.some(
+        ({ operation }) => operation.type === 'joker-after-rarity',
+      )
+    ) {
+      continue;
     }
-    if (operation.type === 'multiply-multiplier') {
+    const definition = state.content.items.find(
+      (candidate) =>
+        candidate.kind === 'joker' && candidate.contentId === ownedJoker.contentId,
+    );
+    if (!definition || definition.kind !== 'joker') {
+      return {
+        ok: false,
+        code: 'pool-empty',
+        message: `奇牌定义缺失：${ownedJoker.contentId}`,
+      };
+    }
+    const otherEventContext: JokerEventContextV5 = {
+      eventFacts: {
+        kind: 'other-joker',
+        instanceId: ownedJoker.instanceId,
+        rarity: definition.rarity,
+        debuffed: ownedJoker.debuffed,
+        position,
+      },
+      eventCardIdentities: {},
+    };
+    operationCount += afterRarity.operationCount;
+    for (const source of afterRarity.operations) {
+      const operation = source.operation;
+      if (operation.type !== 'joker-after-rarity') continue;
+      operationCount += 1;
+      const predicate = evaluateJokerPredicateV3(operation.predicate, {
+        state: proposedState,
+        facts,
+        sourceInstanceId: source.sourceInstanceId as JokerInstanceId,
+        window: 'other-joker-resolved',
+        rngState,
+        originalStencilCount,
+        eventContext: otherEventContext,
+      });
+      if (!predicate.ok) return predicate;
+      rngState = predicate.rngState;
+      modifierRolls.push(
+        ...predicate.rolls.map(({ value }) => ({
+          sourceId: source.effectId,
+          value,
+        })),
+      );
+      if (!predicate.matched) continue;
       multiplier = multiplyScore(multiplier, operation.factor);
-      trace.push(`joker:${sourceTrace}:${source.effectId}:multx${operation.factor}`);
+      trace.push(
+        `joker-after-rarity:${ownedJoker.instanceId}:${source.sourceInstanceId}:${operation.factor}`,
+      );
     }
-    if (operation.type === 'joker-state-change') operationCount += 1;
-    const stateFailure = applyJokerStateChange(source, 'joker-independent');
-    if (stateFailure) return stateFailure;
-    if (operation.type === 'joker-score') operationCount += 1;
-    const dslFailure = applyJokerScore(source, 'joker-independent');
-    if (dslFailure) return dslFailure;
   }
 
+  const appliedAfterHandState = applyResolvedRunOperationsV2(
+    { ...proposedState, rngState },
+    'after-hand',
+    afterHandEffects.operations,
+    undefined,
+    playedEventContext,
+  );
+  if (!appliedAfterHandState.ok) return appliedAfterHandState;
+  proposedState = appliedAfterHandState.state;
+  rngState = appliedAfterHandState.state.rngState;
   for (const source of afterHandEffects.operations) {
-    if (source.operation.type === 'multiply-final-score') {
-      finalScoreFactor = multiplyScore(finalScoreFactor, source.operation.factor);
-      trace.push(`after:${source.effectId}:scorex${source.operation.factor}`);
+    const operation = source.operation;
+    if (operation.type === 'multiply-final-score') {
+      finalScoreFactor = multiplyScore(finalScoreFactor, operation.factor);
+      trace.push(`after:${source.effectId}:scorex${operation.factor}`);
+    }
+    if (operation.type === 'joker-create-content') {
+      operationCount += 1;
+      const createFailure = applyJokerCreateContent(source, 'after-hand');
+      if (createFailure) return createFailure;
     }
   }
   for (const source of globalAfterHandEffects.operations) {
@@ -988,6 +1281,57 @@ export function resolveHandScoreV2(
       multiplier = multiplyScore(multiplier, source.operation.factor);
       trace.push(`global:${source.effectId}:multx${source.operation.factor}`);
     }
+  }
+
+  const commandEntryCloneCard =
+    facts.playedCardIds.length === 1
+      ? state.deck.cards.find(({ id }) => id === facts.playedCardIds[0])
+      : undefined;
+  const commandEntryCloneModifier =
+    commandEntryCloneCard && isRunStateV3(state)
+      ? state.modifiersV3.playingCards.find(
+          ({ cardId }) => cardId === commandEntryCloneCard.id,
+        )
+      : undefined;
+  for (const [cloneIndex, source] of deferredCloneSources.entries()) {
+    if (!commandEntryCloneCard || !proposedState.round) continue;
+    const cloneId = stableId<'playing-card'>(
+      `playing:joker-clone:${state.runId}:${state.checkpointId + 1}:${source.sourceInstanceId}:${source.effectId}:${cloneIndex}`,
+    );
+    const clonedCard: RunPlayingCard = {
+      ...commandEntryCloneCard,
+      id: cloneId,
+      enhancementId:
+        commandEntryCloneModifier?.enhancementId ?? commandEntryCloneCard.enhancementId,
+      sealId: commandEntryCloneModifier?.sealId ?? commandEntryCloneCard.sealId,
+      editionId: commandEntryCloneModifier?.editionId ?? commandEntryCloneCard.editionId,
+    };
+    proposedState = {
+      ...proposedState,
+      deck: { cards: [...proposedState.deck.cards, clonedCard] },
+      round: {
+        ...proposedState.round,
+        handIds: [...proposedState.round.handIds, cloneId],
+      },
+      ...(isRunStateV3(proposedState)
+        ? {
+            modifiersV3: {
+              ...proposedState.modifiersV3,
+              playingCards: [
+                ...proposedState.modifiersV3.playingCards,
+                {
+                  cardId: cloneId,
+                  enhancementId: clonedCard.enhancementId,
+                  sealId: clonedCard.sealId,
+                  editionId: clonedCard.editionId,
+                  debuffed: false,
+                },
+              ],
+            },
+          }
+        : {}),
+    };
+    trace.push(`playing-card-cloned:${commandEntryCloneCard.id}:${cloneId}`);
   }
   if (operationCount > MAX_EFFECT_OPERATIONS) {
     return {
@@ -1025,7 +1369,7 @@ export function resolveHandScoreV2(
       multiplier,
       score,
       playedCardIds: cards.map((card) => card.id),
-      scoringCardIds: evaluation.scoringCardIds.filter((cardId) => cardMap.has(cardId)),
+      scoringCardIds: facts.scoringCardIds.filter((cardId) => cardMap.has(cardId)),
       trace,
     },
     rngState,

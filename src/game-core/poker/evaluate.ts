@@ -35,6 +35,7 @@ export interface PokerHandEvaluation extends PokerHandDefinition {
 export interface PokerRuleContext {
   readonly straightSize: number;
   readonly flushSize: number;
+  readonly straightMaximumStep?: 1 | 2;
   readonly rankOverrides?: Readonly<Partial<Record<CardId, Rank>>>;
   readonly suitOverrides?: Readonly<Partial<Record<CardId, Suit>>>;
   readonly wildSuitCardIds?: readonly CardId[];
@@ -205,13 +206,20 @@ function cardKey(cards: readonly EffectiveCard[]): string {
     .join('|');
 }
 
-function straightHigh(cards: readonly EffectiveCard[]): number | null {
+function straightHigh(
+  cards: readonly EffectiveCard[],
+  maximumStep: 1 | 2 = 1,
+): number | null {
   const values = [...new Set(cards.map((card) => RANK_VALUE[card.rank]))].sort(
     (left, right) => left - right,
   );
   if (values.length !== cards.length) return null;
   if (values.length === 5 && values.join(',') === '2,3,4,5,14') return 5;
-  return values.every((value, index) => index === 0 || value === values[index - 1]! + 1)
+  return values.every(
+    (value, index) =>
+      index === 0 ||
+      (value > values[index - 1]! && value <= values[index - 1]! + maximumStep),
+  )
     ? values.at(-1)!
     : null;
 }
@@ -284,7 +292,9 @@ function detectCandidates(
 ): Candidate[] {
   const groups = rankGroups(rankCards);
   const counts = groups.map((group) => group.length);
-  const straight = bestSubset(rankCards, context.straightSize, straightHigh);
+  const straight = bestSubset(rankCards, context.straightSize, (candidate) =>
+    straightHigh(candidate, context.straightMaximumStep),
+  );
   const flush = bestSubset(rankCards, context.flushSize, (candidate) =>
     flushSuit(candidate)
       ? Math.max(...candidate.map((card) => RANK_VALUE[card.rank]))
@@ -295,7 +305,9 @@ function detectCandidates(
     rankCards,
     straightFlushSize,
     (candidate) => {
-      const straightCandidate = bestSubset(candidate, context.straightSize, straightHigh);
+      const straightCandidate = bestSubset(candidate, context.straightSize, (subset) =>
+        straightHigh(subset, context.straightMaximumStep),
+      );
       const flushCandidate = bestSubset(candidate, context.flushSize, (subset) =>
         flushSuit(subset) ? 1 : null,
       );

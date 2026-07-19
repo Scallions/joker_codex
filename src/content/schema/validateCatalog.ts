@@ -86,6 +86,9 @@ export function validateProductionCatalog(
   if (catalog.contentVersion !== 'catalog-baseline-3') {
     violations.push('内容版本错误');
   }
+  if (catalog.productionVersion !== 'joker-catalog-2') {
+    violations.push('生产目录版本错误');
+  }
 
   for (const row of catalog.rows) {
     const parsed = catalogRowSchema.safeParse(row);
@@ -104,22 +107,12 @@ export function validateProductionCatalog(
       violations.push(`未注册目录处理器：${row.id}`);
     }
     for (const operation of row.effects.flatMap((effect) => effect.operations)) {
-      if (
-        operation.type !== 'joker-score' &&
-        operation.type !== 'joker-retrigger-card' &&
-        operation.type !== 'joker-create-content' &&
-        operation.type !== 'joker-create-playing-card' &&
-        operation.type !== 'joker-destroy-source' &&
-        operation.type !== 'joker-state-change' &&
-        operation.type !== 'joker-level-current-hand' &&
-        operation.type !== 'joker-sell-value-add' &&
-        operation.type !== 'joker-round-resource'
-      ) {
-        continue;
-      }
+      if (!('predicate' in operation)) continue;
       const predicate = jokerPredicateSchema.safeParse(operation.predicate);
       const value =
-        operation.type === 'joker-score' || operation.type === 'joker-state-change'
+        operation.type === 'joker-score' ||
+        operation.type === 'joker-state-change' ||
+        operation.type === 'joker-state-change-clamped'
           ? jokerValueSchema.safeParse(operation.value)
           : { success: true as const };
       if (
@@ -179,14 +172,25 @@ export function validateProductionCatalog(
       violations.push(`${family} 非奇牌账本数量漂移`);
     }
   }
-  if (jokerRows.filter((row) => row.rarity === 'common').length !== 36) {
-    violations.push('常见奇牌数量应为 36');
+  if (jokerRows.filter((row) => row.rarity === 'common').length !== 55) {
+    violations.push('常见奇牌数量应为 55');
   }
-  if (jokerRows.filter((row) => row.rarity === 'uncommon').length !== 14) {
-    violations.push('少见奇牌数量应为 14');
+  if (jokerRows.filter((row) => row.rarity === 'uncommon').length !== 39) {
+    violations.push('少见奇牌数量应为 39');
   }
-  if (jokerRows.some((row) => row.rarity === 'rare' || row.rarity === 'legendary')) {
-    violations.push('001-050 不应包含稀有或传奇奇牌');
+  if (jokerRows.filter((row) => row.rarity === 'rare').length !== 6) {
+    violations.push('稀有奇牌数量应为 6');
+  }
+  if (jokerRows.some((row) => row.rarity === 'legendary')) {
+    violations.push('001-100 不应包含传奇奇牌');
+  }
+  const secondBatch = jokerRows.filter((row) => row.ordinal >= 51);
+  if (
+    secondBatch.filter((row) => row.rarity === 'common').length !== 19 ||
+    secondBatch.filter((row) => row.rarity === 'uncommon').length !== 25 ||
+    secondBatch.filter((row) => row.rarity === 'rare').length !== 6
+  ) {
+    violations.push('051-100 稀有度应为 19/25/6');
   }
 
   pushDuplicates(
@@ -364,7 +368,7 @@ export function validateProductionCatalog(
     dependencyIds.length !== RESERVED_JOKER_IDS.length ||
     [...dependencyIds].sort().join('|') !== [...RESERVED_JOKER_IDS].sort().join('|')
   ) {
-    violations.push('未完整保留 150 个未来奇牌 ID');
+    violations.push('未完整保留 150 个奇牌依赖 ID');
   }
   const dependencyById = new Map(
     catalog.dependencies.map((dependency) => [dependency.id, dependency]),

@@ -96,6 +96,12 @@ export function definitionIsEligibleV3(
     );
   }
   if (row.availability.kind === 'prerequisite') {
+    if (row.availability.value.startsWith('bxqp:history:')) {
+      return state.history.effectObservations.some(
+        (observation) =>
+          observation.key === row.availability.value && observation.value === true,
+      );
+    }
     return state.inventory.voucherIds.includes(row.availability.value);
   }
   if (row.availability.kind === 'challenge-only') {

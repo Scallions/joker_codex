@@ -76,7 +76,11 @@ describe('奇牌共享手牌事实', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.facts.rules).toEqual({ straightSize: 4, flushSize: 4 });
+    expect(result.facts.rules).toEqual({
+      straightSize: 4,
+      flushSize: 4,
+      straightMaximumStep: 1,
+    });
     expect(result.facts.contains).toMatchObject({ straight: true, flush: true });
     expect(result.facts.displayedHand).toBe('straight-flush');
     expect(new Set(result.facts.scoringCardIds)).toEqual(

@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
 export const CATALOG_CONTENT_VERSION = 'catalog-baseline-3' as const;
+export const PRODUCTION_CATALOG_VERSION = 'joker-catalog-2' as const;
+export type CatalogContentVersion =
+  typeof CATALOG_CONTENT_VERSION | 'joker-catalog-1' | typeof PRODUCTION_CATALOG_VERSION;
 
 export const NON_JOKER_CATALOG_FAMILIES = [
   'deck',
@@ -41,15 +44,15 @@ export const EXPECTED_NON_JOKER_CATALOG_COUNTS: Readonly<
   edition: 5,
 };
 
-export const EXPECTED_JOKER_CATALOG_COUNT = 50;
+export const EXPECTED_JOKER_CATALOG_COUNT = 100;
 export const EXPECTED_CATALOG_COUNTS: Readonly<Record<CatalogFamily, number>> = {
   ...EXPECTED_NON_JOKER_CATALOG_COUNTS,
   joker: EXPECTED_JOKER_CATALOG_COUNT,
 };
 
 export const EXPECTED_NON_JOKER_CATALOG_TOTAL = 230;
-export const EXPECTED_JOKER_CATALOG_TOTAL = 50;
-export const EXPECTED_CATALOG_TOTAL = 280;
+export const EXPECTED_JOKER_CATALOG_TOTAL = 100;
+export const EXPECTED_CATALOG_TOTAL = 330;
 
 export type AvailabilityRule =
   | { readonly kind: 'always'; readonly value: null }
@@ -82,6 +85,11 @@ export type CatalogTrigger =
   | 'shop-rerolled'
   | 'item-acquired'
   | 'pack-opened'
+  | 'pack-skipped'
+  | 'item-sold'
+  | 'playing-card-added'
+  | 'playing-card-modifier-succeeded'
+  | 'other-joker-resolved'
   | 'ante-ended'
   | 'consumable-used'
   | 'passive';
@@ -131,8 +139,37 @@ export type JokerPredicate =
       readonly kind: 'all' | 'any';
       readonly predicates: readonly JokerPredicate[];
     }
+  | { readonly kind: 'not'; readonly predicate: JokerPredicate }
   | { readonly kind: 'hand-contains'; readonly fact: JokerHandFact }
   | { readonly kind: 'played-card-count-at-most'; readonly count: number }
+  | { readonly kind: 'played-card-count-exactly'; readonly count: number }
+  | { readonly kind: 'first-hand-of-round' }
+  | { readonly kind: 'first-discard-of-round' }
+  | {
+      readonly kind: 'displayed-hand';
+      readonly source: 'fixed' | 'source-target';
+      readonly hand?: string | undefined;
+    }
+  | { readonly kind: 'played-effective-rank-in'; readonly ranks: readonly JokerRank[] }
+  | { readonly kind: 'hand-played-earlier-this-round' }
+  | { readonly kind: 'event-family'; readonly family: string }
+  | {
+      readonly kind: 'event-card-count-at-least';
+      readonly selector: 'all' | 'face' | 'target-rank';
+      readonly count: number;
+    }
+  | {
+      readonly kind: 'event-card-count-exactly';
+      readonly selector: 'all' | 'face' | 'target-rank';
+      readonly count: number;
+    }
+  | { readonly kind: 'money-at-most'; readonly amount: number }
+  | { readonly kind: 'blind-position-in'; readonly positions: readonly string[] }
+  | { readonly kind: 'scored-card-target-suit' }
+  | { readonly kind: 'scored-card-enhanced' }
+  | { readonly kind: 'first-scoring-face' }
+  | { readonly kind: 'displayed-hand-is-global-maximum' }
+  | { readonly kind: 'other-joker-rarity'; readonly rarity: JokerRarity }
   | { readonly kind: 'scored-card-suit'; readonly suit: JokerSuit }
   | { readonly kind: 'scored-card-rank-in'; readonly ranks: readonly JokerRank[] }
   | { readonly kind: 'scored-card-face' }
@@ -176,6 +213,34 @@ export type JokerValue =
       readonly base: number;
     }
   | { readonly kind: 'owned-joker-count'; readonly scale: number }
+  | { readonly kind: 'draw-pile-count'; readonly scale: number }
+  | {
+      readonly kind: 'event-card-count';
+      readonly selector: 'all' | 'face' | 'target-rank';
+      readonly scale: number;
+    }
+  | {
+      readonly kind: 'full-deck-rank-count';
+      readonly rank: JokerRank;
+      readonly identity: 'printed' | 'effective';
+      readonly scale: number;
+    }
+  | {
+      readonly kind: 'initial-deck-size-delta';
+      readonly scale: number;
+      readonly floor: number;
+    }
+  | {
+      readonly kind: 'history-event-count';
+      readonly event: 'tarot-used';
+      readonly scale: number;
+    }
+  | { readonly kind: 'money'; readonly scale: number; readonly floor: number }
+  | {
+      readonly kind: 'source-state-ratio';
+      readonly key: string;
+      readonly divisor: number;
+    }
   | { readonly kind: 'matching-hand-history'; readonly includeCurrent: boolean }
   | { readonly kind: 'selected-held-rank'; readonly scale: number }
   | { readonly kind: 'source-state'; readonly key: string }
@@ -269,6 +334,98 @@ export type CatalogOperation =
       readonly value: number;
       readonly predicate: JokerPredicate;
       readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-clone-played-card';
+      readonly predicate: JokerPredicate;
+      readonly snapshot: 'command-entry';
+      readonly destination: 'hand';
+      readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-add-card-bonus';
+      readonly amount: number;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-transform-enhancement';
+      readonly enhancementId: string | null;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: JokerCopyFacet;
+    }
+  | {
+      readonly type: 'joker-destroy-event-card';
+      readonly target: 'played-singleton' | 'discarded-singleton';
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-random-destroy-other';
+      readonly excludePermanent: boolean;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-state-change-clamped';
+      readonly key: string;
+      readonly mode: 'set' | 'add';
+      readonly value: JokerValue;
+      readonly minimum: number | null;
+      readonly maximum: number | null;
+      readonly destroyAtOrBelow: number | null;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-set-target';
+      readonly scope: 'source' | 'shared';
+      readonly target: 'hand' | 'rank' | 'suit';
+      readonly policy: 'eligible-hand' | 'weighted-full-deck-rank' | 'nonrepeating-suit';
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-inventory-sell-value-add';
+      readonly family: 'joker' | 'consumable' | 'both';
+      readonly amount: number;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-create-fixed-tag';
+      readonly tagContentId: string;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-disable-current-boss';
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-passive-capability';
+      readonly capability:
+        | 'all-played-cards-score'
+        | 'straight-maximum-step'
+        | 'hand-size-delta'
+        | 'discards-per-round-delta'
+        | 'extra-interest';
+      readonly value: JokerValue;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-after-rarity';
+      readonly rarity: JokerRarity;
+      readonly factor: number;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-record-observation';
+      readonly key: string;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
     }
   | {
       readonly type: 'rule-patch';
@@ -470,7 +627,7 @@ export interface CatalogRowBase {
   readonly descriptionKey: string;
   readonly assetId: string;
   readonly ownershipId: string;
-  readonly introducedIn: typeof CATALOG_CONTENT_VERSION;
+  readonly introducedIn: CatalogContentVersion;
   readonly availability: AvailabilityRule;
   readonly unlockObjectiveId: string | null;
   readonly discovery: DiscoveryRule;
@@ -493,7 +650,12 @@ export type JokerEnsemble =
   | 'mask-illusion'
   | 'backstage-machinery'
   | 'music-acrobatics'
-  | 'midnight-spirits';
+  | 'midnight-spirits'
+  | 'creation-secret'
+  | 'disordered-machine'
+  | 'cloud-traveler'
+  | 'night-market-ledger'
+  | 'strange-beast-finale';
 export type JokerCopyPolicy = 'output' | 'trigger' | 'none';
 export type JokerAbilityStateValue = string | number | boolean;
 
@@ -568,6 +730,7 @@ export interface ContractCoverageRecord {
 
 export interface ProductionCatalog {
   readonly contentVersion: typeof CATALOG_CONTENT_VERSION;
+  readonly productionVersion: typeof PRODUCTION_CATALOG_VERSION;
   readonly rows: readonly CatalogRow[];
   readonly boosterProfiles: readonly BoosterProfile[];
   readonly localization: Readonly<Record<string, string>>;
@@ -613,6 +776,12 @@ export const jokerPredicateSchema: z.ZodType<JokerPredicate> = z.lazy(() =>
       .strict(),
     z
       .object({
+        kind: z.literal('not'),
+        predicate: jokerPredicateSchema,
+      })
+      .strict(),
+    z
+      .object({
         kind: z.literal('hand-contains'),
         fact: z.enum(['pair', 'three-of-a-kind', 'two-pair', 'straight', 'flush']),
       })
@@ -621,6 +790,65 @@ export const jokerPredicateSchema: z.ZodType<JokerPredicate> = z.lazy(() =>
       .object({
         kind: z.literal('played-card-count-at-most'),
         count: safeNonnegative,
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('played-card-count-exactly'),
+        count: safeNonnegative,
+      })
+      .strict(),
+    z.object({ kind: z.literal('first-hand-of-round') }).strict(),
+    z.object({ kind: z.literal('first-discard-of-round') }).strict(),
+    z
+      .object({
+        kind: z.literal('displayed-hand'),
+        source: z.enum(['fixed', 'source-target']),
+        hand: nonemptyId.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('played-effective-rank-in'),
+        ranks: z.array(jokerRankSchema).min(1).max(13),
+      })
+      .strict(),
+    z.object({ kind: z.literal('hand-played-earlier-this-round') }).strict(),
+    z.object({ kind: z.literal('event-family'), family: nonemptyId }).strict(),
+    z
+      .object({
+        kind: z.literal('event-card-count-at-least'),
+        selector: z.enum(['all', 'face', 'target-rank']),
+        count: safeNonnegative,
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('event-card-count-exactly'),
+        selector: z.enum(['all', 'face', 'target-rank']),
+        count: safeNonnegative,
+      })
+      .strict(),
+    z
+      .object({ kind: z.literal('money-at-most'), amount: z.number().int().safe() })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('blind-position-in'),
+        positions: z
+          .array(z.enum(['small', 'big', 'boss']))
+          .min(1)
+          .max(3),
+      })
+      .strict(),
+    z.object({ kind: z.literal('scored-card-target-suit') }).strict(),
+    z.object({ kind: z.literal('scored-card-enhanced') }).strict(),
+    z.object({ kind: z.literal('first-scoring-face') }).strict(),
+    z.object({ kind: z.literal('displayed-hand-is-global-maximum') }).strict(),
+    z
+      .object({
+        kind: z.literal('other-joker-rarity'),
+        rarity: z.enum(['common', 'uncommon', 'rare', 'legendary']),
       })
       .strict(),
     z.object({ kind: z.literal('scored-card-suit'), suit: jokerSuitSchema }).strict(),
@@ -685,9 +913,11 @@ export function validateJokerPredicateDepth(
 ): boolean {
   const visit = (node: JokerPredicate, depth: number): boolean =>
     depth <= maximumDepth &&
-    (node.kind !== 'all' && node.kind !== 'any'
-      ? true
-      : node.predicates.every((child) => visit(child, depth + 1)));
+    (node.kind === 'all' || node.kind === 'any'
+      ? node.predicates.every((child) => visit(child, depth + 1))
+      : node.kind === 'not'
+        ? visit(node.predicate, depth + 1)
+        : true);
   return visit(predicate, 0);
 }
 
@@ -706,6 +936,50 @@ export const jokerValueSchema: z.ZodType<JokerValue> = z.discriminatedUnion('kin
     })
     .strict(),
   z.object({ kind: z.literal('owned-joker-count'), scale: z.number().finite() }).strict(),
+  z.object({ kind: z.literal('draw-pile-count'), scale: z.number().finite() }).strict(),
+  z
+    .object({
+      kind: z.literal('event-card-count'),
+      selector: z.enum(['all', 'face', 'target-rank']),
+      scale: z.number().finite(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('full-deck-rank-count'),
+      rank: jokerRankSchema,
+      identity: z.enum(['printed', 'effective']),
+      scale: z.number().finite(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('initial-deck-size-delta'),
+      scale: z.number().finite(),
+      floor: z.number().finite(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('history-event-count'),
+      event: z.literal('tarot-used'),
+      scale: z.number().finite(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('money'),
+      scale: z.number().finite(),
+      floor: z.number().finite(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('source-state-ratio'),
+      key: nonemptyId,
+      divisor: z.number().finite().positive(),
+    })
+    .strict(),
   z
     .object({ kind: z.literal('matching-hand-history'), includeCurrent: z.boolean() })
     .strict(),
@@ -760,6 +1034,11 @@ const catalogEffectSchema = z
       'shop-rerolled',
       'item-acquired',
       'pack-opened',
+      'pack-skipped',
+      'item-sold',
+      'playing-card-added',
+      'playing-card-modifier-succeeded',
+      'other-joker-resolved',
       'ante-ended',
       'consumable-used',
       'passive',
@@ -777,7 +1056,11 @@ const catalogRowBaseShape = {
   descriptionKey: nonemptyId,
   assetId: nonemptyId,
   ownershipId: nonemptyId,
-  introducedIn: z.literal(CATALOG_CONTENT_VERSION),
+  introducedIn: z.enum([
+    CATALOG_CONTENT_VERSION,
+    'joker-catalog-1',
+    PRODUCTION_CATALOG_VERSION,
+  ]),
   availability: availabilityRuleSchema,
   unlockObjectiveId: nonemptyId.nullable(),
   discovery: discoveryRuleSchema,
@@ -809,6 +1092,11 @@ const jokerCatalogRowSchema = z
       'backstage-machinery',
       'music-acrobatics',
       'midnight-spirits',
+      'creation-secret',
+      'disordered-machine',
+      'cloud-traveler',
+      'night-market-ledger',
+      'strange-beast-finale',
     ]),
     copyPolicy: z.enum(['output', 'trigger', 'none']),
     stickerEligibility: z

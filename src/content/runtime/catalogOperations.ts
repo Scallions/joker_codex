@@ -141,6 +141,32 @@ function materializedValue(
       return operation.amount;
     case 'joker-round-resource':
       return operation.value;
+    case 'joker-clone-played-card':
+      return operation.snapshot;
+    case 'joker-add-card-bonus':
+      return operation.amount;
+    case 'joker-transform-enhancement':
+      return operation.enhancementId;
+    case 'joker-destroy-event-card':
+      return operation.target;
+    case 'joker-random-destroy-other':
+      return operation.excludePermanent;
+    case 'joker-state-change-clamped':
+      return operation.key;
+    case 'joker-set-target':
+      return operation.policy;
+    case 'joker-inventory-sell-value-add':
+      return operation.amount;
+    case 'joker-create-fixed-tag':
+      return operation.tagContentId;
+    case 'joker-disable-current-boss':
+      return true;
+    case 'joker-passive-capability':
+      return operation.capability;
+    case 'joker-after-rarity':
+      return operation.factor;
+    case 'joker-record-observation':
+      return operation.key;
     case 'rule-patch':
       return operation.value;
     case 'deck-recipe':

@@ -163,6 +163,98 @@ export type EffectOperation =
       readonly copyFacet: 'trigger';
     }
   | {
+      readonly type: 'joker-clone-played-card';
+      readonly predicate: JokerPredicate;
+      readonly snapshot: 'command-entry';
+      readonly destination: 'hand';
+      readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-add-card-bonus';
+      readonly amount: number;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-transform-enhancement';
+      readonly enhancementId: string | null;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: JokerCopyFacet;
+    }
+  | {
+      readonly type: 'joker-destroy-event-card';
+      readonly target: 'played-singleton' | 'discarded-singleton';
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-random-destroy-other';
+      readonly excludePermanent: boolean;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-state-change-clamped';
+      readonly key: string;
+      readonly mode: 'set' | 'add';
+      readonly value: JokerValue;
+      readonly minimum: number | null;
+      readonly maximum: number | null;
+      readonly destroyAtOrBelow: number | null;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-set-target';
+      readonly scope: 'source' | 'shared';
+      readonly target: 'hand' | 'rank' | 'suit';
+      readonly policy: 'eligible-hand' | 'weighted-full-deck-rank' | 'nonrepeating-suit';
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-inventory-sell-value-add';
+      readonly family: 'joker' | 'consumable' | 'both';
+      readonly amount: number;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-create-fixed-tag';
+      readonly tagContentId: string;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-disable-current-boss';
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-passive-capability';
+      readonly capability:
+        | 'all-played-cards-score'
+        | 'straight-maximum-step'
+        | 'hand-size-delta'
+        | 'discards-per-round-delta'
+        | 'extra-interest';
+      readonly value: JokerValue;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-after-rarity';
+      readonly rarity: 'common' | 'uncommon' | 'rare' | 'legendary';
+      readonly factor: number;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-record-observation';
+      readonly key: string;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
       readonly type: 'patch-rule';
       readonly key: string;
       readonly mode: 'set' | 'add' | 'multiply';
@@ -527,6 +619,241 @@ const CATALOG_EFFECT_HANDLERS = {
       validateJokerPredicateDepth(predicate) &&
       copyFacet === 'trigger'
       ? [{ type: 'joker-round-resource', resource, mode, value, predicate, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-clone-played-card': (effect) => {
+    const snapshot = stringParameter(effect, 'snapshot');
+    const destination = stringParameter(effect, 'destination');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      snapshot === 'command-entry' &&
+      destination === 'hand' &&
+      copyFacet === 'trigger'
+      ? [{ type: 'joker-clone-played-card', predicate, snapshot, destination, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-add-card-bonus': (effect) => {
+    const amount = numberParameter(effect, 'amount', true);
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return amount !== null &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'trigger'
+      ? [{ type: 'joker-add-card-bonus', amount, predicate, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-transform-enhancement': (effect) => {
+    const enhancementId = effect.parameters.enhancementId;
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return (typeof enhancementId === 'string' || enhancementId === null) &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      (copyFacet === 'output' || copyFacet === 'trigger' || copyFacet === 'none')
+      ? [
+          {
+            type: 'joker-transform-enhancement',
+            enhancementId,
+            predicate,
+            copyFacet,
+          },
+        ]
+      : [];
+  },
+  'bxqp:handler:joker-destroy-event-card': (effect) => {
+    const target = stringParameter(effect, 'target');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return (target === 'played-singleton' || target === 'discarded-singleton') &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'none'
+      ? [{ type: 'joker-destroy-event-card', target, predicate, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-random-destroy-other': (effect) => {
+    const excludePermanent = booleanParameter(effect, 'excludePermanent');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return excludePermanent !== null &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'none'
+      ? [
+          {
+            type: 'joker-random-destroy-other',
+            excludePermanent,
+            predicate,
+            copyFacet,
+          },
+        ]
+      : [];
+  },
+  'bxqp:handler:joker-state-change-clamped': (effect) => {
+    const key = stringParameter(effect, 'key');
+    const mode = stringParameter(effect, 'mode');
+    const minimum = effect.parameters.minimum;
+    const maximum = effect.parameters.maximum;
+    const destroyAtOrBelow = effect.parameters.destroyAtOrBelow;
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    const value = jsonParameter(effect, 'value', (candidate) =>
+      jokerValueSchema.safeParse(candidate),
+    );
+    const nullableNumber = (candidate: unknown): candidate is number | null =>
+      candidate === null ||
+      (typeof candidate === 'number' && Number.isSafeInteger(candidate));
+    return key !== null &&
+      (mode === 'set' || mode === 'add') &&
+      nullableNumber(minimum) &&
+      nullableNumber(maximum) &&
+      nullableNumber(destroyAtOrBelow) &&
+      predicate !== null &&
+      value !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'none'
+      ? [
+          {
+            type: 'joker-state-change-clamped',
+            key,
+            mode,
+            value,
+            minimum,
+            maximum,
+            destroyAtOrBelow,
+            predicate,
+            copyFacet,
+          },
+        ]
+      : [];
+  },
+  'bxqp:handler:joker-set-target': (effect) => {
+    const scope = stringParameter(effect, 'scope');
+    const target = stringParameter(effect, 'target');
+    const policy = stringParameter(effect, 'policy');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return (scope === 'source' || scope === 'shared') &&
+      (target === 'hand' || target === 'rank' || target === 'suit') &&
+      (policy === 'eligible-hand' ||
+        policy === 'weighted-full-deck-rank' ||
+        policy === 'nonrepeating-suit') &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'none'
+      ? [{ type: 'joker-set-target', scope, target, policy, predicate, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-inventory-sell-value-add': (effect) => {
+    const family = stringParameter(effect, 'family');
+    const amount = numberParameter(effect, 'amount', true);
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return (family === 'joker' || family === 'consumable' || family === 'both') &&
+      amount !== null &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'none'
+      ? [
+          {
+            type: 'joker-inventory-sell-value-add',
+            family,
+            amount,
+            predicate,
+            copyFacet,
+          },
+        ]
+      : [];
+  },
+  'bxqp:handler:joker-create-fixed-tag': (effect) => {
+    const tagContentId = stringParameter(effect, 'tagContentId');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return tagContentId !== null &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'trigger'
+      ? [{ type: 'joker-create-fixed-tag', tagContentId, predicate, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-disable-current-boss': (effect) => {
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'trigger'
+      ? [{ type: 'joker-disable-current-boss', predicate, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-passive-capability': (effect) => {
+    const capability = stringParameter(effect, 'capability');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const value = jsonParameter(effect, 'value', (candidate) =>
+      jokerValueSchema.safeParse(candidate),
+    );
+    return (capability === 'all-played-cards-score' ||
+      capability === 'straight-maximum-step' ||
+      capability === 'hand-size-delta' ||
+      capability === 'discards-per-round-delta' ||
+      capability === 'extra-interest') &&
+      value !== null &&
+      copyFacet === 'none'
+      ? [{ type: 'joker-passive-capability', capability, value, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-after-rarity': (effect) => {
+    const rarity = stringParameter(effect, 'rarity');
+    const factor = numberParameter(effect, 'factor');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return (rarity === 'common' ||
+      rarity === 'uncommon' ||
+      rarity === 'rare' ||
+      rarity === 'legendary') &&
+      factor !== null &&
+      factor >= 0 &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'trigger'
+      ? [{ type: 'joker-after-rarity', rarity, factor, predicate, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-record-observation': (effect) => {
+    const key = stringParameter(effect, 'key');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return key !== null &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'none'
+      ? [{ type: 'joker-record-observation', key, predicate, copyFacet }]
       : [];
   },
   'bxqp:handler:rule-patch': (effect) => {

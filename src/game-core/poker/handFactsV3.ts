@@ -28,6 +28,7 @@ export interface HandFactsV3 {
   readonly rules: {
     readonly straightSize: number;
     readonly flushSize: number;
+    readonly straightMaximumStep: 1 | 2;
   };
 }
 
@@ -59,6 +60,7 @@ export function buildHandFactsV3(
   const context = {
     straightSize: passives.capabilities.straightSize,
     flushSize: passives.capabilities.flushSize,
+    straightMaximumStep: passives.capabilities.straightMaximumStep,
     handLevels: state.rules.handLevels,
   };
   const candidates = detectPokerCandidates(pokerCards, context);
@@ -91,13 +93,16 @@ export function buildHandFactsV3(
       },
       displayedHand: evaluation.type,
       playedCardIds: playedCards.map(({ id }) => id),
-      scoringCardIds: evaluation.scoringCardIds,
+      scoringCardIds: passives.capabilities.allPlayedCardsScore
+        ? playedCards.map(({ id }) => id)
+        : evaluation.scoringCardIds,
       heldCardIds: heldCards.map(({ id }) => id),
       selectedHeldCardId,
       effectiveCards,
       rules: {
         straightSize: passives.capabilities.straightSize,
         flushSize: passives.capabilities.flushSize,
+        straightMaximumStep: passives.capabilities.straightMaximumStep,
       },
     },
   };

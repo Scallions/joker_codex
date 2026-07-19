@@ -18,13 +18,14 @@ export function validateRunStateV3(run: CatalogRunState): RunValidationResultV3 
   const base = validateRunStateV2(run);
   const violations = base.ok ? [] : [...base.violations];
 
-  if (run.schemaVersion !== 3 && run.schemaVersion !== 4) {
+  if (run.schemaVersion !== 3 && run.schemaVersion !== 4 && run.schemaVersion !== 5) {
     violations.push('目录牌局结构版本错误');
   }
   if (
     run.contentVersion !== 'run-economy-2' &&
     run.contentVersion !== 'catalog-baseline-3' &&
-    run.contentVersion !== 'joker-catalog-1'
+    run.contentVersion !== 'joker-catalog-1' &&
+    run.contentVersion !== 'joker-catalog-2'
   ) {
     violations.push('V3 内容版本不受支持');
   }
@@ -48,6 +49,12 @@ export function validateRunStateV3(run: CatalogRunState): RunValidationResultV3 
     run.productionContentV3.rows.length !== 280
   ) {
     violations.push('奇牌生产牌局必须物化 280 项目录快照');
+  }
+  if (
+    run.contentVersion === 'joker-catalog-2' &&
+    run.productionContentV3.rows.length !== 330
+  ) {
+    violations.push('V5 奇牌生产牌局必须物化 330 项目录快照');
   }
   if (
     run.contentVersion === 'run-economy-2' &&

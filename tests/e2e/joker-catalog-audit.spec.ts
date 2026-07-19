@@ -6,9 +6,14 @@ const ENSEMBLE_LABELS = [
   '幕后机关',
   '乐舞杂技',
   '夜场精怪',
+  '造化秘戏',
+  '失序机关',
+  '云路贵客',
+  '夜市账房',
+  '异兽散场',
 ] as const;
 
-test('50 张奇牌均由本地审定素材解码，并为五个班目留下画面证据', async ({
+test('100 张奇牌均由本地审定素材解码，并为十个班目留下画面证据', async ({
   page,
 }, testInfo) => {
   const remoteRequests: string[] = [];
@@ -45,8 +50,8 @@ test('50 张奇牌均由本地审定素材解码，并为五个班目留下画�
     await next.click();
   }
 
-  expect(contentIds.size).toBe(50);
-  expect(focalKeys.size).toBe(50);
+  expect(contentIds.size).toBe(100);
+  expect(focalKeys.size).toBe(100);
   expect(remoteRequests).toEqual([]);
 
   for (const label of ENSEMBLE_LABELS) {

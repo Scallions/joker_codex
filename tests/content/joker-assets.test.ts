@@ -2,10 +2,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
+import type { JokerCatalogRow } from '../../src/content/schema/catalog';
 
 describe('奇牌 001-050 本地插画与来源记录', () => {
   it('逐项绑定唯一 768×1024 WebP、独立焦点和已审来源侧车', () => {
-    const rows = PRODUCTION_CATALOG.rows.filter((row) => row.family === 'joker');
+    const rows = PRODUCTION_CATALOG.rows.filter(
+      (row): row is JokerCatalogRow => row.family === 'joker' && row.ordinal <= 50,
+    );
     const assets = new Map(
       PRODUCTION_CATALOG.assets.map((asset) => [asset.contentId, asset]),
     );

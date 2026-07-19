@@ -3,15 +3,18 @@ import { drawJokerDefinitionV3 } from '../economy/jokerRarityV3';
 import { saleValue } from '../economy/pricing';
 import { stableId, type CardId, type JokerInstanceId } from '../model/ids';
 import {
+  isAbilityStateRun,
   isRunStateV3,
-  isRunStateV4,
   materializeJokerStickersV3,
   synchronizeRunStateV3,
+  type AbilityStateRun,
   type CatalogRunState as RunStateV3,
 } from '../model/runV3';
+import { isRunStateV5, type RunStateV5 } from '../model/runV5';
 import { RANKS, SUITS } from '../model/cards';
 import type {
   EffectParameterValue,
+  EffectReference,
   EffectWindow,
   ItemDefinitionV2,
   OwnedConsumableV2,
@@ -21,15 +24,18 @@ import type {
 } from '../model/runV2';
 import { POKER_HAND_TYPES, type PokerHandType } from '../poker/evaluate';
 import type { HandFactsV3 } from '../poker/handFactsV3';
+import { projectEffectivePlayingCardV3 } from '../poker/effectiveCardV3';
+import type { JokerEventContextV5 } from '../rules/jokerEventFactsV5';
 import { nextInteger, type RandomState } from '../rng/random';
 import { pickWeightedStable } from '../rng/weighted';
 import { eligibleBosses, materializeBlind } from '../rules/ante';
+import { getBlindTargetForRun } from '../rules/runtimeV3';
 import {
   evaluateJokerPredicateV3,
   evaluateJokerValueV3,
   type JokerDslFailureCode,
 } from '../rules/jokerEffectDslV3';
-import type { EffectOperation } from './registry';
+import { resolveEffectOperations, type EffectOperation } from './registry';
 import { recordFirstAcquisitionDiscoveryV3 } from '../rules/discoveryV3';
 
 export interface StateOperationContextV3 {
@@ -37,6 +43,10 @@ export interface StateOperationContextV3 {
   readonly sourceInstanceId: string;
   readonly effectId: string;
   readonly selectedIds?: readonly string[];
+  readonly handFacts?: HandFactsV3;
+  readonly eventContext?: JokerEventContextV5;
+  readonly cardId?: CardId;
+  readonly copiedBy?: readonly string[];
 }
 
 export type StateOperationFailureCodeV3 =
@@ -59,7 +69,7 @@ function destroyRightJokerAndGrow(
   operation: Extract<EffectOperation, { readonly type: 'joker-destroy-right-grow' }>,
   context: StateOperationContextV3,
 ): RunStateV2 {
-  if (!isRunStateV4(state)) return state;
+  if (!isAbilityStateRun(state)) return state;
   const sourceIndex = state.inventory.jokers.findIndex(
     ({ instanceId }) => instanceId === context.sourceInstanceId,
   );
@@ -172,7 +182,21 @@ function lifecycleFacts(state: RunStateV2): HandFactsV3 {
     rules: {
       straightSize: state.rules.straightSize,
       flushSize: state.rules.flushSize,
+      straightMaximumStep: 1,
     },
+  };
+}
+
+function lifecycleDslContext(state: RunStateV2, context: StateOperationContextV3) {
+  return {
+    state,
+    facts: context.handFacts ?? lifecycleFacts(state),
+    sourceInstanceId: context.sourceInstanceId as JokerInstanceId,
+    window: context.window,
+    ...(context.cardId ? { cardId: context.cardId } : {}),
+    rngState: state.rngState,
+    originalStencilCount: 0,
+    ...(context.eventContext ? { eventContext: context.eventContext } : {}),
   };
 }
 
@@ -182,14 +206,7 @@ function applyLifecycleJokerScore(
   context: StateOperationContextV3,
 ): StateOperationResultV3 {
   if (operation.metric !== 'money') return result(state, false);
-  const dslContext = {
-    state,
-    facts: lifecycleFacts(state),
-    sourceInstanceId: context.sourceInstanceId as JokerInstanceId,
-    window: context.window,
-    rngState: state.rngState,
-    originalStencilCount: 0,
-  };
+  const dslContext = lifecycleDslContext(state, context);
   const predicate = evaluateJokerPredicateV3(operation.predicate, dslContext);
   if (!predicate.ok) return predicate;
   let next = { ...state, rngState: predicate.rngState };
@@ -240,15 +257,8 @@ function applyLifecycleJokerStateChange(
   operation: Extract<EffectOperation, { readonly type: 'joker-state-change' }>,
   context: StateOperationContextV3,
 ): StateOperationResultV3 {
-  if (!isRunStateV4(state)) return result(state);
-  const dslContext = {
-    state,
-    facts: lifecycleFacts(state),
-    sourceInstanceId: context.sourceInstanceId as JokerInstanceId,
-    window: context.window,
-    rngState: state.rngState,
-    originalStencilCount: 0,
-  };
+  if (!isAbilityStateRun(state)) return result(state);
+  const dslContext = lifecycleDslContext(state, context);
   const predicate = evaluateJokerPredicateV3(operation.predicate, dslContext);
   if (!predicate.ok) return predicate;
   let next = { ...state, rngState: predicate.rngState };
@@ -333,14 +343,10 @@ function applyJokerSellValueAdd(
   operation: Extract<EffectOperation, { readonly type: 'joker-sell-value-add' }>,
   context: StateOperationContextV3,
 ): StateOperationResultV3 {
-  const predicate = evaluateJokerPredicateV3(operation.predicate, {
-    state,
-    facts: lifecycleFacts(state),
-    sourceInstanceId: context.sourceInstanceId as JokerInstanceId,
-    window: context.window,
-    rngState: state.rngState,
-    originalStencilCount: 0,
-  });
+  const predicate = evaluateJokerPredicateV3(
+    operation.predicate,
+    lifecycleDslContext(state, context),
+  );
   if (!predicate.ok) return predicate;
   let next: RunStateV2 = { ...state, rngState: predicate.rngState };
   if (predicate.rolls.length > 0) {
@@ -381,14 +387,10 @@ function applyJokerRoundResource(
   operation: Extract<EffectOperation, { readonly type: 'joker-round-resource' }>,
   context: StateOperationContextV3,
 ): StateOperationResultV3 {
-  const predicate = evaluateJokerPredicateV3(operation.predicate, {
-    state,
-    facts: lifecycleFacts(state),
-    sourceInstanceId: context.sourceInstanceId as JokerInstanceId,
-    window: context.window,
-    rngState: state.rngState,
-    originalStencilCount: 0,
-  });
+  const predicate = evaluateJokerPredicateV3(
+    operation.predicate,
+    lifecycleDslContext(state, context),
+  );
   if (!predicate.ok) return predicate;
   let next: RunStateV2 = { ...state, rngState: predicate.rngState };
   if (predicate.rolls.length > 0) {
@@ -420,26 +422,511 @@ function applyJokerRoundResource(
   });
 }
 
+function eventCardIds(context: StateOperationContextV3): readonly CardId[] {
+  const facts = context.eventContext?.eventFacts;
+  if (facts?.kind === 'played-hand') return facts.playedCardIds;
+  if (facts?.kind === 'discard') return facts.discardedCardIds;
+  if (facts?.kind === 'playing-card-added') return facts.cardIds;
+  if (facts?.kind === 'modifier-success') return [facts.cardId];
+  return context.cardId ? [context.cardId] : [];
+}
+
+function applyJokerStateChangeClamped(
+  state: RunStateV2,
+  operation: Extract<EffectOperation, { readonly type: 'joker-state-change-clamped' }>,
+  context: StateOperationContextV3,
+): StateOperationResultV3 {
+  if (!isAbilityStateRun(state)) return result(state);
+  const dslContext = lifecycleDslContext(state, context);
+  const predicate = evaluateJokerPredicateV3(operation.predicate, dslContext);
+  if (!predicate.ok) return predicate;
+  const next: AbilityStateRun = { ...state, rngState: predicate.rngState };
+  const rolls = predicate.rolls.map(({ value }) => value);
+  if (!predicate.matched) {
+    return result(
+      rolls.length > 0
+        ? materializeChoice(
+            next,
+            context,
+            'joker-lifecycle-rolls',
+            [context.sourceInstanceId],
+            rolls,
+          )
+        : next,
+    );
+  }
+  const value = evaluateJokerValueV3(operation.value, {
+    ...dslContext,
+    state: next,
+    rngState: next.rngState,
+  });
+  if (!value.ok) return value;
+  rolls.push(...value.rolls.map(({ value: roll }) => roll));
+  const source = next.modifiersV3.jokers.find(
+    ({ instanceId }) => instanceId === context.sourceInstanceId,
+  );
+  const current = source?.abilityState[operation.key];
+  if (typeof current !== 'number' || !Number.isSafeInteger(current)) {
+    return {
+      ok: false,
+      code: 'joker-state-key',
+      message: `奇牌能力状态键无效：${operation.key}`,
+    };
+  }
+  let changed = operation.mode === 'set' ? value.value : current + value.value;
+  if (operation.minimum !== null) changed = Math.max(operation.minimum, changed);
+  if (operation.maximum !== null) changed = Math.min(operation.maximum, changed);
+  if (!Number.isSafeInteger(changed)) {
+    return {
+      ok: false,
+      code: 'joker-value-range',
+      message: `奇牌能力状态结果无效：${operation.key}`,
+    };
+  }
+  const shouldDestroy =
+    operation.destroyAtOrBelow !== null && changed <= operation.destroyAtOrBelow;
+  const permanent = source?.stickerIds.includes('bxqp:sticker:permanent') === true;
+  const changedRun: AbilityStateRun = {
+    ...next,
+    rngState: value.rngState,
+    inventory:
+      shouldDestroy && !permanent
+        ? {
+            ...next.inventory,
+            jokers: next.inventory.jokers.filter(
+              ({ instanceId }) => instanceId !== context.sourceInstanceId,
+            ),
+          }
+        : next.inventory,
+    modifiersV3: {
+      ...next.modifiersV3,
+      jokers: next.modifiersV3.jokers
+        .filter(
+          ({ instanceId }) =>
+            !shouldDestroy || permanent || instanceId !== context.sourceInstanceId,
+        )
+        .map((modifier) =>
+          modifier.instanceId === context.sourceInstanceId
+            ? {
+                ...modifier,
+                abilityState: { ...modifier.abilityState, [operation.key]: changed },
+              }
+            : modifier,
+        ),
+    },
+  };
+  return result(
+    rolls.length > 0
+      ? materializeChoice(
+          changedRun,
+          context,
+          'joker-lifecycle-rolls',
+          [context.sourceInstanceId],
+          rolls,
+        )
+      : changedRun,
+  );
+}
+
+function applyJokerRandomDestroyOther(
+  state: RunStateV2,
+  operation: Extract<EffectOperation, { readonly type: 'joker-random-destroy-other' }>,
+  context: StateOperationContextV3,
+): StateOperationResultV3 {
+  if (!isAbilityStateRun(state)) return result(state);
+  const predicate = evaluateJokerPredicateV3(
+    operation.predicate,
+    lifecycleDslContext(state, context),
+  );
+  if (!predicate.ok) return predicate;
+  let next: AbilityStateRun = { ...state, rngState: predicate.rngState };
+  if (!predicate.matched) return result(next);
+  const modifierById = new Map(
+    state.modifiersV3.jokers.map((modifier) => [modifier.instanceId, modifier]),
+  );
+  const candidates = state.inventory.jokers.filter(
+    (joker) =>
+      joker.instanceId !== context.sourceInstanceId &&
+      (!operation.excludePermanent ||
+        !modifierById
+          .get(joker.instanceId)
+          ?.stickerIds.includes('bxqp:sticker:permanent')),
+  );
+  if (candidates.length === 0) return result(next);
+  const draw = nextInteger(next.rngState, candidates.length);
+  const target = candidates[draw.value]!;
+  next = {
+    ...next,
+    rngState: draw.state,
+    inventory: {
+      ...next.inventory,
+      jokers: next.inventory.jokers.filter(
+        ({ instanceId }) => instanceId !== target.instanceId,
+      ),
+    },
+    modifiersV3: {
+      ...next.modifiersV3,
+      jokers: next.modifiersV3.jokers.filter(
+        ({ instanceId }) => instanceId !== target.instanceId,
+      ),
+    },
+  };
+  return result(
+    materializeChoice(
+      next,
+      context,
+      'joker-random-destroy-other',
+      [target.instanceId],
+      [draw.value],
+    ),
+  );
+}
+
+function applyJokerSetTarget(
+  state: RunStateV2,
+  operation: Extract<EffectOperation, { readonly type: 'joker-set-target' }>,
+  context: StateOperationContextV3,
+): StateOperationResultV3 {
+  if (!isRunStateV5(state)) return result(state);
+  const predicate = evaluateJokerPredicateV3(
+    operation.predicate,
+    lifecycleDslContext(state, context),
+  );
+  if (!predicate.ok) return predicate;
+  let next: RunStateV5 = { ...state, rngState: predicate.rngState };
+  if (!predicate.matched) return result(next);
+  let values: readonly string[];
+  let deterministicFallback = false;
+  if (operation.policy === 'eligible-hand') values = POKER_HAND_TYPES;
+  else if (operation.policy === 'nonrepeating-suit') {
+    values = SUITS.filter((suit) => suit !== next.jokerRuntimeV5.sharedRoundTargetSuit);
+  } else {
+    values = next.deck.cards
+      .filter((card) => !projectEffectivePlayingCardV3(next, card).stone)
+      .map((card) => card.rank);
+    if (values.length === 0) {
+      values = ['ace'];
+      deterministicFallback = true;
+    }
+  }
+  const draw = deterministicFallback
+    ? { value: 0, state: next.rngState }
+    : nextInteger(next.rngState, values.length);
+  const selected = values[draw.value]!;
+  if (operation.scope === 'source') {
+    next = {
+      ...next,
+      rngState: draw.state,
+      modifiersV3: {
+        ...next.modifiersV3,
+        jokers: next.modifiersV3.jokers.map((modifier) =>
+          modifier.instanceId === context.sourceInstanceId
+            ? {
+                ...modifier,
+                abilityState: { ...modifier.abilityState, targetHand: selected },
+              }
+            : modifier,
+        ),
+      },
+    };
+  } else {
+    next = {
+      ...next,
+      rngState: draw.state,
+      jokerRuntimeV5: {
+        ...next.jokerRuntimeV5,
+        ...(operation.target === 'rank'
+          ? { sharedRoundTargetRank: selected as (typeof RANKS)[number] }
+          : { sharedRoundTargetSuit: selected as (typeof SUITS)[number] }),
+      },
+    };
+  }
+  return result(
+    materializeChoice(
+      next,
+      context,
+      `joker-target-${operation.target}`,
+      [selected],
+      [draw.value],
+    ),
+  );
+}
+
+export function initializeAcquiredJokerTargetsV5(
+  state: RunStateV2,
+  sourceInstanceId: JokerInstanceId,
+  effects: readonly EffectReference[],
+): StateOperationResultV3 {
+  if (!isRunStateV5(state)) return result(state);
+  let next: RunStateV2 = state;
+  for (const effect of effects) {
+    if (effect.handlerId !== 'bxqp:handler:joker-set-target') continue;
+    const effectWindow = effect.windows[0];
+    if (!effectWindow) continue;
+    const resolved = resolveEffectOperations(effect, effectWindow, next);
+    if (!resolved.ok) {
+      return {
+        ok: false,
+        code: 'pool-empty',
+        message: resolved.message,
+      };
+    }
+    for (const operation of resolved.operations) {
+      if (operation.type !== 'joker-set-target') continue;
+      if (
+        operation.scope === 'shared' &&
+        isRunStateV5(next) &&
+        ((operation.target === 'rank' &&
+          next.jokerRuntimeV5.sharedRoundTargetRank !== null) ||
+          (operation.target === 'suit' &&
+            next.jokerRuntimeV5.sharedRoundTargetSuit !== null))
+      ) {
+        continue;
+      }
+      const initialized = applyJokerSetTarget(next, operation, {
+        window: 'item-acquired',
+        sourceInstanceId,
+        effectId: `${effect.id}:acquired-target`,
+      });
+      if (!initialized.ok) return initialized;
+      next = initialized.state;
+    }
+  }
+  return result(next);
+}
+
+function applyJokerInventorySellValueAdd(
+  state: RunStateV2,
+  operation: Extract<
+    EffectOperation,
+    { readonly type: 'joker-inventory-sell-value-add' }
+  >,
+  context: StateOperationContextV3,
+): StateOperationResultV3 {
+  const predicate = evaluateJokerPredicateV3(
+    operation.predicate,
+    lifecycleDslContext(state, context),
+  );
+  if (!predicate.ok) return predicate;
+  const next = { ...state, rngState: predicate.rngState };
+  if (!predicate.matched) return result(next);
+  const increase = <T extends OwnedJokerV2 | OwnedConsumableV2>(item: T): T => ({
+    ...item,
+    sellValueOverride:
+      saleValue(
+        item.baseCost,
+        item.editionCost,
+        state.rules.priceDiscountBasisPoints,
+        item.sellValueOverride,
+      ) + operation.amount,
+  });
+  return result({
+    ...next,
+    inventory: {
+      ...next.inventory,
+      jokers:
+        operation.family === 'consumable'
+          ? next.inventory.jokers
+          : next.inventory.jokers.map(increase),
+      consumables:
+        operation.family === 'joker'
+          ? next.inventory.consumables
+          : next.inventory.consumables.map(increase),
+    },
+  });
+}
+
+function applyJokerCreateFixedTag(
+  state: RunStateV2,
+  operation: Extract<EffectOperation, { readonly type: 'joker-create-fixed-tag' }>,
+  context: StateOperationContextV3,
+): StateOperationResultV3 {
+  const event = context.eventContext?.eventFacts;
+  const triggerInstanceId = context.copiedBy?.[0] ?? context.sourceInstanceId;
+  if (event?.kind === 'item-sale' && event.instanceId !== triggerInstanceId) {
+    return result(state);
+  }
+  const predicate = evaluateJokerPredicateV3(
+    operation.predicate,
+    lifecycleDslContext(state, context),
+  );
+  if (!predicate.ok) return predicate;
+  const next = { ...state, rngState: predicate.rngState };
+  if (!predicate.matched) return result(next);
+  if (!next.content.tags.some(({ id }) => id === operation.tagContentId)) {
+    return { ok: false, code: 'pool-empty', message: '固定戏签定义不存在' };
+  }
+  return result({
+    ...next,
+    inventory: {
+      ...next.inventory,
+      tags: [
+        ...next.inventory.tags,
+        {
+          instanceId: stableId(
+            `tag:${next.runId}:${next.checkpointId + 1}:${context.effectId}:${next.inventory.tags.length}`,
+          ),
+          contentId: operation.tagContentId,
+          consumed: false,
+          deferredWindow: null,
+        },
+      ],
+    },
+  });
+}
+
+function applyJokerDisableCurrentBoss(
+  state: RunStateV2,
+  operation: Extract<EffectOperation, { readonly type: 'joker-disable-current-boss' }>,
+  context: StateOperationContextV3,
+): StateOperationResultV3 {
+  if (!isRunStateV5(state)) return result(state);
+  const event = context.eventContext?.eventFacts;
+  const triggerInstanceId = context.copiedBy?.[0] ?? context.sourceInstanceId;
+  if (event?.kind === 'item-sale' && event.instanceId !== triggerInstanceId) {
+    return result(state);
+  }
+  const predicate = evaluateJokerPredicateV3(
+    operation.predicate,
+    lifecycleDslContext(state, context),
+  );
+  if (!predicate.ok) return predicate;
+  const next: RunStateV5 = { ...state, rngState: predicate.rngState };
+  if (!predicate.matched) return result(next);
+  const activeBoss =
+    next.round &&
+    (next.round.blind.kind === 'boss' || next.round.blind.kind === 'finisher');
+  if (!activeBoss) return result(next);
+  const disabled: RunStateV5 = {
+    ...next,
+    jokerRuntimeV5: { ...next.jokerRuntimeV5, bossDisabledForRound: true },
+    inventory: {
+      ...next.inventory,
+      jokers: next.inventory.jokers.map((joker) => ({
+        ...joker,
+        debuffed: next.modifiersV3.jokers.some(
+          (modifier) =>
+            modifier.instanceId === joker.instanceId &&
+            modifier.perishableRoundsRemaining === 0,
+        ),
+      })),
+    },
+    modifiersV3: {
+      ...next.modifiersV3,
+      playingCards: next.modifiersV3.playingCards.map((modifier) => ({
+        ...modifier,
+        debuffed: false,
+      })),
+    },
+    round: {
+      ...next.round,
+      targetScore: getBlindTargetForRun(next, 2),
+      forcedSelectedCardIds: [],
+      faceDownCardIds: [],
+    },
+  };
+  return result(disabled);
+}
+
+function applyJokerCardMutation(
+  state: RunStateV2,
+  operation: Extract<
+    EffectOperation,
+    | { readonly type: 'joker-add-card-bonus' }
+    | { readonly type: 'joker-transform-enhancement' }
+    | { readonly type: 'joker-destroy-event-card' }
+  >,
+  context: StateOperationContextV3,
+): StateOperationResultV3 {
+  const predicate = evaluateJokerPredicateV3(
+    operation.predicate,
+    lifecycleDslContext(state, context),
+  );
+  if (!predicate.ok) return predicate;
+  let next: RunStateV2 = { ...state, rngState: predicate.rngState };
+  if (!predicate.matched) return result(next);
+  const ids = eventCardIds(context);
+  if (operation.type === 'joker-destroy-event-card') {
+    if (ids.length !== 1) return result(next);
+    const removed = new Set(ids);
+    next = {
+      ...next,
+      deck: { cards: next.deck.cards.filter(({ id }) => !removed.has(id)) },
+      round: next.round
+        ? {
+            ...next.round,
+            drawPileIds: next.round.drawPileIds.filter((id) => !removed.has(id)),
+            handIds: next.round.handIds.filter((id) => !removed.has(id)),
+            playedIds: next.round.playedIds.filter((id) => !removed.has(id)),
+            discardPileIds: next.round.discardPileIds.filter((id) => !removed.has(id)),
+            selectedCardIds: next.round.selectedCardIds.filter((id) => !removed.has(id)),
+          }
+        : null,
+      ...(isRunStateV3(next)
+        ? {
+            modifiersV3: {
+              ...next.modifiersV3,
+              playingCards: next.modifiersV3.playingCards.filter(
+                ({ cardId }) => !removed.has(cardId),
+              ),
+            },
+          }
+        : {}),
+    };
+    return result(next);
+  }
+  const targetId = context.cardId ?? ids[0];
+  if (!targetId) return result(next);
+  if (operation.type === 'joker-add-card-bonus') {
+    return result({
+      ...next,
+      deck: {
+        cards: next.deck.cards.map((card) =>
+          card.id === targetId
+            ? { ...card, bonusChips: card.bonusChips + operation.amount }
+            : card,
+        ),
+      },
+    });
+  }
+  return result({
+    ...next,
+    deck: {
+      cards: next.deck.cards.map((card) =>
+        card.id === targetId ? { ...card, enhancementId: operation.enhancementId } : card,
+      ),
+    },
+    ...(isRunStateV3(next)
+      ? {
+          modifiersV3: {
+            ...next.modifiersV3,
+            playingCards: next.modifiersV3.playingCards.map((modifier) =>
+              modifier.cardId === targetId
+                ? { ...modifier, enhancementId: operation.enhancementId }
+                : modifier,
+            ),
+          },
+        }
+      : {}),
+  });
+}
+
 function destroySourceJoker(
   state: RunStateV2,
   operation: Extract<EffectOperation, { readonly type: 'joker-destroy-source' }>,
   context: StateOperationContextV3,
 ): StateOperationResultV3 {
-  if (!isRunStateV4(state)) return result(state);
+  if (!isAbilityStateRun(state)) return result(state);
   const sourceModifier = state.modifiersV3.jokers.find(
     ({ instanceId }) => instanceId === context.sourceInstanceId,
   );
   if (sourceModifier?.stickerIds.includes('bxqp:sticker:permanent')) {
     return result(state);
   }
-  const predicate = evaluateJokerPredicateV3(operation.predicate, {
-    state,
-    facts: lifecycleFacts(state),
-    sourceInstanceId: context.sourceInstanceId as JokerInstanceId,
-    window: context.window,
-    rngState: state.rngState,
-    originalStencilCount: 0,
-  });
+  const predicate = evaluateJokerPredicateV3(
+    operation.predicate,
+    lifecycleDslContext(state, context),
+  );
   if (!predicate.ok) return predicate;
   let next: RunStateV2 = { ...state, rngState: predicate.rngState };
   if (predicate.rolls.length > 0) {
@@ -1125,14 +1612,13 @@ function acquireMaterialized(
       stickerPolicy === 'none'
         ? synchronizeRunStateV3(next)
         : materializeJokerStickersV3(next, instanceId, identity);
-    return result(
-      recordFirstAcquisitionDiscoveryV3(
-        stickered,
-        item.contentId,
-        instanceId,
-        discoveryCheckpointId,
-      ),
+    const discovered = recordFirstAcquisitionDiscoveryV3(
+      stickered,
+      item.contentId,
+      instanceId,
+      discoveryCheckpointId,
     );
+    return initializeAcquiredJokerTargetsV5(discovered, instanceId, item.effects);
   }
   if (item.kind === 'consumable') {
     if (next.inventory.consumables.length >= next.rules.consumableSlots) {
@@ -1270,6 +1756,59 @@ function createContentFamily(
     next = acquired.state;
   }
   return result(next);
+}
+
+function hasJokerCreateCapacity(
+  state: RunStateV2,
+  operation: Extract<EffectOperation, { readonly type: 'joker-create-content' }>,
+): boolean {
+  if (!operation.capacityRequired || operation.family === 'playing-card') return true;
+  if (operation.family === 'joker') {
+    const used = state.inventory.jokers.reduce(
+      (total, joker) => total + joker.slotContribution,
+      0,
+    );
+    return used < state.rules.jokerSlots;
+  }
+  return state.inventory.consumables.length < state.rules.consumableSlots;
+}
+
+function applyLifecycleJokerCreateContent(
+  state: RunStateV2,
+  operation: Extract<EffectOperation, { readonly type: 'joker-create-content' }>,
+  context: StateOperationContextV3,
+): StateOperationResultV3 {
+  // Capacity is a deterministic precondition. In particular, a full area must
+  // not consume a chance roll or a content-pool draw.
+  if (!hasJokerCreateCapacity(state, operation)) return result(state);
+  const predicate = evaluateJokerPredicateV3(
+    operation.predicate,
+    lifecycleDslContext(state, context),
+  );
+  if (!predicate.ok) return predicate;
+  let next: RunStateV2 = { ...state, rngState: predicate.rngState };
+  if (predicate.rolls.length > 0) {
+    next = materializeChoice(
+      next,
+      context,
+      'joker-lifecycle-rolls',
+      [context.sourceInstanceId],
+      predicate.rolls.map(({ value }) => value),
+    );
+  }
+  if (!predicate.matched) return result(next);
+  return createContentFamily(
+    next,
+    {
+      type: 'create-content-family',
+      family: operation.family,
+      count: operation.count,
+      rarity: operation.rarity,
+      capacityRequired: operation.capacityRequired,
+      stickerPolicy: operation.stickerPolicy,
+    },
+    context,
+  );
 }
 
 function createPlayingCards(
@@ -1683,6 +2222,39 @@ export function applyStateOperationV3(
       return applyJokerSellValueAdd(state, operation, context);
     case 'joker-round-resource':
       return applyJokerRoundResource(state, operation, context);
+    case 'joker-state-change-clamped':
+      return applyJokerStateChangeClamped(state, operation, context);
+    case 'joker-create-content':
+      return applyLifecycleJokerCreateContent(state, operation, context);
+    case 'joker-random-destroy-other':
+      return applyJokerRandomDestroyOther(state, operation, context);
+    case 'joker-set-target':
+      return applyJokerSetTarget(state, operation, context);
+    case 'joker-inventory-sell-value-add':
+      return applyJokerInventorySellValueAdd(state, operation, context);
+    case 'joker-create-fixed-tag':
+      return applyJokerCreateFixedTag(state, operation, context);
+    case 'joker-disable-current-boss':
+      return applyJokerDisableCurrentBoss(state, operation, context);
+    case 'joker-add-card-bonus':
+    case 'joker-transform-enhancement':
+    case 'joker-destroy-event-card':
+      return applyJokerCardMutation(state, operation, context);
+    case 'joker-record-observation': {
+      const predicate = evaluateJokerPredicateV3(
+        operation.predicate,
+        lifecycleDslContext(state, context),
+      );
+      if (!predicate.ok) return predicate;
+      const next = { ...state, rngState: predicate.rngState };
+      return result(
+        predicate.matched ? observe(next, context, operation.key, true) : next,
+      );
+    }
+    case 'joker-clone-played-card':
+    case 'joker-after-rarity':
+    case 'joker-passive-capability':
+      return result(state, false);
     case 'joker-level-current-hand':
       return result(state, false);
     case 'joker-destroy-source':

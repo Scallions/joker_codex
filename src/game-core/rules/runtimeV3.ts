@@ -1,8 +1,10 @@
 import { isRunStateV3, type CatalogRunState as RunStateV3 } from '../model/runV3';
+import { isRunStateV5 } from '../model/runV5';
 import type { CardId } from '../model/ids';
 import type { BlindKind, MaterializedBlind, RunStateV2 } from '../model/runV2';
 import { nextInteger } from '../rng/random';
 import { getBlindTarget } from '../score/score';
+import { resolveJokerPassiveCapabilities } from './jokerPassiveCapabilitiesV3';
 
 function setupRowsForRun(state: RunStateV3) {
   const ids = new Set([
@@ -174,13 +176,19 @@ export function effectiveHandSizeForRun(
   blind: MaterializedBlind | null = state.round?.blind ?? null,
 ): number {
   let handSize = state.rules.handSize;
+  const passives = resolveJokerPassiveCapabilities(state);
+  if (passives.ok) handSize += passives.capabilities.handSizeDelta;
   if (
     isRunStateV3(state) &&
     state.rulesV3.excludedRuleKeys.includes('dynamic-hand-size')
   ) {
     handSize -= Math.floor(Math.max(0, state.economy.money) / 5);
   }
-  for (const effect of blind?.effects ?? []) {
+  const blindEffectsDisabled =
+    isRunStateV5(state) &&
+    state.jokerRuntimeV5.bossDisabledForRound &&
+    (blind?.kind === 'boss' || blind?.kind === 'finisher');
+  for (const effect of blindEffectsDisabled ? [] : (blind?.effects ?? [])) {
     const key = effect.parameters.key;
     const value = effect.parameters.value;
     const mode = effect.parameters.mode;
@@ -205,10 +213,26 @@ export function effectiveHandSizeForRun(
   return Math.max(1, Math.floor(handSize));
 }
 
+export function effectiveDiscardsPerRoundForRun(state: RunStateV2): number {
+  const passives = resolveJokerPassiveCapabilities(state);
+  return Math.max(
+    0,
+    state.rules.discardsPerRound +
+      (passives.ok ? passives.capabilities.discardsPerRoundDelta : 0),
+  );
+}
+
 export function activeBlindRuleValue(
   state: RunStateV2,
   key: string,
 ): string | number | boolean | null {
+  if (
+    isRunStateV5(state) &&
+    state.jokerRuntimeV5.bossDisabledForRound &&
+    (state.round?.blind.kind === 'boss' || state.round?.blind.kind === 'finisher')
+  ) {
+    return null;
+  }
   for (const effect of state.round?.blind.effects ?? []) {
     if (effect.parameters.key !== key) continue;
     const value = effect.parameters.value;

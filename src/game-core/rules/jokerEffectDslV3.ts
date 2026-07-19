@@ -1,13 +1,16 @@
 import type { JokerPredicate, JokerValue } from '../../content/schema/catalog';
 import type { CardId, JokerInstanceId } from '../model/ids';
 import {
+  isAbilityStateRun,
   isRunStateV3,
-  isRunStateV4,
   type PlayingCardModifierStateV3,
 } from '../model/runV3';
+import { isRunStateV5 } from '../model/runV5';
 import type { EffectWindow, RunStateV2 } from '../model/runV2';
+import { projectEffectivePlayingCardV3 } from '../poker/effectiveCardV3';
 import type { HandFactsV3 } from '../poker/handFactsV3';
 import { nextInteger, type RandomState } from '../rng/random';
+import type { JokerEventContextV5 } from './jokerEventFactsV5';
 
 export interface JokerDslRollV3 {
   readonly minimum: number;
@@ -23,6 +26,7 @@ export interface JokerDslContextV3 {
   readonly cardId?: CardId;
   readonly rngState: RandomState;
   readonly originalStencilCount: number;
+  readonly eventContext?: JokerEventContextV5;
 }
 
 export type JokerDslFailureCode =
@@ -78,7 +82,7 @@ function sourceStateValue(
   context: JokerDslContextV3,
   key: string,
 ): number | JokerDslFailure {
-  if (!isRunStateV4(context.state)) {
+  if (!isAbilityStateRun(context.state)) {
     return {
       ok: false,
       code: 'joker-state-key',
@@ -98,10 +102,62 @@ function sourceStateValue(
       };
 }
 
+function sourceStateRaw(
+  context: JokerDslContextV3,
+  key: string,
+): string | number | boolean | undefined {
+  if (!isAbilityStateRun(context.state)) return undefined;
+  return context.state.modifiersV3.jokers.find(
+    ({ instanceId }) => instanceId === context.sourceInstanceId,
+  )?.abilityState[key];
+}
+
+function eventCardIds(context: JokerDslContextV3): readonly CardId[] {
+  const facts = context.eventContext?.eventFacts;
+  if (!facts) return [];
+  if (facts.kind === 'played-hand') return facts.playedCardIds;
+  if (facts.kind === 'discard') return facts.discardedCardIds;
+  if (facts.kind === 'playing-card-added') return facts.cardIds;
+  if (facts.kind === 'modifier-success') return [facts.cardId];
+  return [];
+}
+
+function eventCardCount(
+  context: JokerDslContextV3,
+  selector: 'all' | 'face' | 'target-rank',
+): number {
+  const ids = eventCardIds(context);
+  if (selector === 'all') return ids.length;
+  const identities = context.eventContext?.eventCardIdentities ?? {};
+  if (selector === 'face') {
+    return ids.filter((id) => {
+      const identity = identities[id] ?? context.facts.effectiveCards[id];
+      return identity !== undefined && !identity.debuffed && identity.face;
+    }).length;
+  }
+  const target = isRunStateV5(context.state)
+    ? context.state.jokerRuntimeV5.sharedRoundTargetRank
+    : null;
+  return ids.filter((id) => {
+    const identity = identities[id] ?? context.facts.effectiveCards[id];
+    return (
+      target !== null &&
+      identity !== undefined &&
+      !identity.debuffed &&
+      !identity.stone &&
+      identity.rank === target
+    );
+  }).length;
+}
+
 export function evaluateJokerPredicateV3(
   predicate: JokerPredicate,
   context: JokerDslContextV3,
 ): JokerPredicateResolutionV3 {
+  if (predicate.kind === 'not') {
+    const resolved = evaluateJokerPredicateV3(predicate.predicate, context);
+    return resolved.ok ? { ...resolved, matched: !resolved.matched } : resolved;
+  }
   if (predicate.kind === 'all' || predicate.kind === 'any') {
     let rngState = context.rngState;
     const rolls: JokerDslRollV3[] = [];
@@ -134,6 +190,131 @@ export function evaluateJokerPredicateV3(
       break;
     case 'played-card-count-at-most':
       matched = context.facts.playedCardIds.length <= predicate.count;
+      break;
+    case 'played-card-count-exactly':
+      matched = context.facts.playedCardIds.length === predicate.count;
+      break;
+    case 'first-hand-of-round':
+      matched =
+        context.eventContext?.eventFacts.kind === 'played-hand'
+          ? context.eventContext.eventFacts.firstHandOfRound
+          : (context.state.round?.handsPlayed ?? 0) === 0;
+      break;
+    case 'first-discard-of-round':
+      matched =
+        context.eventContext?.eventFacts.kind === 'discard'
+          ? context.eventContext.eventFacts.firstDiscardOfRound
+          : (context.state.round?.discardsUsed ?? 0) === 0;
+      break;
+    case 'displayed-hand': {
+      const expected =
+        predicate.source === 'fixed'
+          ? predicate.hand
+          : sourceStateRaw(context, 'targetHand');
+      matched = typeof expected === 'string' && context.facts.displayedHand === expected;
+      break;
+    }
+    case 'played-effective-rank-in': {
+      const ids = context.cardId ? [context.cardId] : context.facts.playedCardIds;
+      matched = ids.some((id) => {
+        const identity =
+          context.facts.effectiveCards[id] ??
+          context.eventContext?.eventCardIdentities[id];
+        return (
+          identity !== undefined &&
+          !identity.debuffed &&
+          identity.rank !== null &&
+          predicate.ranks.includes(identity.rank)
+        );
+      });
+      break;
+    }
+    case 'hand-played-earlier-this-round': {
+      const event = context.eventContext?.eventFacts;
+      const previous =
+        event?.kind === 'played-hand'
+          ? event.previousRoundHandTypes
+          : context.state.history.playedHandTypes.slice(
+              -(context.state.round?.handsPlayed ?? 0),
+            );
+      matched = previous.includes(context.facts.displayedHand);
+      break;
+    }
+    case 'event-family': {
+      const event = context.eventContext?.eventFacts;
+      matched =
+        (event?.kind === 'consumable-use' && event.family === predicate.family) ||
+        (event?.kind === 'modifier-success' &&
+          (event.modifierId === predicate.family ||
+            event.modifierId.endsWith(`:${predicate.family}`)));
+      break;
+    }
+    case 'event-card-count-at-least':
+      matched = eventCardCount(context, predicate.selector) >= predicate.count;
+      break;
+    case 'event-card-count-exactly':
+      matched = eventCardCount(context, predicate.selector) === predicate.count;
+      break;
+    case 'money-at-most':
+      matched = context.state.economy.money <= predicate.amount;
+      break;
+    case 'blind-position-in': {
+      const event = context.eventContext?.eventFacts;
+      const position =
+        event?.kind === 'blind-result'
+          ? event.position
+          : context.state.progress.blindPosition;
+      matched = predicate.positions.includes(position);
+      break;
+    }
+    case 'scored-card-target-suit': {
+      const target = isRunStateV5(context.state)
+        ? context.state.jokerRuntimeV5.sharedRoundTargetSuit
+        : null;
+      const identity = cardIdentity(context);
+      matched =
+        target !== null &&
+        identity !== undefined &&
+        !identity.debuffed &&
+        identity.suits.includes(target);
+      break;
+    }
+    case 'scored-card-enhanced': {
+      const card = context.cardId
+        ? context.state.deck.cards.find(({ id }) => id === context.cardId)
+        : undefined;
+      const mirror =
+        context.cardId && isRunStateV3(context.state)
+          ? context.state.modifiersV3.playingCards.find(
+              ({ cardId }) => cardId === context.cardId,
+            )
+          : undefined;
+      matched =
+        cardIdentity(context)?.debuffed === false &&
+        (mirror?.enhancementId ?? card?.enhancementId ?? null) !== null;
+      break;
+    }
+    case 'first-scoring-face': {
+      const first = context.facts.scoringCardIds.find((id) => {
+        const identity = context.facts.effectiveCards[id];
+        return identity !== undefined && !identity.debuffed && identity.face;
+      });
+      matched = first !== undefined && context.cardId === first;
+      break;
+    }
+    case 'displayed-hand-is-global-maximum': {
+      const counts = new Map<string, number>();
+      for (const hand of context.state.history.playedHandTypes) {
+        counts.set(hand, (counts.get(hand) ?? 0) + 1);
+      }
+      const maximum = Math.max(0, ...counts.values());
+      matched = (counts.get(context.facts.displayedHand) ?? 0) === maximum;
+      break;
+    }
+    case 'other-joker-rarity':
+      matched =
+        context.eventContext?.eventFacts.kind === 'other-joker' &&
+        context.eventContext.eventFacts.rarity === predicate.rarity;
       break;
     case 'scored-card-suit':
       matched = cardIdentity(context)?.suits.includes(predicate.suit) ?? false;
@@ -251,6 +432,56 @@ export function evaluateJokerValueV3(
     case 'owned-joker-count':
       resolved = context.state.inventory.jokers.length * value.scale;
       break;
+    case 'draw-pile-count':
+      resolved = (context.state.round?.drawPileIds.length ?? 0) * value.scale;
+      break;
+    case 'event-card-count':
+      resolved = eventCardCount(context, value.selector) * value.scale;
+      break;
+    case 'full-deck-rank-count':
+      resolved =
+        context.state.deck.cards.filter((card) => {
+          if (value.identity === 'printed') return card.rank === value.rank;
+          const identity = projectEffectivePlayingCardV3(context.state, card);
+          return !identity.stone && identity.rank === value.rank;
+        }).length * value.scale;
+      break;
+    case 'initial-deck-size-delta': {
+      const initial = isRunStateV5(context.state)
+        ? context.state.jokerRuntimeV5.initialDeckSize
+        : context.state.deck.cards.length;
+      resolved =
+        Math.max(value.floor, initial - context.state.deck.cards.length) * value.scale;
+      break;
+    }
+    case 'history-event-count':
+      resolved =
+        context.state.history.effectObservations.filter((observation) => {
+          if (value.event !== 'tarot-used') return false;
+          if (observation.key === 'tarot-used') return true;
+          if (
+            observation.key !== 'consumable-used' ||
+            typeof observation.value !== 'string'
+          ) {
+            return false;
+          }
+          return context.state.content.items.some(
+            (item) =>
+              item.kind === 'consumable' &&
+              item.family === 'tarot' &&
+              item.contentId === observation.value,
+          );
+        }).length * value.scale;
+      break;
+    case 'money':
+      resolved = Math.max(value.floor, context.state.economy.money) * value.scale;
+      break;
+    case 'source-state-ratio': {
+      const candidate = sourceStateValue(context, value.key);
+      if (typeof candidate !== 'number') return candidate;
+      resolved = candidate / value.divisor;
+      break;
+    }
     case 'matching-hand-history':
       resolved =
         context.state.history.playedHandTypes.filter(

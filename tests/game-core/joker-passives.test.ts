@@ -41,6 +41,11 @@ describe('奇牌通用被动能力', () => {
       allowedDebt: 40,
       freeRerollPerShop: true,
       allCardsFace: true,
+      allPlayedCardsScore: false,
+      straightMaximumStep: 1,
+      handSizeDelta: 0,
+      discardsPerRoundDelta: 0,
+      extraInterestSources: [],
     });
     expect(
       canAffordRunStateV3({ ...run, economy: { ...run.economy, money: 0 } }, 40),

@@ -11,6 +11,7 @@ export interface EligibilityContext {
   readonly playedHandIds: ReadonlySet<string>;
   readonly completedObjectiveIds: ReadonlySet<string>;
   readonly discoveredContentIds: ReadonlySet<string>;
+  readonly observedHistoryKeys?: ReadonlySet<string>;
   readonly availableExternalIds: ReadonlySet<string>;
   readonly bannedContentIds: ReadonlySet<string>;
   readonly excludedFamilies: ReadonlySet<CatalogRow['family']>;
@@ -146,7 +147,11 @@ export function catalogEligibility(
       }
       break;
     case 'prerequisite':
-      if (!context.ownedContentIds.has(row.availability.value)) {
+      if (
+        row.availability.value.startsWith('bxqp:history:')
+          ? !context.observedHistoryKeys?.has(row.availability.value)
+          : !context.ownedContentIds.has(row.availability.value)
+      ) {
         return { eligible: false, reason: 'prerequisite-missing' };
       }
       break;

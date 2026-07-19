@@ -2,6 +2,7 @@ import { applyRoundStartEffectsV2 } from '../effects/roundStartV2';
 import {
   acquireContentByIdV3,
   applyStateOperationV3,
+  initializeAcquiredJokerTargetsV5,
   type StateOperationFailureCodeV3,
 } from '../effects/applyStateOperationV3';
 import {
@@ -20,13 +21,15 @@ import {
   rerollShopCardsV2,
 } from '../economy/shopV2';
 import { stableId, type CardId } from '../model/ids';
+import { projectEffectivePlayingCardV3 } from '../poker/effectiveCardV3';
 import {
+  isAbilityStateRun,
   isRunStateV3,
-  isRunStateV4,
   materializeJokerStickersV3,
   synchronizeRunStateV3,
   type CatalogRunState as RunStateV3,
 } from '../model/runV3';
+import { isRunStateV5, type RunStateV5 } from '../model/runV5';
 import type {
   BlindDefinition,
   BossRerollChoiceFrame,
@@ -62,6 +65,7 @@ import {
   canSellJokerForRun,
   discardCostForRun,
   effectiveHandSizeForRun,
+  effectiveDiscardsPerRoundForRun,
   getBlindTargetForRun,
   remainingDiscardRewardForRun,
   remainingHandRewardForRun,
@@ -73,7 +77,10 @@ import {
   applyDiscardModifierLifecycleV3,
   applyRoundEndModifierLifecycleV3,
 } from '../rules/playingCardModifierLifecycleV3';
-import { canAffordRunStateV3 } from '../rules/jokerPassiveCapabilitiesV3';
+import {
+  canAffordRunStateV3,
+  resolveJokerPassiveCapabilities,
+} from '../rules/jokerPassiveCapabilitiesV3';
 import { recordFirstAcquisitionDiscoveryV3 } from '../rules/discoveryV3';
 import type {
   CancelChoiceCommandV2,
@@ -148,6 +155,23 @@ function recordConsumableUse(state: RunStateV2, contentId: string): RunStateV2 {
   };
 }
 
+function applyConsumableUsedWindow(state: RunStateV2, contentId: string) {
+  const recorded = recordConsumableUse(state, contentId);
+  const definition = recorded.content.items.find(
+    (item) => item.kind === 'consumable' && item.contentId === contentId,
+  );
+  return applyRunWindowEffectsV2(recorded, 'consumable-used', {
+    eventContext: {
+      eventFacts: {
+        kind: 'consumable-use',
+        family: definition?.kind === 'consumable' ? definition.family : 'fixture',
+        contentId,
+      },
+      eventCardIdentities: {},
+    },
+  });
+}
+
 function activeBlind(state: RunStateV2): MaterializedBlind {
   return state.progress.blindPosition === 'boss'
     ? state.progress.lineup.boss
@@ -164,11 +188,7 @@ function tagHasRule(state: RunStateV2, contentId: string, key: string): boolean 
   );
 }
 
-function openImmediateFreePack(
-  state: RunStateV2,
-  profile: string,
-  identity: string,
-): RunStateV2 {
+function openImmediateFreePack(state: RunStateV2, profile: string, identity: string) {
   const [family, size] = (() => {
     switch (profile) {
       case 'standard-mega':
@@ -185,11 +205,15 @@ function openImmediateFreePack(
         return [null, null] as const;
     }
   })();
-  if (!family || !size) return state;
+  if (!family || !size) {
+    return { ok: true as const, state, packId: null, choiceId: null };
+  }
   const definition = [...state.content.packs]
     .filter((pack) => pack.family === family && pack.size === size)
     .sort((left, right) => left.id.localeCompare(right.id))[0];
-  if (!definition) return state;
+  if (!definition) {
+    return { ok: true as const, state, packId: null, choiceId: null };
+  }
   const offerId = stableId<'pack-offer'>(
     `bxqp:free-pack:${state.runId}:${state.checkpointId + 1}:${identity}`,
   );
@@ -199,7 +223,9 @@ function openImmediateFreePack(
     offerId,
     state.rngState,
   );
-  if (materialized.items.length === 0) return state;
+  if (materialized.items.length === 0) {
+    return { ok: true as const, state, packId: null, choiceId: null };
+  }
   const choice: PackChoiceFrame = {
     id: stableId<'choice'>(`choice:pack:${offerId}`),
     kind: 'pack',
@@ -216,11 +242,31 @@ function openImmediateFreePack(
     temporaryJokerSlots: definition.temporaryJokerSlots,
     temporaryConsumableSlots: definition.temporaryConsumableSlots,
   };
-  return {
+  const openedState: RunStateV2 = {
     ...state,
     rngState: materialized.rngState,
     phase: { kind: 'choice', choiceId: choice.id },
     pendingChoice: { current: choice, suspended: [] },
+  };
+  const packEffects = applyRunWindowEffectsV2(openedState, 'pack-opened', {
+    additionalSources: [
+      {
+        instanceId: `pack:${definition.id}:${offerId}`,
+        position: 500,
+        effects: definition.effects,
+      },
+    ],
+    eventContext: {
+      eventFacts: { kind: 'pack', packId: definition.id, action: 'opened' },
+      eventCardIdentities: {},
+    },
+  });
+  if (!packEffects.ok) return packEffects;
+  return {
+    ok: true as const,
+    state: packEffects.state,
+    packId: definition.id,
+    choiceId: choice.id,
   };
 }
 
@@ -232,19 +278,30 @@ function selectBlind(state: RunStateV2, command: SelectBlindCommandV2): CommandR
     return reject('wrong-blind', '只能选择当前待演的盲注');
   }
 
-  const blind = activeBlind(state);
-  const handSize = effectiveHandSizeForRun(state, blind);
+  let readyState: RunStateV2 = state;
+  if (isRunStateV5(state)) {
+    const reset: RunStateV5 = {
+      ...state,
+      jokerRuntimeV5: {
+        ...state.jokerRuntimeV5,
+        bossDisabledForRound: false,
+      },
+    };
+    readyState = reset;
+  }
+  const blind = activeBlind(readyState);
+  const handSize = effectiveHandSizeForRun(readyState, blind);
   const shuffled = shuffle(
-    state.deck.cards.map((card) => card.id),
-    state.rngState,
+    readyState.deck.cards.map((card) => card.id),
+    readyState.rngState,
   );
   const handIds = shuffled.value.slice(0, handSize);
   const initialRound: NonNullable<RunStateV2['round']> = {
     blind,
-    targetScore: getBlindTargetForRun(state, blind.targetMultiplier),
+    targetScore: getBlindTargetForRun(readyState, blind.targetMultiplier),
     score: 0,
-    handsRemaining: state.rules.handsPerRound,
-    discardsRemaining: state.rules.discardsPerRound,
+    handsRemaining: readyState.rules.handsPerRound,
+    discardsRemaining: effectiveDiscardsPerRoundForRun(readyState),
     drawPileIds: shuffled.value.slice(handSize),
     handIds,
     playedIds: [],
@@ -259,7 +316,7 @@ function selectBlind(state: RunStateV2, command: SelectBlindCommandV2): CommandR
   };
   const selected = applyRunWindowEffectsV2(
     {
-      ...state,
+      ...readyState,
       rngState: shuffled.state,
       phase: { kind: 'round' },
       round: initialRound,
@@ -274,7 +331,7 @@ function selectBlind(state: RunStateV2, command: SelectBlindCommandV2): CommandR
   const setupDrawn = applySetupDrawRulesV3(
     selected.state,
     handIds,
-    `round-start:${state.runId}:${state.progress.ante}:${state.progress.blindPosition}:${state.checkpointId + 1}`,
+    `round-start:${readyState.runId}:${readyState.progress.ante}:${readyState.progress.blindPosition}:${readyState.checkpointId + 1}`,
   );
   const roundStart = applyRoundStartEffectsV2(
     setupDrawn,
@@ -403,12 +460,26 @@ function skipBlind(state: RunStateV2, command: SkipBlindCommandV2): CommandResul
           freePackProfile,
           acquiredTags[0]?.instanceId ?? tag.id,
         )
-      : skipped.state;
-  const next = withCheckpoint(afterPack);
+      : {
+          ok: true as const,
+          state: skipped.state,
+          packId: null,
+          choiceId: null,
+        };
+  if (!afterPack.ok) return reject(afterPack.code, afterPack.message);
+  const next = withCheckpoint(afterPack.state);
 
   return accept(
     next,
-    [{ type: 'blind-skipped', blindId: blind.definitionId, tagId: tag.id }],
+    [
+      { type: 'blind-skipped', blindId: blind.definitionId, tagId: tag.id },
+      ...(afterPack.packId
+        ? ([{ type: 'pack-opened', packId: afterPack.packId }] as const)
+        : []),
+      ...(afterPack.choiceId
+        ? ([{ type: 'choice-opened', choiceId: afterPack.choiceId }] as const)
+        : []),
+    ],
     [{ type: 'tag-received', name: tag.name }],
   );
 }
@@ -492,13 +563,22 @@ function rewardReceipt(state: RunStateV2):
   const deferredTags = modifierSettled.inventory.tags.filter(
     (tag) => !tag.consumed && tag.deferredWindow === 'round-end',
   );
+  const bossRulesDisabled =
+    isRunStateV5(modifierSettled) &&
+    modifierSettled.jokerRuntimeV5.bossDisabledForRound &&
+    (modifierSettled.round!.blind.kind === 'boss' ||
+      modifierSettled.round!.blind.kind === 'finisher');
   const resolved = resolveEffectQueue(
     [
-      {
-        instanceId: `blind:${modifierSettled.round!.blind.definitionId}`,
-        position: 0,
-        effects: modifierSettled.round!.blind.effects,
-      },
+      ...(!bossRulesDisabled
+        ? [
+            {
+              instanceId: `blind:${modifierSettled.round!.blind.definitionId}`,
+              position: 0,
+              effects: modifierSettled.round!.blind.effects,
+            },
+          ]
+        : []),
       ...deferredTags.flatMap((tag, index) => {
         const definition = modifierSettled.content.tags.find(
           (candidate) => candidate.id === tag.contentId,
@@ -610,6 +690,21 @@ function rewardReceipt(state: RunStateV2):
     Math.floor(Math.max(0, money) / settledState.rules.interestStep) *
       settledState.rules.interestRate,
   );
+  const passives = resolveJokerPassiveCapabilities(settledState);
+  if (!passives.ok) return passives;
+  for (const source of passives.capabilities.extraInterestSources) {
+    const amount = Math.min(
+      settledState.rules.interestCap,
+      Math.floor(Math.max(0, money) / settledState.rules.interestStep) * source.rate,
+    );
+    if (amount <= 0) continue;
+    effectLines.push({
+      id: `reward-line:${state.runId}:${state.checkpointId + 1}:extra-interest:${source.sourceInstanceId}`,
+      label: '月息算盘',
+      amount,
+      sourceId: source.sourceInstanceId,
+    });
+  }
   const total =
     blindReward +
     remainingHandReward +
@@ -661,7 +756,9 @@ function playSelected(
   const restriction = validateBeforeHandV2(state, played);
   if (restriction) return reject('hand-restricted', restriction);
   const resolution =
-    isRunStateV4(state) && state.contentVersion === 'joker-catalog-1'
+    isAbilityStateRun(state) &&
+    (state.contentVersion === 'joker-catalog-1' ||
+      state.contentVersion === 'joker-catalog-2')
       ? resolvePlayedHandV3(state, played)
       : resolveHandScoreV2(state, played);
   if (!resolution.ok) return reject(resolution.code, resolution.message);
@@ -756,6 +853,9 @@ function playSelected(
   );
   const afterHand = applyRunWindowEffectsV2(setupDrawn, 'after-hand', {
     blindDrawnCardIds: zones.drawnCardIds,
+    // Joker after-hand operations are part of resolveHandScoreV2's atomic
+    // proposal so they can use the command-entry hand facts exactly once.
+    includeJokers: false,
   });
   if (!afterHand.ok) return reject(afterHand.code, afterHand.message);
   const resolvedBase = afterHand.state;
@@ -831,7 +931,21 @@ function discardSelected(
     return reject('insufficient-funds', '戏票不足，无法支付弃牌费用');
   }
   const discarded = state.round.selectedCardIds;
-  const zones = drawReplacementCards(state, discarded);
+  const discardedCards = state.deck.cards.filter(({ id }) => discarded.includes(id));
+  const eventContext = {
+    eventFacts: {
+      kind: 'discard' as const,
+      discardedCardIds: discarded,
+      firstDiscardOfRound: state.round.discardsUsed === 0,
+      forced: false,
+    },
+    eventCardIdentities: Object.fromEntries(
+      discardedCards.map((card) => [card.id, projectEffectivePlayingCardV3(state, card)]),
+    ),
+  };
+  const remainingHandIds = state.round.handIds.filter(
+    (cardId) => !discarded.includes(cardId),
+  );
   const discardedState: RunStateV2 = {
     ...state,
     economy: {
@@ -840,35 +954,43 @@ function discardSelected(
     },
     round: {
       ...state.round,
-      drawPileIds: zones.drawPileIds,
-      handIds: zones.handIds,
+      handIds: remainingHandIds,
       discardsRemaining: state.round.discardsRemaining - 1,
       discardPileIds: [...state.round.discardPileIds, ...discarded],
       selectedCardIds: state.round.forcedSelectedCardIds.filter((cardId) =>
-        zones.handIds.includes(cardId),
+        remainingHandIds.includes(cardId),
       ),
       forcedSelectedCardIds: state.round.forcedSelectedCardIds.filter((cardId) =>
-        zones.handIds.includes(cardId),
+        remainingHandIds.includes(cardId),
       ),
       faceDownCardIds: state.round.faceDownCardIds.filter((cardId) =>
-        zones.handIds.includes(cardId),
+        remainingHandIds.includes(cardId),
       ),
       discardsUsed: state.round.discardsUsed + 1,
     },
   };
   const modifierDiscarded = applyDiscardModifierLifecycleV3(discardedState, discarded);
-  const setupDrawn = applySetupDrawRulesV3(
-    modifierDiscarded,
-    zones.drawnCardIds,
-    `discard:${state.runId}:${state.checkpointId + 1}:${state.round.discardsUsed + 1}`,
-  );
-  const discardedEffects = applyRunWindowEffectsV2(setupDrawn, 'discard', {
-    blindDrawnCardIds: zones.drawnCardIds,
+  const discardedEffects = applyRunWindowEffectsV2(modifierDiscarded, 'discard', {
+    eventContext,
   });
   if (!discardedEffects.ok) {
     return reject(discardedEffects.code, discardedEffects.message);
   }
-  const next = withCheckpoint(discardedEffects.state);
+  const zones = drawReplacementCards(discardedEffects.state, discarded);
+  const replenished: RunStateV2 = {
+    ...discardedEffects.state,
+    round: {
+      ...discardedEffects.state.round!,
+      drawPileIds: zones.drawPileIds,
+      handIds: zones.handIds,
+    },
+  };
+  const setupDrawn = applySetupDrawRulesV3(
+    replenished,
+    zones.drawnCardIds,
+    `discard:${state.runId}:${state.checkpointId + 1}:${state.round.discardsUsed + 1}`,
+  );
+  const next = withCheckpoint(setupDrawn);
   return accept(
     next,
     [{ type: 'cards-discarded', cardIds: discarded }],
@@ -1040,14 +1162,23 @@ function acquireItem(
       },
     };
     const stickered = materializeJokerStickersV3(acquired, instanceId, identity);
+    const discovered = recordFirstAcquisitionDiscoveryV3(
+      stickered,
+      item.contentId,
+      instanceId,
+      state.checkpointId + 1,
+    );
+    const targeted = initializeAcquiredJokerTargetsV5(
+      discovered,
+      instanceId,
+      item.effects,
+    );
+    if (!targeted.ok) {
+      return { ok: false, code: 'pool-empty', message: targeted.message };
+    }
     return {
       ok: true,
-      state: recordFirstAcquisitionDiscoveryV3(
-        stickered,
-        item.contentId,
-        instanceId,
-        state.checkpointId + 1,
-      ),
+      state: targeted.state,
     };
   }
   if (item.kind === 'consumable') {
@@ -1426,6 +1557,10 @@ function buyPack(state: RunStateV2, command: BuyPackCommandV2): CommandResultV2 
         effects: definition.effects,
       },
     ],
+    eventContext: {
+      eventFacts: { kind: 'pack', packId: definition.id, action: 'opened' },
+      eventCardIdentities: {},
+    },
   });
   if (!packEffects.ok) return reject(packEffects.code, packEffects.message);
   const next = withCheckpoint(packEffects.state);
@@ -1593,17 +1728,24 @@ function buyVoucher(state: RunStateV2, command: BuyVoucherCommandV2): CommandRes
 }
 
 function sellJoker(state: RunStateV2, command: SellJokerCommandV2): CommandResultV2 {
-  const sellToEnable =
-    state.phase.kind === 'round' &&
-    isRunStateV3(state) &&
-    hasActiveBlindRule(state, 'debuff-until-joker-sold');
-  if ((state.phase.kind !== 'shop' || !state.shop) && !sellToEnable) {
-    return reject('illegal-phase', '只能在夜市出售奇牌');
-  }
   const owned = state.inventory.jokers.find(
     (joker) => joker.instanceId === command.jokerInstanceId,
   );
   if (!owned) return reject('item-not-owned', '未持有这张奇牌');
+  const sellToEnable =
+    state.phase.kind === 'round' &&
+    isRunStateV3(state) &&
+    hasActiveBlindRule(state, 'debuff-until-joker-sold');
+  const hasRoundSaleTrigger =
+    state.phase.kind === 'round' &&
+    owned.effects.some((effect) => effect.windows.includes('item-sold'));
+  if (
+    (state.phase.kind !== 'shop' || !state.shop) &&
+    !sellToEnable &&
+    !hasRoundSaleTrigger
+  ) {
+    return reject('illegal-phase', '只能在夜市出售奇牌');
+  }
   if (!canSellJokerForRun(state, owned.instanceId)) {
     return reject('item-not-owned', '永久贴签使这张奇牌不能出售');
   }
@@ -1613,12 +1755,26 @@ function sellJoker(state: RunStateV2, command: SellJokerCommandV2): CommandResul
     state.rules.priceDiscountBasisPoints,
     owned.sellValueOverride,
   );
+  const saleEffects = applyRunWindowEffectsV2(state, 'item-sold', {
+    eventContext: {
+      eventFacts: {
+        kind: 'item-sale',
+        family: 'joker',
+        instanceId: owned.instanceId,
+      },
+      eventCardIdentities: {},
+    },
+  });
+  if (!saleEffects.ok) return reject(saleEffects.code, saleEffects.message);
   let soldState: RunStateV2 = {
-    ...state,
-    economy: { ...state.economy, money: state.economy.money + value },
+    ...saleEffects.state,
+    economy: {
+      ...saleEffects.state.economy,
+      money: saleEffects.state.economy.money + value,
+    },
     inventory: {
-      ...state.inventory,
-      jokers: state.inventory.jokers.filter(
+      ...saleEffects.state.inventory,
+      jokers: saleEffects.state.inventory.jokers.filter(
         (joker) => joker.instanceId !== owned.instanceId,
       ),
     },
@@ -1660,13 +1816,27 @@ function sellConsumable(
     state.rules.priceDiscountBasisPoints,
     owned.sellValueOverride,
   );
+  const saleEffects = applyRunWindowEffectsV2(state, 'item-sold', {
+    eventContext: {
+      eventFacts: {
+        kind: 'item-sale',
+        family: 'consumable',
+        instanceId: owned.instanceId,
+      },
+      eventCardIdentities: {},
+    },
+  });
+  if (!saleEffects.ok) return reject(saleEffects.code, saleEffects.message);
   return accept(
     withCheckpoint({
-      ...state,
-      economy: { ...state.economy, money: state.economy.money + value },
+      ...saleEffects.state,
+      economy: {
+        ...saleEffects.state.economy,
+        money: saleEffects.state.economy.money + value,
+      },
       inventory: {
-        ...state.inventory,
-        consumables: state.inventory.consumables.filter(
+        ...saleEffects.state.inventory,
+        consumables: saleEffects.state.inventory.consumables.filter(
           (item) => item.instanceId !== owned.instanceId,
         ),
       },
@@ -1945,10 +2115,11 @@ function beginConsumableChoice(
     };
     const applied = applyImmediateItemEffects(consumingState, consumable);
     if (!applied.ok) return reject(applied.code, applied.message);
-    return accept(
-      withCheckpoint(recordConsumableUse(applied.state, consumable.contentId)),
-      [{ type: 'item-consumed', contentId: consumable.contentId }],
-    );
+    const used = applyConsumableUsedWindow(applied.state, consumable.contentId);
+    if (!used.ok) return reject(used.code, used.message);
+    return accept(withCheckpoint(used.state), [
+      { type: 'item-consumed', contentId: consumable.contentId },
+    ]);
   }
   const choice = createTargetChoice(
     state,
@@ -2027,10 +2198,14 @@ function choosePackOption(
   const finished =
     updatedPack.remainingPicks === 0 ||
     updatedPack.options.every((candidate) => candidate.consumed);
-  const acquiredState =
+  const consumedWindow =
     option.item.kind === 'consumable'
-      ? recordConsumableUse(acquired.state, option.item.contentId)
-      : acquired.state;
+      ? applyConsumableUsedWindow(acquired.state, option.item.contentId)
+      : { ok: true as const, state: acquired.state };
+  if (!consumedWindow.ok) {
+    return reject(consumedWindow.code, consumedWindow.message);
+  }
+  const acquiredState = consumedWindow.state;
   const chosenState: RunStateV2 = {
     ...acquiredState,
     phase: finished
@@ -2321,7 +2496,9 @@ function confirmTargetChoice(
   const effected = applyTargetEffect(effectState, choice, resolved.effects);
   if (!effected.ok) return reject(effected.code, effected.message);
   const resumed = resumeAfterTarget(effected.state, choice, resolved.fromInventory);
-  return accept(withCheckpoint(recordConsumableUse(resumed, resolved.contentId)));
+  const used = applyConsumableUsedWindow(resumed, resolved.contentId);
+  if (!used.ok) return reject(used.code, used.message);
+  return accept(withCheckpoint(used.state));
 }
 
 function skipPack(state: RunStateV2, command: SkipPackCommandV2): CommandResultV2 {
@@ -2333,13 +2510,24 @@ function skipPack(state: RunStateV2, command: SkipPackCommandV2): CommandResultV
   ) {
     return reject('choice-mismatch', '卡包选择已经改变');
   }
+  const pack = state.pendingChoice.current;
+  const skipped = applyRunWindowEffectsV2(state, 'pack-skipped', {
+    eventContext: {
+      eventFacts: { kind: 'pack', packId: pack.packId, action: 'skipped' },
+      eventCardIdentities: {},
+    },
+  });
+  if (!skipped.ok) return reject(skipped.code, skipped.message);
   return accept(
     withCheckpoint({
-      ...state,
-      phase: { kind: state.pendingChoice.current.returnPhase },
+      ...skipped.state,
+      phase: { kind: pack.returnPhase },
       pendingChoice: null,
     }),
-    [{ type: 'choice-cancelled', choiceId: command.choiceId }],
+    [
+      { type: 'pack-skipped', packId: pack.packId },
+      { type: 'choice-cancelled', choiceId: command.choiceId },
+    ],
   );
 }
 
@@ -2421,10 +2609,7 @@ function confirmChoice(
   );
 }
 
-export function executeCommandV2(
-  state: RunStateV2,
-  command: RunCommandV2,
-): CommandResultV2 {
+function dispatchCommandV2(state: RunStateV2, command: RunCommandV2): CommandResultV2 {
   if (command.checkpointId !== state.checkpointId) {
     return reject('stale-checkpoint', '操作基于旧检查点，请重试');
   }
@@ -2479,4 +2664,34 @@ export function executeCommandV2(
     case 'cancel-choice':
       return cancelChoice(state, command);
   }
+}
+
+export function executeCommandV2(
+  state: RunStateV2,
+  command: RunCommandV2,
+): CommandResultV2 {
+  const result = dispatchCommandV2(state, command);
+  if (!result.ok) return result;
+  const previousIds = new Set(state.deck.cards.map(({ id }) => id));
+  const addedCards = result.state.deck.cards.filter(({ id }) => !previousIds.has(id));
+  if (addedCards.length === 0) return result;
+
+  let next = result.state;
+  for (const card of addedCards) {
+    const added = applyRunWindowEffectsV2(next, 'playing-card-added', {
+      eventContext: {
+        eventFacts: {
+          kind: 'playing-card-added',
+          cardIds: [card.id],
+          reason: `command:${command.type}`,
+        },
+        eventCardIdentities: {
+          [card.id]: projectEffectivePlayingCardV3(next, card),
+        },
+      },
+    });
+    if (!added.ok) return reject(added.code, added.message);
+    next = added.state;
+  }
+  return accept(next, result.domainEvents, result.presentationEvents);
 }

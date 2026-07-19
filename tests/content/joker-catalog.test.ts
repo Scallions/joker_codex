@@ -1,5 +1,6 @@
 import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
 import { createProductionRunContent } from '../../src/content/runtime/productionRunContent';
+import type { JokerCatalogRow } from '../../src/content/schema/catalog';
 
 describe('生产奇牌目录 001-050', () => {
   it('公开 J001 开场喝彩的冻结身份与基础数值', () => {
@@ -19,7 +20,9 @@ describe('生产奇牌目录 001-050', () => {
   });
 
   it('冻结 50 个连续 ID、36/14 稀有度和三段中文文本', () => {
-    const rows = PRODUCTION_CATALOG.rows.filter((row) => row.family === 'joker');
+    const rows = PRODUCTION_CATALOG.rows.filter(
+      (row): row is JokerCatalogRow => row.family === 'joker' && row.ordinal <= 50,
+    );
 
     expect(rows).toHaveLength(50);
     expect(rows.map((row) => row.id)).toEqual(
@@ -51,7 +54,9 @@ describe('生产奇牌目录 001-050', () => {
 
   it('把同一批 50 项定义编译为可购买的运行时奇牌', () => {
     const content = createProductionRunContent(PRODUCTION_CATALOG);
-    const jokers = content.items.filter((item) => item.kind === 'joker');
+    const jokers = content.items.filter(
+      (item) => item.kind === 'joker' && Number(item.contentId.slice(-3)) <= 50,
+    );
 
     expect(jokers).toHaveLength(50);
     expect(jokers[0]).toMatchObject({

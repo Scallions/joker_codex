@@ -2,7 +2,7 @@ import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 
 import { createRunEconomyFixtureRun } from '../../content/fixtures/runEconomy';
 import { PRODUCTION_CATALOG } from '../../content/productionCatalog';
-import { createProductionRunV4 } from '../../content/runtime/runSetupV4';
+import { createProductionRunV5 } from '../../content/runtime/runSetupV5';
 import type { PresentationEventV2, RunCommandV2 } from '../../game-core/commands/typesV2';
 import type { ProfileId } from '../../game-core/model/ids';
 import type { RunStateV2 } from '../../game-core/model/runV2';
@@ -207,7 +207,7 @@ export const startLocalProductionRun = createAsyncThunk<
     if (!activeProfileId) throw new Error('请先选择档案');
     const profile = getState().app.profiles.find((item) => item.id === activeProfileId);
     if (!profile) throw new Error('当前档案不存在');
-    const run = createProductionRunV4(PRODUCTION_CATALOG, { seed: argument.seed });
+    const run = createProductionRunV5(PRODUCTION_CATALOG, { seed: argument.seed });
     const updatedProfile: ProfileRecord = {
       ...profile,
       activeRunId: run.runId,

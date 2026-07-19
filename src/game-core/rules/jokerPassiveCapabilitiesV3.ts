@@ -1,5 +1,7 @@
 import { resolveEffectQueue, type EffectQueueFailureCode } from '../effects/registry';
 import type { RunStateV2 } from '../model/runV2';
+import { isAbilityStateRun } from '../model/runV3';
+import type { JokerValue } from '../../content/schema/catalog';
 
 const MAX_PASSIVE_OPERATIONS = 10_000;
 
@@ -9,6 +11,14 @@ export interface JokerPassiveCapabilitiesV3 {
   readonly allowedDebt: number;
   readonly freeRerollPerShop: boolean;
   readonly allCardsFace: boolean;
+  readonly allPlayedCardsScore: boolean;
+  readonly straightMaximumStep: 1 | 2;
+  readonly handSizeDelta: number;
+  readonly discardsPerRoundDelta: number;
+  readonly extraInterestSources: readonly {
+    readonly sourceInstanceId: string;
+    readonly rate: number;
+  }[];
 }
 
 export type JokerPassiveCapabilityResolutionV3 =
@@ -43,7 +53,40 @@ export function resolveJokerPassiveCapabilities(
   let allowedDebt = state.rules.allowedDebt;
   let freeRerollPerShop = false;
   let allCardsFace = false;
-  for (const { operation } of resolved.operations) {
+  let allPlayedCardsScore = false;
+  let straightMaximumStep: 1 | 2 = 1;
+  let handSizeDelta = 0;
+  let discardsPerRoundDelta = 0;
+  const extraInterestSources: { sourceInstanceId: string; rate: number }[] = [];
+  const resolveValue = (value: JokerValue, sourceInstanceId: string): number | null => {
+    if (value.kind === 'fixed') return value.value;
+    if (value.kind !== 'source-state' || !isAbilityStateRun(state)) return null;
+    const candidate = state.modifiersV3.jokers.find(
+      ({ instanceId }) => instanceId === sourceInstanceId,
+    )?.abilityState[value.key];
+    return typeof candidate === 'number' && Number.isSafeInteger(candidate)
+      ? candidate
+      : null;
+  };
+  for (const { operation, sourceInstanceId } of resolved.operations) {
+    if (operation.type === 'joker-passive-capability') {
+      const value = resolveValue(operation.value, sourceInstanceId);
+      if (value === null || !Number.isSafeInteger(value)) continue;
+      if (operation.capability === 'all-played-cards-score' && value > 0) {
+        allPlayedCardsScore = true;
+      }
+      if (operation.capability === 'straight-maximum-step' && value >= 2) {
+        straightMaximumStep = 2;
+      }
+      if (operation.capability === 'hand-size-delta') handSizeDelta += value;
+      if (operation.capability === 'discards-per-round-delta') {
+        discardsPerRoundDelta += value;
+      }
+      if (operation.capability === 'extra-interest' && value > 0) {
+        extraInterestSources.push({ sourceInstanceId, rate: value });
+      }
+      continue;
+    }
     if (operation.type !== 'passive-capability') continue;
     if (
       operation.capability === 'straight-flush-size' &&
@@ -70,6 +113,11 @@ export function resolveJokerPassiveCapabilities(
       allowedDebt,
       freeRerollPerShop,
       allCardsFace,
+      allPlayedCardsScore,
+      straightMaximumStep,
+      handSizeDelta,
+      discardsPerRoundDelta,
+      extraInterestSources,
     },
     operationCount: resolved.operationCount,
   };

@@ -3,10 +3,15 @@ import { buildExternalDependencies } from './dependencies/externalDependencies';
 import { buildZhCnLocalization } from './localization/zh-CN';
 import { buildAssetManifest } from './manifests/assets';
 import { buildContractManifest } from './manifests/contracts';
-import { CATALOG_CONTENT_VERSION, type ProductionCatalog } from './schema/catalog';
+import {
+  CATALOG_CONTENT_VERSION,
+  PRODUCTION_CATALOG_VERSION,
+  type ProductionCatalog,
+} from './schema/catalog';
 
 export const PRODUCTION_CATALOG: ProductionCatalog = {
   contentVersion: CATALOG_CONTENT_VERSION,
+  productionVersion: PRODUCTION_CATALOG_VERSION,
   rows: CATALOG_ROWS,
   boosterProfiles: BOOSTER_PROFILES,
   localization: buildZhCnLocalization(CATALOG_ROWS),

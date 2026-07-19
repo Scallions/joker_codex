@@ -16,12 +16,12 @@ import {
 } from '../../src/content/schema/validateCatalog';
 
 describe('生产非奇牌目录审计', () => {
-  it('冻结 230 项非奇牌、50 项奇牌与 32 对 15 卡包映射', () => {
+  it('冻结 230 项非奇牌、100 项奇牌与 32 对 15 卡包映射', () => {
     const report = validateProductionCatalog(PRODUCTION_CATALOG);
 
     expect(report.totalRows).toBe(EXPECTED_CATALOG_TOTAL);
     expect(report.nonJokerRows).toBe(EXPECTED_NON_JOKER_CATALOG_TOTAL);
-    expect(report.jokerRows).toBe(50);
+    expect(report.jokerRows).toBe(100);
     expect(report.boosterRows).toBe(32);
     expect(report.boosterProfiles).toBe(15);
     expect(report.familyCounts).toEqual(EXPECTED_CATALOG_COUNTS);
@@ -34,9 +34,9 @@ describe('生产非奇牌目录审计', () => {
     const report = validateProductionCatalog(PRODUCTION_CATALOG);
     const assetPaths = new Set(PRODUCTION_CATALOG.assets.map((asset) => asset.assetPath));
 
-    expect(report.localizationEntries).toBe(610);
-    expect(report.assetRecords).toBe(280);
-    expect(report.contractRecords).toBe(280);
+    expect(report.localizationEntries).toBe(760);
+    expect(report.assetRecords).toBe(330);
+    expect(report.contractRecords).toBe(330);
     expect(report.reservedExternalIds).toBe(150);
     expect(
       [...assetPaths].every((path) =>
@@ -59,8 +59,8 @@ describe('生产非奇牌目录审计', () => {
     const child = validateProductionCatalog(PRODUCTION_CATALOG, {
       mode: 'catalog-child',
     });
-    expect(child.resolvedJokerIds).toHaveLength(50);
-    expect(child.unresolvedExternalIds).toHaveLength(100);
+    expect(child.resolvedJokerIds).toHaveLength(100);
+    expect(child.unresolvedExternalIds).toHaveLength(50);
 
     expect(() =>
       validateProductionCatalog(PRODUCTION_CATALOG, {

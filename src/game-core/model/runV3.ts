@@ -1,6 +1,7 @@
 import type { BoosterProfile, CatalogRow } from '../../content/schema/catalog';
 import type { CardId, JokerInstanceId } from './ids';
 import type { RunStateV2 } from './runV2';
+import type { RunStateV5 } from './runV5';
 import { nextInteger } from '../rng/random';
 
 export const RUN_SCHEMA_VERSION_V3 = 3 as const;
@@ -132,15 +133,21 @@ export type RunStateV4 = Omit<
   readonly migrationV4: MigrationMetadataV4;
 };
 
+export type AbilityStateRun = RunStateV4 | RunStateV5;
 export type CatalogRunState = Omit<
   RunStateV3,
   'schemaVersion' | 'contentVersion' | 'modifiersV3'
 > & {
-  readonly schemaVersion: typeof RUN_SCHEMA_VERSION_V3 | typeof RUN_SCHEMA_VERSION_V4;
+  readonly schemaVersion: typeof RUN_SCHEMA_VERSION_V3 | typeof RUN_SCHEMA_VERSION_V4 | 5;
   readonly contentVersion:
-    'run-economy-2' | typeof CONTENT_VERSION_V3 | typeof CONTENT_VERSION_V4;
+    | 'run-economy-2'
+    | typeof CONTENT_VERSION_V3
+    | typeof CONTENT_VERSION_V4
+    | 'joker-catalog-2';
   readonly modifiersV3: RunModifiersV3;
   readonly migrationV4?: MigrationMetadataV4;
+  readonly jokerRuntimeV5?: RunStateV5['jokerRuntimeV5'];
+  readonly migrationV5?: RunStateV5['migrationV5'];
 };
 
 export function isLegacyRunStateV3(run: RunStateV2): run is RunStateV3 {
@@ -170,8 +177,25 @@ export function isRunStateV4(run: RunStateV2): run is RunStateV4 {
   );
 }
 
+export function isAbilityStateRun(run: RunStateV2): run is AbilityStateRun {
+  return (
+    isRunStateV4(run) ||
+    (run.schemaVersion === 5 &&
+      'setupV3' in run &&
+      'productionContentV3' in run &&
+      'rulesV3' in run &&
+      'modifiersV3' in run &&
+      'externalDependenciesV3' in run &&
+      'materializedChoicesV3' in run &&
+      'migrationV3' in run &&
+      'migrationV4' in run &&
+      'jokerRuntimeV5' in run &&
+      'migrationV5' in run)
+  );
+}
+
 export function isCatalogRunState(run: RunStateV2): run is CatalogRunState {
-  return isLegacyRunStateV3(run) || isRunStateV4(run);
+  return isLegacyRunStateV3(run) || isAbilityStateRun(run);
 }
 
 /** Compatibility guard used by V3-era engine services; includes V4 runs. */
@@ -200,7 +224,7 @@ function defaultJokerModifier(
     saleAllowed: true,
     slotContribution: joker?.slotContribution ?? 1,
   };
-  if (!isRunStateV4(run)) return base;
+  if (!isAbilityStateRun(run)) return base;
   const definition = joker
     ? run.content.items.find(
         (item) => item.kind === 'joker' && item.contentId === joker.contentId,
@@ -230,8 +254,8 @@ export function synchronizeRunStateV3(run: RunStateV2): RunStateV2 {
     editionId: card.editionId,
     debuffed: cardModifiers.get(card.id)?.debuffed ?? false,
   }));
-  if (isRunStateV4(run)) {
-    const synchronized: RunStateV4 = {
+  if (isAbilityStateRun(run)) {
+    const synchronized: AbilityStateRun = {
       ...run,
       modifiersV3: {
         playingCards,
@@ -340,14 +364,14 @@ export function materializeJokerStickersV3(
       checkpointId: run.checkpointId + 1,
     },
   ];
-  if (isRunStateV4(run)) {
+  if (isAbilityStateRun(run)) {
     const modifier: JokerModifierStateV4 = {
       ...modifierBase,
       abilityState: {
         ...(definition?.kind === 'joker' ? (definition.initialAbilityState ?? {}) : {}),
       },
     };
-    const materialized: RunStateV4 = {
+    const materialized: AbilityStateRun = {
       ...run,
       rngState,
       materializedChoicesV3,

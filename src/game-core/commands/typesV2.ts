@@ -214,6 +214,7 @@ export type DomainEventV2 =
   | { readonly type: 'item-consumed'; readonly contentId: string }
   | { readonly type: 'item-sold'; readonly contentId: string }
   | { readonly type: 'pack-opened'; readonly packId: string }
+  | { readonly type: 'pack-skipped'; readonly packId: string }
   | { readonly type: 'voucher-redeemed'; readonly voucherId: string };
 
 export type PresentationEventV2 =

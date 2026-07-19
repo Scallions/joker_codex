@@ -233,6 +233,129 @@ describe('类型化效果注册表', () => {
           copyFacet: 'trigger',
         },
       ],
+      [
+        'bxqp:joker-clone-played-card',
+        'joker-clone-played-card',
+        {
+          predicate: JSON.stringify({ kind: 'always' }),
+          snapshot: 'command-entry',
+          destination: 'hand',
+          copyFacet: 'trigger',
+        },
+      ],
+      [
+        'bxqp:joker-add-card-bonus',
+        'joker-add-card-bonus',
+        {
+          amount: 5,
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'trigger',
+        },
+      ],
+      [
+        'bxqp:joker-transform-enhancement',
+        'joker-transform-enhancement',
+        {
+          enhancementId: null,
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'none',
+        },
+      ],
+      [
+        'bxqp:joker-destroy-event-card',
+        'joker-destroy-event-card',
+        {
+          target: 'discarded-singleton',
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'none',
+        },
+      ],
+      [
+        'bxqp:joker-random-destroy-other',
+        'joker-random-destroy-other',
+        {
+          excludePermanent: true,
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'none',
+        },
+      ],
+      [
+        'bxqp:joker-state-change-clamped',
+        'joker-state-change-clamped',
+        {
+          key: 'storedMult',
+          mode: 'add',
+          value: JSON.stringify({ kind: 'fixed', value: 1 }),
+          minimum: 0,
+          maximum: null,
+          destroyAtOrBelow: null,
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'none',
+        },
+      ],
+      [
+        'bxqp:joker-set-target',
+        'joker-set-target',
+        {
+          scope: 'source',
+          target: 'hand',
+          policy: 'eligible-hand',
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'none',
+        },
+      ],
+      [
+        'bxqp:joker-inventory-sell-value-add',
+        'joker-inventory-sell-value-add',
+        {
+          family: 'both',
+          amount: 1,
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'none',
+        },
+      ],
+      [
+        'bxqp:joker-create-fixed-tag',
+        'joker-create-fixed-tag',
+        {
+          tagContentId: 'bxqp:tag:copy-next-tag',
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'trigger',
+        },
+      ],
+      [
+        'bxqp:joker-disable-current-boss',
+        'joker-disable-current-boss',
+        { predicate: JSON.stringify({ kind: 'always' }), copyFacet: 'trigger' },
+      ],
+      [
+        'bxqp:joker-passive-capability',
+        'joker-passive-capability',
+        {
+          capability: 'hand-size-delta',
+          value: JSON.stringify({ kind: 'fixed', value: 1 }),
+          copyFacet: 'none',
+        },
+      ],
+      [
+        'bxqp:joker-after-rarity',
+        'joker-after-rarity',
+        {
+          rarity: 'uncommon',
+          factor: 1.5,
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'trigger',
+        },
+      ],
+      [
+        'bxqp:joker-record-observation',
+        'joker-record-observation',
+        {
+          key: 'tarot-used',
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'none',
+        },
+      ],
       ['bxqp:shop-rule', 'catalog-shop-rule', { key: 'family-weight', value: 'tarot:2' }],
       [
         'bxqp:blind-rule',

@@ -104,6 +104,93 @@ function operationParameters(
         predicate: JSON.stringify(operation.predicate),
         copyFacet: operation.copyFacet,
       };
+    case 'joker-clone-played-card':
+      return {
+        predicate: JSON.stringify(operation.predicate),
+        snapshot: operation.snapshot,
+        destination: operation.destination,
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-add-card-bonus':
+      return {
+        amount: operation.amount,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-transform-enhancement':
+      return {
+        enhancementId: operation.enhancementId,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-destroy-event-card':
+      return {
+        target: operation.target,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-random-destroy-other':
+      return {
+        excludePermanent: operation.excludePermanent,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-state-change-clamped':
+      return {
+        key: operation.key,
+        mode: operation.mode,
+        value: JSON.stringify(operation.value),
+        minimum: operation.minimum,
+        maximum: operation.maximum,
+        destroyAtOrBelow: operation.destroyAtOrBelow,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-set-target':
+      return {
+        scope: operation.scope,
+        target: operation.target,
+        policy: operation.policy,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-inventory-sell-value-add':
+      return {
+        family: operation.family,
+        amount: operation.amount,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-create-fixed-tag':
+      return {
+        tagContentId: operation.tagContentId,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-disable-current-boss':
+      return {
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-passive-capability':
+      return {
+        capability: operation.capability,
+        value: JSON.stringify(operation.value),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-after-rarity':
+      return {
+        rarity: operation.rarity,
+        factor: operation.factor,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-record-observation':
+      return {
+        key: operation.key,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
     case 'rule-patch':
       return { key: operation.key, mode: operation.mode, value: operation.value };
     case 'deck-recipe':
@@ -277,9 +364,7 @@ function operationWindows(
   }
   if (row.family === 'booster') return ['pack-opened'];
   if (trigger === 'passive') return ['passive'];
-  return trigger && trigger !== 'run-setup' && trigger !== 'consumable-used'
-    ? [trigger]
-    : ['item-acquired'];
+  return trigger && trigger !== 'run-setup' ? [trigger] : ['item-acquired'];
 }
 
 function runtimeEffects(row: CatalogRow): readonly EffectReference[] {

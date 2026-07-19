@@ -468,6 +468,32 @@ function describeOperation(operation: CatalogOperation): string {
       return `满足声明条件时，使来源出售价值永久增加${operation.amount}。`;
     case 'joker-round-resource':
       return `满足声明条件时，按${term(operation.mode)}规则调整本回合${term(operation.resource)}为${operation.value}。`;
+    case 'joker-clone-played-card':
+      return '满足声明条件时，把指令入口快照中的出牌复制一张到手牌。';
+    case 'joker-add-card-bonus':
+      return `满足声明条件时，使事件牌永久增加${operation.amount}筹码。`;
+    case 'joker-transform-enhancement':
+      return `满足声明条件时，将事件牌增强改为${operation.enhancementId === null ? '无增强' : prettyId(operation.enhancementId)}。`;
+    case 'joker-destroy-event-card':
+      return `满足声明条件时销毁${term(operation.target)}。`;
+    case 'joker-random-destroy-other':
+      return '满足声明条件时，随机销毁另一张符合条件的奇牌。';
+    case 'joker-state-change-clamped':
+      return `满足声明条件时，在边界内更新${term(operation.key)}状态。`;
+    case 'joker-set-target':
+      return `满足声明条件时，按${term(operation.policy)}策略设置${term(operation.target)}目标。`;
+    case 'joker-inventory-sell-value-add':
+      return `满足声明条件时，使库存内目标出售价值永久增加${operation.amount}。`;
+    case 'joker-create-fixed-tag':
+      return `满足声明条件时生成固定戏签${term(operation.tagContentId)}。`;
+    case 'joker-disable-current-boss':
+      return '满足声明条件时，使当前班主规则在本回合失效。';
+    case 'joker-passive-capability':
+      return `启用${term(operation.capability)}奇牌被动能力。`;
+    case 'joker-after-rarity':
+      return `满足声明条件时，在另一张${term(operation.rarity)}奇牌结算后追加倍率因子${operation.factor}。`;
+    case 'joker-record-observation':
+      return `满足声明条件时记录${term(operation.key)}观察值。`;
     case 'rule-patch':
       return `${operation.mode === 'set' ? '设定' : operation.mode === 'add' ? '调整' : '倍乘'}${term(operation.key)}为${term(operation.value)}。`;
     case 'deck-recipe':
