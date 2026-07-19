@@ -178,6 +178,9 @@ export type RejectionCodeV2 =
   | 'effect-cycle'
   | 'effect-budget'
   | 'effect-handler-missing'
+  | 'joker-context'
+  | 'joker-state-key'
+  | 'joker-value-range'
   | 'score-overflow-terminal';
 
 export interface CommandRejectionV2 {

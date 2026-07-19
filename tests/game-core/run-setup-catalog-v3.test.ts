@@ -91,25 +91,29 @@ describe('V3 牌组、难度与挑战命令合约', () => {
     expect(activeCopyTags[0]?.instanceId.startsWith('bxqp:')).toBe(true);
   });
 
-  it('已声明能力替身只进入当前挑战执行快照，并按重复依赖生成五个实例', () => {
-    const double = jokerCapabilityDouble('bxqp:joker:001');
+  it('V3 保持 230 项冻结快照，本地 J001 只由 V4 实例化且禁止外部覆盖', () => {
     const run = createProductionRunV3(PRODUCTION_CATALOG, {
-      seed: 'challenge-external-starting-jokers',
+      seed: 'challenge-local-joker-v4-only',
       challengeId: 'bxqp:challenge:empty-house',
-      externalJokerDefinitions: [double],
     });
 
-    expect(run.inventory.jokers).toHaveLength(5);
+    expect(run.inventory.jokers).toHaveLength(0);
     expect(
-      run.inventory.jokers.every(({ contentId }) => contentId === double.contentId),
-    ).toBe(true);
-    expect(run.content.items).toContainEqual(double);
+      run.content.items.some(({ contentId }) => contentId === 'bxqp:joker:001'),
+    ).toBe(false);
     expect(run.productionContentV3.rows).toHaveLength(230);
-    expect(PRODUCTION_CATALOG.rows.some(({ id }) => id === double.contentId)).toBe(false);
+    expect(PRODUCTION_CATALOG.rows.some(({ id }) => id === 'bxqp:joker:001')).toBe(true);
     expect(run.externalDependenciesV3).toMatchObject({
-      requiredIds: ['bxqp:joker:001'],
-      resolvedIds: ['bxqp:joker:001'],
+      requiredIds: [],
+      resolvedIds: [],
     });
+    expect(() =>
+      createProductionRunV3(PRODUCTION_CATALOG, {
+        seed: 'challenge-local-joker-shadow',
+        challengeId: 'bxqp:challenge:empty-house',
+        externalJokerDefinitions: [jokerCapabilityDouble('bxqp:joker:001')],
+      }),
+    ).toThrow('已由生产定义解析，不得以外部能力覆盖');
   });
 
   it('C11 第四幕班主结算后把已有奇牌永久封存在零名义栏位', () => {

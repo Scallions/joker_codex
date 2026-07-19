@@ -1,6 +1,11 @@
-import type { CatalogOperation, CatalogRow } from '../schema/catalog';
+import { JOKER_LOCALIZATION } from '../catalogs/jokers';
+import type {
+  CatalogOperation,
+  CatalogRow,
+  NonJokerCatalogFamily,
+} from '../schema/catalog';
 
-const NAMES: Readonly<Record<CatalogRow['family'], readonly string[]>> = {
+const NAMES: Readonly<Record<NonJokerCatalogFamily, readonly string[]>> = {
   deck: [
     '余响牌幕',
     '加演牌幕',
@@ -441,6 +446,28 @@ function describeOperation(operation: CatalogOperation): string {
   switch (operation.type) {
     case 'baseline':
       return BASELINE_DESCRIPTIONS[operation.key] ?? `启用“${term(operation.key)}”规则。`;
+    case 'passive-capability':
+      return `启用${term(operation.capability)}被动能力，取值为${term(operation.value)}。`;
+    case 'joker-score':
+      return `满足声明条件时，按动态值结算${term(operation.metric)}。`;
+    case 'joker-retrigger-card':
+      return `满足声明条件时，使${term(operation.target)}额外结算${operation.count}次。`;
+    case 'joker-create-content':
+      return `满足声明条件时生成${operation.count}个${term(operation.family)}内容。`;
+    case 'joker-create-playing-card':
+      return `满足声明条件时生成一张带${prettyId(operation.enhancementId)}的戏牌。`;
+    case 'joker-destroy-right-grow':
+      return `销毁可销毁的紧邻右侧奇牌，并按出售价值成长${term(operation.stateKey)}。`;
+    case 'joker-destroy-source':
+      return `满足声明条件时销毁能力来源。`;
+    case 'joker-state-change':
+      return `满足声明条件时，按${term(operation.mode)}规则更新${term(operation.key)}状态。`;
+    case 'joker-level-current-hand':
+      return `满足声明条件时，在本次基础计分前将当前牌型提升${operation.levels}级。`;
+    case 'joker-sell-value-add':
+      return `满足声明条件时，使来源出售价值永久增加${operation.amount}。`;
+    case 'joker-round-resource':
+      return `满足声明条件时，按${term(operation.mode)}规则调整本回合${term(operation.resource)}为${operation.value}。`;
     case 'rule-patch':
       return `${operation.mode === 'set' ? '设定' : operation.mode === 'add' ? '调整' : '倍乘'}${term(operation.key)}为${term(operation.value)}。`;
     case 'deck-recipe':
@@ -492,6 +519,19 @@ export function buildZhCnLocalization(
 ): Readonly<Record<string, string>> {
   return Object.fromEntries(
     rows.flatMap((row) => {
+      if (row.family === 'joker') {
+        const name = JOKER_LOCALIZATION[row.nameKey];
+        const description = JOKER_LOCALIZATION[row.descriptionKey];
+        const flavor = JOKER_LOCALIZATION[row.flavorKey];
+        if (!name || !description || !flavor) {
+          throw new Error(`缺少奇牌中文文本：${row.id}`);
+        }
+        return [
+          [row.nameKey, name],
+          [row.descriptionKey, description],
+          [row.flavorKey, flavor],
+        ];
+      }
       const familyNames = NAMES[row.family];
       const name =
         row.family === 'booster' ? boosterName(row) : familyNames[row.ordinal - 1];

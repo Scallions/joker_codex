@@ -1,5 +1,5 @@
 import { validateRunStateV2 } from './validateRunStateV2';
-import type { RunStateV3 } from '../model/runV3';
+import type { CatalogRunState } from '../model/runV3';
 
 export type RunValidationResultV3 =
   { readonly ok: true } | { readonly ok: false; readonly violations: readonly string[] };
@@ -14,14 +14,17 @@ function duplicates(values: readonly string[]): readonly string[] {
   return [...repeated];
 }
 
-export function validateRunStateV3(run: RunStateV3): RunValidationResultV3 {
+export function validateRunStateV3(run: CatalogRunState): RunValidationResultV3 {
   const base = validateRunStateV2(run);
   const violations = base.ok ? [] : [...base.violations];
 
-  if (run.schemaVersion !== 3) violations.push('V3 牌局结构版本错误');
+  if (run.schemaVersion !== 3 && run.schemaVersion !== 4) {
+    violations.push('目录牌局结构版本错误');
+  }
   if (
     run.contentVersion !== 'run-economy-2' &&
-    run.contentVersion !== 'catalog-baseline-3'
+    run.contentVersion !== 'catalog-baseline-3' &&
+    run.contentVersion !== 'joker-catalog-1'
   ) {
     violations.push('V3 内容版本不受支持');
   }
@@ -39,6 +42,12 @@ export function validateRunStateV3(run: RunStateV3): RunValidationResultV3 {
     run.productionContentV3.rows.length !== 230
   ) {
     violations.push('生产牌局必须物化 230 项目录快照');
+  }
+  if (
+    run.contentVersion === 'joker-catalog-1' &&
+    run.productionContentV3.rows.length !== 280
+  ) {
+    violations.push('奇牌生产牌局必须物化 280 项目录快照');
   }
   if (
     run.contentVersion === 'run-economy-2' &&

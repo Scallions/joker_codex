@@ -132,6 +132,107 @@ describe('类型化效果注册表', () => {
         'catalog-score-rule',
         { key: 'halve-base', amount: 0.5, numerator: null, denominator: null },
       ],
+      [
+        'bxqp:passive-capability',
+        'passive-capability',
+        { capability: 'allowed-debt', value: 20 },
+      ],
+      [
+        'bxqp:joker-score',
+        'joker-score',
+        {
+          metric: 'mult',
+          predicate: JSON.stringify({ kind: 'always' }),
+          value: JSON.stringify({ kind: 'fixed', value: 4 }),
+          copyFacet: 'output',
+        },
+      ],
+      [
+        'bxqp:joker-retrigger-card',
+        'joker-retrigger-card',
+        {
+          target: 'held-card',
+          predicate: JSON.stringify({ kind: 'always' }),
+          count: 1,
+          copyFacet: 'trigger',
+        },
+      ],
+      [
+        'bxqp:joker-create-content',
+        'joker-create-content',
+        {
+          family: 'tarot',
+          count: 1,
+          rarity: 'any',
+          predicate: JSON.stringify({ kind: 'always' }),
+          capacityRequired: true,
+          stickerPolicy: 'none',
+          copyFacet: 'trigger',
+        },
+      ],
+      [
+        'bxqp:joker-create-playing-card',
+        'joker-create-playing-card',
+        {
+          enhancementId: 'bxqp:enhancement:stone-mask',
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'trigger',
+        },
+      ],
+      [
+        'bxqp:joker-destroy-right-grow',
+        'joker-destroy-right-grow',
+        { stateKey: 'storedMult', saleValueScale: 2, copyFacet: 'none' },
+      ],
+      [
+        'bxqp:joker-destroy-source',
+        'joker-destroy-source',
+        {
+          predicate: JSON.stringify({ kind: 'chance', numerator: 1, denominator: 6 }),
+          observationKey: 'history:extinct',
+          copyFacet: 'none',
+        },
+      ],
+      [
+        'bxqp:joker-state-change',
+        'joker-state-change',
+        {
+          key: 'storedMult',
+          mode: 'add',
+          value: JSON.stringify({ kind: 'fixed', value: 1 }),
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'none',
+        },
+      ],
+      [
+        'bxqp:joker-level-current-hand',
+        'joker-level-current-hand',
+        {
+          levels: 1,
+          predicate: JSON.stringify({ kind: 'chance', numerator: 1, denominator: 4 }),
+          copyFacet: 'trigger',
+        },
+      ],
+      [
+        'bxqp:joker-sell-value-add',
+        'joker-sell-value-add',
+        {
+          amount: 3,
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'none',
+        },
+      ],
+      [
+        'bxqp:joker-round-resource',
+        'joker-round-resource',
+        {
+          resource: 'hands',
+          mode: 'add',
+          value: 3,
+          predicate: JSON.stringify({ kind: 'always' }),
+          copyFacet: 'trigger',
+        },
+      ],
       ['bxqp:shop-rule', 'catalog-shop-rule', { key: 'family-weight', value: 'tarot:2' }],
       [
         'bxqp:blind-rule',

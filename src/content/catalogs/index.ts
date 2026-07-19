@@ -4,6 +4,7 @@ import { CHALLENGE_ROWS } from './challenges';
 import { PLANET_ROWS, SPECTRAL_ROWS, TAROT_ROWS } from './consumables';
 import { DECK_ROWS } from './decks';
 import { EDITION_ROWS, ENHANCEMENT_ROWS, SEAL_ROWS } from './modifiers';
+import { JOKER_ROWS } from './jokers';
 import { STAKE_ROWS } from './stakes';
 import { TAG_ROWS } from './tags';
 import { VOUCHER_ROWS } from './vouchers';
@@ -22,6 +23,7 @@ export const CATALOG_ROWS = [
   ...ENHANCEMENT_ROWS,
   ...SEAL_ROWS,
   ...EDITION_ROWS,
+  ...JOKER_ROWS,
 ] as const;
 
-export { BOOSTER_PROFILES };
+export { BOOSTER_PROFILES, JOKER_ROWS };

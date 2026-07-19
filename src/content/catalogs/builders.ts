@@ -2,9 +2,9 @@ import {
   CATALOG_CONTENT_VERSION,
   type AvailabilityRule,
   type CatalogEffect,
-  type CatalogFamily,
+  type NonJokerCatalogFamily,
+  type NonJokerCatalogRow,
   type CatalogOperation,
-  type CatalogRow,
   type DiscoveryRule,
 } from '../schema/catalog';
 
@@ -12,7 +12,7 @@ export const ALWAYS_AVAILABLE: AvailabilityRule = { kind: 'always', value: null 
 export const VISIBLE: DiscoveryRule = { kind: 'visible', value: null };
 
 export interface RowInput {
-  readonly family: CatalogFamily;
+  readonly family: NonJokerCatalogFamily;
   readonly ordinal: number;
   readonly slug: string;
   readonly referenceIndex: string;
@@ -28,11 +28,11 @@ export interface RowInput {
   readonly mechanicalProfileId?: string | null | undefined;
 }
 
-export function catalogId(family: CatalogFamily, slug: string): string {
+export function catalogId(family: NonJokerCatalogFamily, slug: string): string {
   return `bxqp:${family}:${slug}`;
 }
 
-export function defineRow(input: RowInput): CatalogRow {
+export function defineRow(input: RowInput): NonJokerCatalogRow {
   const id = catalogId(input.family, input.slug);
   return {
     id,

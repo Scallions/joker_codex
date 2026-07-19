@@ -111,6 +111,18 @@ const jokerDefinitionSchema = z
     kind: z.literal('joker'),
     rarity: z.enum(['common', 'uncommon', 'rare', 'legendary']),
     slotContribution: safeIntegerSchema,
+    copyPolicy: z.enum(['output', 'trigger', 'none']).optional(),
+    stickerEligibility: z
+      .object({
+        permanent: z.boolean(),
+        perishable: z.boolean(),
+        rental: z.literal(true),
+      })
+      .strict()
+      .optional(),
+    initialAbilityState: z
+      .record(z.string().min(1), z.union([z.string(), z.number().finite(), z.boolean()]))
+      .optional(),
   })
   .strict();
 const consumableDefinitionSchema = z

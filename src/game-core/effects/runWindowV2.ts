@@ -8,7 +8,11 @@ import { materializeItemV2 } from '../economy/shopV2';
 import { stableId } from '../model/ids';
 import { materializeJokerStickersV3 } from '../model/runV3';
 import type { EffectReference, EffectWindow, RunStateV2 } from '../model/runV2';
-import { applyStateOperationV3 } from './applyStateOperationV3';
+import {
+  applyStateOperationV3,
+  type StateOperationFailureCodeV3,
+} from './applyStateOperationV3';
+import { canAffordRunStateV3 } from '../rules/jokerPassiveCapabilitiesV3';
 
 export interface AdditionalEffectSourceV2 {
   readonly instanceId: string;
@@ -36,8 +40,7 @@ export type RunWindowResolutionV2 =
     }
   | {
       readonly ok: false;
-      readonly code:
-        EffectQueueFailureCode | 'insufficient-funds' | 'inventory-full' | 'pool-empty';
+      readonly code: EffectQueueFailureCode | StateOperationFailureCodeV3;
       readonly message: string;
     };
 
@@ -119,6 +122,13 @@ function applyOperation(
 ): RunWindowResolutionV2 {
   const operation = entry.operation;
   let next = state;
+  if (
+    entry.copiedBy.length > 0 &&
+    'copyFacet' in operation &&
+    operation.copyFacet === 'none'
+  ) {
+    return { ok: true, state, operations: [entry] };
+  }
   if (operation.type === 'add-money') {
     next = {
       ...next,
@@ -126,6 +136,13 @@ function applyOperation(
     };
   }
   if (operation.type === 'spend-money') {
+    if (!canAffordRunStateV3(next, operation.amount)) {
+      return {
+        ok: false,
+        code: 'insufficient-funds',
+        message: '效果会超出当前允许的欠票额度',
+      };
+    }
     next = {
       ...next,
       economy: { ...next.economy, money: next.economy.money - operation.amount },
@@ -133,13 +150,6 @@ function applyOperation(
   }
   if (operation.type === 'set-money') {
     next = { ...next, economy: { ...next.economy, money: operation.value } };
-  }
-  if (next.economy.money < -next.rules.allowedDebt) {
-    return {
-      ok: false,
-      code: 'insufficient-funds',
-      message: '效果会超出当前允许的欠票额度',
-    };
   }
   if (operation.type === 'add-hands' && next.round) {
     next = {

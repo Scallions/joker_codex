@@ -119,6 +119,28 @@ function materializedValue(
   switch (operation.type) {
     case 'baseline':
       return operation.key;
+    case 'passive-capability':
+      return operation.value;
+    case 'joker-score':
+      return operation.metric;
+    case 'joker-retrigger-card':
+      return operation.count;
+    case 'joker-create-content':
+      return operation.family;
+    case 'joker-create-playing-card':
+      return operation.enhancementId;
+    case 'joker-destroy-right-grow':
+      return operation.stateKey;
+    case 'joker-destroy-source':
+      return operation.observationKey;
+    case 'joker-state-change':
+      return operation.key;
+    case 'joker-level-current-hand':
+      return operation.levels;
+    case 'joker-sell-value-add':
+      return operation.amount;
+    case 'joker-round-resource':
+      return operation.value;
     case 'rule-patch':
       return operation.value;
     case 'deck-recipe':

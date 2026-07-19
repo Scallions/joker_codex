@@ -84,9 +84,11 @@ function GameApplication() {
   const dispatch = useAppDispatch();
   const initialized = useRef(false);
   const { status, error, run } = useAppSelector((state) => state.app);
-  const catalogAudit =
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).get('catalog-audit') === '1';
+  const catalogAuditMode =
+    typeof window === 'undefined'
+      ? null
+      : new URLSearchParams(window.location.search).get('catalog-audit');
+  const catalogAudit = catalogAuditMode === '1' || catalogAuditMode === 'jokers';
 
   useEffect(() => {
     if (initialized.current) return;
@@ -100,7 +102,11 @@ function GameApplication() {
         <StageDecor />
         {status === 'loading' ? <WelcomeStage /> : null}
         <Suspense fallback={<WelcomeStage />}>
-          {catalogAudit ? <CatalogAuditScreen /> : null}
+          {catalogAudit ? (
+            <CatalogAuditScreen
+              ledger={catalogAuditMode === 'jokers' ? 'joker' : 'non-joker'}
+            />
+          ) : null}
           {!catalogAudit && status === 'profiles' ? <ProfileScreen /> : null}
           {!catalogAudit && status === 'playing' && run?.phase.kind === 'blind-select' ? (
             <BlindSelectScreen />

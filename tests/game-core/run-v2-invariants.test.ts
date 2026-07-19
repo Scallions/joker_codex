@@ -89,17 +89,21 @@ describe('V2 运行状态不变量', () => {
     }
   });
 
-  it('拒绝超出规则额度的欠票', () => {
+  it('既有负余额可超出当前借款额度，但戏票仍须是安全整数', () => {
     const valid = migrateRunV1ToV2(createFixtureRun('v2-debt-boundary'));
-    const result = validateRunStateV2({
+    const historicalDebt = {
       ...valid,
       rules: { ...valid.rules, allowedDebt: 3 },
       economy: { ...valid.economy, money: -4 },
-    });
+    };
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('超额欠票不应通过');
-    expect(result.violations).toContain('戏票不能超出允许的欠票额度');
+    expect(validateRunStateV2(historicalDebt)).toEqual({ ok: true });
+    expect(
+      validateRunStateV2({
+        ...historicalDebt,
+        economy: { ...historicalDebt.economy, money: Number.MAX_VALUE },
+      }).ok,
+    ).toBe(false);
   });
 
   it('拒绝内容中未注册的效果 handler', () => {

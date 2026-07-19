@@ -6,6 +6,8 @@ import {
 import type { CardId } from '../model/ids';
 import { isRunStateV3 } from '../model/runV3';
 import type { RunPlayingCard, RunStateV2 } from '../model/runV2';
+import { projectEffectivePlayingCardV3 } from '../poker/effectiveCardV3';
+import { resolveJokerPassiveCapabilities } from './jokerPassiveCapabilitiesV3';
 
 function modifierOperations(
   state: RunStateV2,
@@ -37,10 +39,6 @@ function modifierOperations(
   });
 }
 
-function isFaceCard(card: RunPlayingCard): boolean {
-  return card.rank === 'jack' || card.rank === 'queen' || card.rank === 'king';
-}
-
 function cardIsDebuffed(state: RunStateV2, card: RunPlayingCard): boolean {
   if (
     isRunStateV3(state) &&
@@ -50,13 +48,17 @@ function cardIsDebuffed(state: RunStateV2, card: RunPlayingCard): boolean {
   ) {
     return true;
   }
+  const passives = resolveJokerPassiveCapabilities(state);
+  const effective = projectEffectivePlayingCardV3(state, card, {
+    allCardsFace: passives.ok && passives.capabilities.allCardsFace,
+  });
   return (state.round?.blind.effects ?? []).some((effect) => {
     if (effect.parameters.field !== 'debuff') return false;
     const value = effect.parameters.value;
     return (
       value === true ||
       value === card.suit ||
-      (value === 'face-card' && isFaceCard(card)) ||
+      (value === 'face-card' && effective.face) ||
       (effect.parameters.selection === 'played-this-ante' &&
         state.history.playedCardIdsThisAnte.includes(card.id))
     );

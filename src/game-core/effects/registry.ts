@@ -6,6 +6,14 @@ import {
   type RunStateV2,
 } from '../model/runV2';
 import { POKER_HAND_TYPES, type PokerHandType } from '../poker/evaluate';
+import {
+  jokerPredicateSchema,
+  jokerValueSchema,
+  validateJokerPredicateDepth,
+  type JokerCopyFacet,
+  type JokerPredicate,
+  type JokerValue,
+} from '../../content/schema/catalog';
 
 export type EffectOperation =
   | { readonly type: 'add-chips'; readonly amount: number }
@@ -74,6 +82,85 @@ export type EffectOperation =
       readonly type: 'record-observation';
       readonly key: string;
       readonly value: string | number | boolean;
+    }
+  | {
+      readonly type: 'passive-capability';
+      readonly capability:
+        | 'straight-flush-size'
+        | 'allowed-debt'
+        | 'free-reroll-per-shop'
+        | 'all-cards-face';
+      readonly value: number | boolean;
+    }
+  | {
+      readonly type: 'joker-score';
+      readonly metric: 'chips' | 'mult' | 'mult-factor' | 'money';
+      readonly predicate: JokerPredicate;
+      readonly value: JokerValue;
+      readonly copyFacet: JokerCopyFacet;
+    }
+  | {
+      readonly type: 'joker-retrigger-card';
+      readonly target: 'scored-card' | 'held-card';
+      readonly predicate: JokerPredicate;
+      readonly count: number;
+      readonly copyFacet: JokerCopyFacet;
+    }
+  | {
+      readonly type: 'joker-create-content';
+      readonly family: 'joker' | 'tarot' | 'planet' | 'spectral' | 'playing-card';
+      readonly count: number;
+      readonly rarity: string;
+      readonly predicate: JokerPredicate;
+      readonly capacityRequired: boolean;
+      readonly stickerPolicy: string;
+      readonly copyFacet: JokerCopyFacet;
+    }
+  | {
+      readonly type: 'joker-create-playing-card';
+      readonly enhancementId: string;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: JokerCopyFacet;
+    }
+  | {
+      readonly type: 'joker-destroy-right-grow';
+      readonly stateKey: string;
+      readonly saleValueScale: number;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-destroy-source';
+      readonly predicate: JokerPredicate;
+      readonly observationKey: string | null;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-state-change';
+      readonly key: string;
+      readonly mode: 'set' | 'add' | 'decrement';
+      readonly value: JokerValue;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-level-current-hand';
+      readonly levels: number;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-sell-value-add';
+      readonly amount: number;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-round-resource';
+      readonly resource: 'hands' | 'discards';
+      readonly mode: 'add' | 'set';
+      readonly value: number;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'trigger';
     }
   | {
       readonly type: 'patch-rule';
@@ -204,6 +291,25 @@ function primitiveParameter(
     : null;
 }
 
+function jsonParameter<T>(
+  effect: EffectReference,
+  key: string,
+  parse: (value: unknown) =>
+    | { readonly success: true; readonly data: T }
+    | {
+        readonly success: false;
+      },
+): T | null {
+  const serialized = stringParameter(effect, key);
+  if (serialized === null) return null;
+  try {
+    const parsed = parse(JSON.parse(serialized));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
 function numericOperation(
   effect: EffectReference,
   key: string,
@@ -229,6 +335,199 @@ const CATALOG_EFFECT_HANDLERS = {
     return key === null
       ? []
       : [{ type: 'record-observation', key: `baseline:${key}`, value: true }];
+  },
+  'bxqp:handler:passive-capability': (effect) => {
+    const capability = stringParameter(effect, 'capability');
+    const value = primitiveParameter(effect, 'value');
+    if (
+      (capability === 'straight-flush-size' || capability === 'allowed-debt') &&
+      typeof value === 'number' &&
+      Number.isSafeInteger(value) &&
+      value >= 0
+    ) {
+      return [{ type: 'passive-capability', capability, value }];
+    }
+    if (
+      (capability === 'free-reroll-per-shop' || capability === 'all-cards-face') &&
+      typeof value === 'boolean'
+    ) {
+      return [{ type: 'passive-capability', capability, value }];
+    }
+    return [];
+  },
+  'bxqp:handler:joker-score': (effect) => {
+    const metric = stringParameter(effect, 'metric');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    const value = jsonParameter(effect, 'value', (candidate) =>
+      jokerValueSchema.safeParse(candidate),
+    );
+    return predicate !== null &&
+      value !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      (metric === 'chips' ||
+        metric === 'mult' ||
+        metric === 'mult-factor' ||
+        metric === 'money') &&
+      (copyFacet === 'output' || copyFacet === 'trigger' || copyFacet === 'none')
+      ? [{ type: 'joker-score', metric, predicate, value, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-retrigger-card': (effect) => {
+    const target = stringParameter(effect, 'target');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const count = numberParameter(effect, 'count', true);
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      count !== null &&
+      count >= 0 &&
+      (target === 'scored-card' || target === 'held-card') &&
+      (copyFacet === 'output' || copyFacet === 'trigger' || copyFacet === 'none')
+      ? [{ type: 'joker-retrigger-card', target, predicate, count, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-create-content': (effect) => {
+    const family = stringParameter(effect, 'family');
+    const rarity = stringParameter(effect, 'rarity');
+    const count = numberParameter(effect, 'count', true);
+    const capacityRequired = booleanParameter(effect, 'capacityRequired');
+    const stickerPolicy = stringParameter(effect, 'stickerPolicy');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      count !== null &&
+      count >= 0 &&
+      rarity !== null &&
+      capacityRequired !== null &&
+      stickerPolicy !== null &&
+      (family === 'joker' ||
+        family === 'tarot' ||
+        family === 'planet' ||
+        family === 'spectral' ||
+        family === 'playing-card') &&
+      (copyFacet === 'output' || copyFacet === 'trigger' || copyFacet === 'none')
+      ? [
+          {
+            type: 'joker-create-content',
+            family,
+            count,
+            rarity,
+            predicate,
+            capacityRequired,
+            stickerPolicy,
+            copyFacet,
+          },
+        ]
+      : [];
+  },
+  'bxqp:handler:joker-create-playing-card': (effect) => {
+    const enhancementId = stringParameter(effect, 'enhancementId');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return enhancementId !== null &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      (copyFacet === 'output' || copyFacet === 'trigger' || copyFacet === 'none')
+      ? [{ type: 'joker-create-playing-card', enhancementId, predicate, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-destroy-right-grow': (effect) => {
+    const stateKey = stringParameter(effect, 'stateKey');
+    const saleValueScale = numberParameter(effect, 'saleValueScale');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    return stateKey !== null &&
+      saleValueScale !== null &&
+      saleValueScale >= 0 &&
+      copyFacet === 'none'
+      ? [{ type: 'joker-destroy-right-grow', stateKey, saleValueScale, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-destroy-source': (effect) => {
+    const observationKey = stringParameter(effect, 'observationKey');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'none'
+      ? [{ type: 'joker-destroy-source', predicate, observationKey, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-state-change': (effect) => {
+    const key = stringParameter(effect, 'key');
+    const mode = stringParameter(effect, 'mode');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    const value = jsonParameter(effect, 'value', (candidate) =>
+      jokerValueSchema.safeParse(candidate),
+    );
+    return key !== null &&
+      predicate !== null &&
+      value !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      (mode === 'set' || mode === 'add' || mode === 'decrement') &&
+      copyFacet === 'none'
+      ? [{ type: 'joker-state-change', key, mode, value, predicate, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-level-current-hand': (effect) => {
+    const levels = numberParameter(effect, 'levels', true);
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return levels !== null &&
+      levels >= 0 &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'trigger'
+      ? [{ type: 'joker-level-current-hand', levels, predicate, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-sell-value-add': (effect) => {
+    const amount = numberParameter(effect, 'amount', true);
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    return amount !== null &&
+      amount >= 0 &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'none'
+      ? [{ type: 'joker-sell-value-add', amount, predicate, copyFacet }]
+      : [];
+  },
+  'bxqp:handler:joker-round-resource': (effect) => {
+    const resource = stringParameter(effect, 'resource');
+    const mode = stringParameter(effect, 'mode');
+    const value = numberParameter(effect, 'value', true);
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (candidate) =>
+      jokerPredicateSchema.safeParse(candidate),
+    );
+    return (resource === 'hands' || resource === 'discards') &&
+      (mode === 'add' || mode === 'set') &&
+      value !== null &&
+      value >= 0 &&
+      predicate !== null &&
+      validateJokerPredicateDepth(predicate) &&
+      copyFacet === 'trigger'
+      ? [{ type: 'joker-round-resource', resource, mode, value, predicate, copyFacet }]
+      : [];
   },
   'bxqp:handler:rule-patch': (effect) => {
     const key = stringParameter(effect, 'key');

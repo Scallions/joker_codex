@@ -68,6 +68,11 @@
   overflow: clip;
 }
 
+.filterRows {
+  display: grid;
+  gap: 0.3rem;
+}
+
 .filters button,
 .pagination button {
   border: 1px solid rgb(210 165 78 / 25%);
@@ -178,6 +183,12 @@
   -webkit-line-clamp: 3;
 }
 
+.flavor {
+  color: rgb(222 181 103 / 62%) !important;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-style: italic;
+}
+
 .card footer {
   display: flex;
   min-width: 0;
@@ -226,4 +237,73 @@
   min-width: 3.5rem;
   color: #e5c27a;
   text-align: center;
+}
+
+.screen[data-ledger='joker'] {
+  gap: 0.48rem;
+  padding: 1.45rem 2.45rem 1.15rem;
+}
+
+.screen[data-ledger='joker'] .grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 0.66rem;
+}
+
+.jokerCard {
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  border-color: rgb(224 175 84 / 42%);
+  background: linear-gradient(160deg, rgb(25 35 69 / 98%), rgb(9 14 35 / 98%));
+  box-shadow:
+    0 0.45rem 1.1rem rgb(0 0 0 / 30%),
+    inset 0 0 0 1px rgb(255 255 255 / 3%);
+}
+
+.jokerCard .artwork {
+  grid-row: 1;
+  min-height: 0;
+  border-right: 0;
+  border-bottom: 1px solid rgb(214 170 84 / 28%);
+}
+
+.jokerCard .artwork img {
+  opacity: 1;
+}
+
+.jokerCard .artwork::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 65%, rgb(5 8 25 / 74%));
+  content: '';
+  pointer-events: none;
+}
+
+.jokerCard .artwork > span {
+  z-index: 1;
+  color: #ffe0a0;
+  font-size: 0.55rem;
+}
+
+.jokerCard .copy {
+  padding: 0.42rem 0.56rem 0.3rem;
+}
+
+.jokerCard .copy h2 {
+  margin: 0.08rem 0 0.15rem;
+  font-size: 0.92rem;
+}
+
+.jokerCard .copy p {
+  font-size: 0.47rem;
+  -webkit-line-clamp: 2;
+}
+
+.jokerCard .copy .flavor {
+  margin-top: 0.16rem;
+  -webkit-line-clamp: 1;
+}
+
+.jokerCard footer {
+  padding: 0.22rem 0.56rem 0.3rem;
 }

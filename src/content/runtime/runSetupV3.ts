@@ -243,6 +243,9 @@ export function compileRunSetupV3(
   const appliedRows = challenge
     ? [firstStake, challenge]
     : [deck as CatalogRow, ...appliedStakes];
+  const locallyDefinedJokerIds = new Set(
+    catalog.rows.filter((row) => row.family === 'joker').map((row) => row.id),
+  );
 
   let rules = baselineRules();
   let rulesV3 = baselineRulesV3();
@@ -445,7 +448,9 @@ export function compileRunSetupV3(
     startingJokerIds: challenge?.externalDependencyIds ?? [],
     requiredExternalIds: [
       ...new Set(appliedRows.flatMap((row) => row.externalDependencyIds)),
-    ].sort((left, right) => left.localeCompare(right)),
+    ]
+      .filter((id) => !locallyDefinedJokerIds.has(id))
+      .sort((left, right) => left.localeCompare(right)),
   };
 }
 
@@ -616,7 +621,20 @@ export function createProductionRunV3(
     deckMaterialization.cards,
     setup.deckModifierOperations,
   );
-  const productionContent = createProductionRunContent(catalog);
+  // V3 is the frozen pre-Joker production format. New aggregate content is
+  // compiled directly by V4; V3 runs retain the accepted 230-row snapshot.
+  const legacyRows = catalog.rows.filter((row) => row.family !== 'joker');
+  const legacyCatalog: ProductionCatalog = {
+    ...catalog,
+    rows: legacyRows,
+    assets: catalog.assets.filter((asset) =>
+      legacyRows.some((row) => row.id === asset.contentId),
+    ),
+    contracts: catalog.contracts.filter((record) =>
+      legacyRows.some((row) => row.id === record.contentId),
+    ),
+  };
+  const productionContent = createProductionRunContent(legacyCatalog);
   const semanticRuleKeys = new Set([
     ...setup.rulesV3.bannedContentIds,
     ...setup.rulesV3.excludedRuleKeys,
@@ -693,7 +711,7 @@ export function createProductionRunV3(
     },
     productionContentV3: {
       contentVersion: CONTENT_VERSION_V3,
-      rows: catalog.rows.map((definition) => ({
+      rows: legacyRows.map((definition) => ({
         definition,
         name: catalog.localization[definition.nameKey] as string,
         description: catalog.localization[definition.descriptionKey] as string,

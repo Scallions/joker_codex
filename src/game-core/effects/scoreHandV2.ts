@@ -1,7 +1,7 @@
 import { getCardChipValue, evaluatePokerHand } from '../poker/evaluate';
 import type { CatalogOperation, CatalogTrigger } from '../../content/schema/catalog';
-import type { CardId } from '../model/ids';
-import { isRunStateV3 } from '../model/runV3';
+import type { CardId, JokerInstanceId } from '../model/ids';
+import { isRunStateV3, isRunStateV4, type RunStateV4 } from '../model/runV3';
 import type {
   EffectWindow,
   RunPlayingCard,
@@ -10,6 +10,18 @@ import type {
 } from '../model/runV2';
 import { nextInteger, type RandomState } from '../rng/random';
 import { multiplyScore } from '../score/score';
+import {
+  effectiveCardForPokerV3,
+  projectEffectivePlayingCardV3,
+} from '../poker/effectiveCardV3';
+import { buildHandFactsV3, type HandFactsV3 } from '../poker/handFactsV3';
+import { resolveJokerPassiveCapabilities } from '../rules/jokerPassiveCapabilitiesV3';
+import {
+  evaluateJokerPredicateV3,
+  evaluateJokerValueV3,
+  type JokerDslFailureCode,
+} from '../rules/jokerEffectDslV3';
+import { applyStateOperationV3 } from './applyStateOperationV3';
 import {
   resolveEffectQueue,
   type EffectOperation,
@@ -30,14 +42,77 @@ export type ScoreResolution =
         readonly sourceId: string;
         readonly value: number;
       }[];
+      readonly proposedState: RunStateV2;
     }
   | {
       readonly ok: false;
-      readonly code: EffectQueueFailureCode;
+      readonly code:
+        | EffectQueueFailureCode
+        | JokerDslFailureCode
+        | 'insufficient-funds'
+        | 'inventory-full'
+        | 'pool-empty';
       readonly message: string;
     };
 
 type ScoreResolutionFailure = Extract<ScoreResolution, { readonly ok: false }>;
+
+type JokerScoreOperation = Extract<EffectOperation, { readonly type: 'joker-score' }>;
+
+function resolveJokerScoreValue(
+  state: RunStateV2,
+  facts: HandFactsV3,
+  source: ResolvedEffectOperation,
+  operation: JokerScoreOperation,
+  window: EffectWindow,
+  cardId: CardId | undefined,
+  rngState: RandomState,
+  originalStencilCount: number,
+):
+  | {
+      readonly ok: true;
+      readonly applied: boolean;
+      readonly value: number;
+      readonly rngState: RandomState;
+      readonly rolls: readonly number[];
+    }
+  | ScoreResolutionFailure {
+  if (source.copiedBy.length > 0 && operation.copyFacet === 'none') {
+    return { ok: true, applied: false, value: 0, rngState, rolls: [] };
+  }
+  const context = {
+    state,
+    facts,
+    sourceInstanceId: source.sourceInstanceId as JokerInstanceId,
+    window,
+    ...(cardId ? { cardId } : {}),
+    rngState,
+    originalStencilCount,
+  };
+  const predicate = evaluateJokerPredicateV3(operation.predicate, context);
+  if (!predicate.ok) return predicate;
+  if (!predicate.matched) {
+    return {
+      ok: true,
+      applied: false,
+      value: 0,
+      rngState: predicate.rngState,
+      rolls: predicate.rolls.map(({ value }) => value),
+    };
+  }
+  const value = evaluateJokerValueV3(operation.value, {
+    ...context,
+    rngState: predicate.rngState,
+  });
+  if (!value.ok) return value;
+  return {
+    ok: true,
+    applied: true,
+    value: value.value,
+    rngState: value.rngState,
+    rolls: [...predicate.rolls, ...value.rolls].map((roll) => roll.value),
+  };
+}
 
 function modifierOperations(
   state: RunStateV2,
@@ -64,28 +139,7 @@ function modifierOperations(
 }
 
 function compatibleCard(state: RunStateV2, card: RunPlayingCard) {
-  const identity = modifierOperations(state, card, 'identity');
-  const wild = identity.some(
-    ({ operation }) =>
-      operation.type === 'baseline' &&
-      operation.key === 'playing-card-counts-as-all-suits',
-  );
-  const stone = identity.some(
-    ({ operation }) =>
-      operation.type === 'baseline' &&
-      operation.key === 'playing-card-has-no-effective-rank-or-suit',
-  );
-  return {
-    id: card.id,
-    suit: card.suit,
-    rank: card.rank,
-    enhancement:
-      wild || card.enhancementId?.endsWith(':wild') === true
-        ? ('wild' as const)
-        : stone || card.enhancementId?.endsWith(':stone') === true
-          ? ('stone' as const)
-          : ('none' as const),
-  };
+  return effectiveCardForPokerV3(card, projectEffectivePlayingCardV3(state, card));
 }
 
 function setupOperations(state: RunStateV2): readonly CatalogOperation[] {
@@ -211,6 +265,7 @@ function debuffedCardIds(
   state: RunStateV2,
   cards: readonly RunPlayingCard[],
   operations: readonly EffectOperation[],
+  allCardsFace: boolean,
 ): ReadonlySet<CardId> {
   const suits = operations
     .filter(
@@ -240,7 +295,7 @@ function debuffedCardIds(
         operation.value === true ||
         operation.value === card.suit ||
         (operation.value === 'face-card' &&
-          (card.rank === 'jack' || card.rank === 'queen' || card.rank === 'king')) ||
+          projectEffectivePlayingCardV3(state, card, { allCardsFace }).face) ||
         (operation.selection === 'played-this-ante' &&
           state.history.playedCardIdsThisAnte.includes(card.id));
       if (matches) explicit.add(card.id);
@@ -262,13 +317,15 @@ export function validateBeforeHandV2(
   state: RunStateV2,
   cards: readonly RunPlayingCard[],
 ): string | null {
+  const passives = resolveJokerPassiveCapabilities(state);
+  if (!passives.ok) return passives.message;
   const resolved = resolveBeforeHandWindow(state);
   if (!resolved.ok) return resolved.message;
   const evaluation = evaluatePokerHand(
     cards.map((card) => compatibleCard(state, card)),
     {
-      straightSize: state.rules.straightSize,
-      flushSize: state.rules.flushSize,
+      straightSize: passives.capabilities.straightSize,
+      flushSize: passives.capabilities.flushSize,
       handLevels: state.rules.handLevels,
     },
   );
@@ -307,6 +364,8 @@ export function resolveHandScoreV2(
   state: RunStateV2,
   cards: readonly RunPlayingCard[],
 ): ScoreResolution {
+  const passives = resolveJokerPassiveCapabilities(state);
+  if (!passives.ok) return passives;
   const beforeHand = resolveBeforeHandWindow(state);
   if (!beforeHand.ok) return beforeHand;
   const scoredCardEffects = resolveJokerWindow(state, 'scored-card');
@@ -321,11 +380,69 @@ export function resolveHandScoreV2(
   if (!globalAfterHandEffects.ok) return globalAfterHandEffects;
 
   const beforeHandOperations = beforeHand.operations.map((entry) => entry.operation);
-  const compatibleCards = cards.map((card) => compatibleCard(state, card));
+  const playedIds = new Set(cards.map((card) => card.id));
+  const stateCardMap = new Map(state.deck.cards.map((card) => [card.id, card]));
+  const heldCards = (state.round?.handIds ?? [])
+    .filter((cardId) => !playedIds.has(cardId))
+    .map((cardId) => stateCardMap.get(cardId))
+    .filter((card): card is RunPlayingCard => card !== undefined);
+  const debuffed = debuffedCardIds(
+    state,
+    [...cards, ...heldCards],
+    beforeHandOperations,
+    passives.capabilities.allCardsFace,
+  );
+  const handFacts = buildHandFactsV3(state, cards, heldCards, {
+    debuffedCardIds: debuffed,
+  });
+  if (!handFacts.ok) return handFacts;
+  const facts = handFacts.facts;
+  const compatibleCards = cards.map((card) =>
+    effectiveCardForPokerV3(card, facts.effectiveCards[card.id]!),
+  );
+  let rngState = state.rngState;
+  let proposedState = state;
+  const modifierRolls: { sourceId: string; value: number }[] = [];
   let evaluation = evaluatePokerHand(compatibleCards, {
-    straightSize: state.rules.straightSize,
-    flushSize: state.rules.flushSize,
+    straightSize: passives.capabilities.straightSize,
+    flushSize: passives.capabilities.flushSize,
     handLevels: state.rules.handLevels,
+  });
+  for (const source of beforeHand.operations) {
+    const operation = source.operation;
+    if (operation.type !== 'joker-level-current-hand') continue;
+    const predicate = evaluateJokerPredicateV3(operation.predicate, {
+      state: proposedState,
+      facts,
+      sourceInstanceId: source.sourceInstanceId as JokerInstanceId,
+      window: 'before-hand',
+      rngState,
+      originalStencilCount: 0,
+    });
+    if (!predicate.ok) return predicate;
+    rngState = predicate.rngState;
+    modifierRolls.push(
+      ...predicate.rolls.map(({ value }) => ({ sourceId: source.effectId, value })),
+    );
+    if (!predicate.matched) continue;
+    proposedState = {
+      ...proposedState,
+      rules: {
+        ...proposedState.rules,
+        handLevels: {
+          ...proposedState.rules.handLevels,
+          [evaluation.type]: Math.max(
+            1,
+            proposedState.rules.handLevels[evaluation.type] + operation.levels,
+          ),
+        },
+      },
+    };
+  }
+  evaluation = evaluatePokerHand(compatibleCards, {
+    straightSize: passives.capabilities.straightSize,
+    flushSize: passives.capabilities.flushSize,
+    handLevels: proposedState.rules.handLevels,
   });
   const levelDecrease = beforeHandOperations.find(
     (operation) =>
@@ -338,13 +455,13 @@ export function resolveHandScoreV2(
     typeof levelDecrease.value === 'number'
   ) {
     evaluation = evaluatePokerHand(compatibleCards, {
-      straightSize: state.rules.straightSize,
-      flushSize: state.rules.flushSize,
+      straightSize: passives.capabilities.straightSize,
+      flushSize: passives.capabilities.flushSize,
       handLevels: {
-        ...state.rules.handLevels,
+        ...proposedState.rules.handLevels,
         [evaluation.type]: Math.max(
           1,
-          state.rules.handLevels[evaluation.type] - levelDecrease.value,
+          proposedState.rules.handLevels[evaluation.type] - levelDecrease.value,
         ),
       },
     });
@@ -352,7 +469,6 @@ export function resolveHandScoreV2(
   const cardMap = new Map(cards.map((card) => [card.id, card]));
   const scoringIds = new Set(evaluation.scoringCardIds);
   const scoringCards = cards.filter((card) => scoringIds.has(card.id));
-  const debuffed = debuffedCardIds(state, cards, beforeHandOperations);
   let operationCount =
     beforeHand.operationCount +
     scoredCardEffects.operationCount +
@@ -364,16 +480,245 @@ export function resolveHandScoreV2(
   let baseChips = evaluation.baseChips;
   let multiplier = evaluation.baseMultiplier;
   let finalScoreFactor = 1;
-  let rngState = state.rngState;
   let moneyDelta = 0;
   const destroyedCardIds = new Set<CardId>();
-  const modifierRolls: { sourceId: string; value: number }[] = [];
   const trace: string[] = [
     `window:before-hand`,
     `hand:${evaluation.type}`,
     `base:${evaluation.baseChips}x${multiplier}`,
     `window:scored-card`,
   ];
+  const originalStencilCount = new Set(
+    independentEffects.operations
+      .filter(
+        (source) =>
+          source.copiedBy.length === 0 &&
+          source.operation.type === 'joker-score' &&
+          source.operation.value.kind === 'empty-joker-slots-with-stencils',
+      )
+      .map(({ sourceInstanceId }) => sourceInstanceId),
+  ).size;
+  const applyJokerScore = (
+    source: ResolvedEffectOperation,
+    window: EffectWindow,
+    cardId?: CardId,
+  ): ScoreResolutionFailure | null => {
+    if (source.operation.type !== 'joker-score') return null;
+    const resolved = resolveJokerScoreValue(
+      proposedState,
+      facts,
+      source,
+      source.operation,
+      window,
+      cardId,
+      rngState,
+      originalStencilCount,
+    );
+    if (!resolved.ok) return resolved;
+    rngState = resolved.rngState;
+    modifierRolls.push(
+      ...resolved.rolls.map((value) => ({ sourceId: source.effectId, value })),
+    );
+    if (!resolved.applied) return null;
+    const sourceTrace = source.copiedBy.length
+      ? `${source.copiedBy.join('>')}=>${source.sourceInstanceId}`
+      : source.sourceInstanceId;
+    if (source.operation.metric === 'chips') cardChips += resolved.value;
+    if (source.operation.metric === 'mult') multiplier += resolved.value;
+    if (source.operation.metric === 'mult-factor') {
+      multiplier = multiplyScore(multiplier, resolved.value);
+    }
+    if (source.operation.metric === 'money') moneyDelta += resolved.value;
+    trace.push(
+      `joker-dsl:${window}:${sourceTrace}:${source.effectId}:${source.operation.metric}:${resolved.value}`,
+    );
+    return null;
+  };
+  const applyJokerStateChange = (
+    source: ResolvedEffectOperation,
+    window: EffectWindow,
+  ): ScoreResolutionFailure | null => {
+    const operation = source.operation;
+    if (operation.type !== 'joker-state-change') return null;
+    if (source.copiedBy.length > 0 && operation.copyFacet === 'none') return null;
+    const context = {
+      state: proposedState,
+      facts,
+      sourceInstanceId: source.sourceInstanceId as JokerInstanceId,
+      window,
+      rngState,
+      originalStencilCount,
+    };
+    const predicate = evaluateJokerPredicateV3(operation.predicate, context);
+    if (!predicate.ok) return predicate;
+    rngState = predicate.rngState;
+    modifierRolls.push(
+      ...predicate.rolls.map(({ value }) => ({ sourceId: source.effectId, value })),
+    );
+    if (!predicate.matched) return null;
+    const value = evaluateJokerValueV3(operation.value, {
+      ...context,
+      state: proposedState,
+      rngState,
+    });
+    if (!value.ok) return value;
+    rngState = value.rngState;
+    modifierRolls.push(
+      ...value.rolls.map(({ value: roll }) => ({
+        sourceId: source.effectId,
+        value: roll,
+      })),
+    );
+    if (!isRunStateV4(proposedState)) {
+      return {
+        ok: false,
+        code: 'joker-state-key',
+        message: '当前牌局不支持奇牌能力状态',
+      };
+    }
+    const stateV4 = proposedState;
+    const modifier = stateV4.modifiersV3.jokers.find(
+      ({ instanceId }) => instanceId === source.sourceInstanceId,
+    );
+    const current = modifier?.abilityState[operation.key];
+    if (typeof current !== 'number' || !Number.isFinite(current)) {
+      return {
+        ok: false,
+        code: 'joker-state-key',
+        message: `奇牌能力状态键无效：${operation.key}`,
+      };
+    }
+    const changed =
+      operation.mode === 'set'
+        ? value.value
+        : operation.mode === 'add'
+          ? current + value.value
+          : Math.max(0, current - value.value);
+    if (!Number.isFinite(changed)) {
+      return {
+        ok: false,
+        code: 'joker-value-range',
+        message: `奇牌能力状态结果无效：${operation.key}`,
+      };
+    }
+    const changedState: RunStateV4 = {
+      ...stateV4,
+      modifiersV3: {
+        ...stateV4.modifiersV3,
+        jokers: stateV4.modifiersV3.jokers.map((candidate) =>
+          candidate.instanceId === source.sourceInstanceId
+            ? {
+                ...candidate,
+                abilityState: {
+                  ...candidate.abilityState,
+                  [operation.key]: changed,
+                },
+              }
+            : candidate,
+        ),
+      },
+    };
+    proposedState = changedState;
+    trace.push(
+      `joker-state:${window}:${source.sourceInstanceId}:${source.effectId}:${operation.key}:${changed}`,
+    );
+    return null;
+  };
+  const jokerRetriggerSourcesFor = (
+    sources: readonly ResolvedEffectOperation[],
+    target: 'scored-card' | 'held-card',
+    window: EffectWindow,
+    cardId: CardId,
+  ):
+    | { readonly ok: true; readonly sources: readonly string[] }
+    | ScoreResolutionFailure => {
+    const output: string[] = [];
+    for (const source of sources) {
+      const operation = source.operation;
+      if (operation.type !== 'joker-retrigger-card' || operation.target !== target) {
+        continue;
+      }
+      if (source.copiedBy.length > 0 && operation.copyFacet === 'none') continue;
+      const predicate = evaluateJokerPredicateV3(operation.predicate, {
+        state: proposedState,
+        facts,
+        sourceInstanceId: source.sourceInstanceId as JokerInstanceId,
+        window,
+        cardId,
+        rngState,
+        originalStencilCount,
+      });
+      if (!predicate.ok) return predicate;
+      rngState = predicate.rngState;
+      modifierRolls.push(
+        ...predicate.rolls.map(({ value }) => ({ sourceId: source.effectId, value })),
+      );
+      if (!predicate.matched) continue;
+      output.push(
+        ...Array.from({ length: operation.count }, () => `joker:${source.effectId}`),
+      );
+    }
+    return { ok: true, sources: output };
+  };
+  const applyJokerCreateContent = (
+    source: ResolvedEffectOperation,
+    window: EffectWindow,
+    cardId?: CardId,
+  ): ScoreResolutionFailure | null => {
+    const operation = source.operation;
+    if (operation.type !== 'joker-create-content') return null;
+    if (source.copiedBy.length > 0 && operation.copyFacet === 'none') return null;
+    const lacksCapacity =
+      operation.capacityRequired &&
+      ((operation.family === 'joker' &&
+        proposedState.inventory.jokers.reduce(
+          (total, joker) => total + joker.slotContribution,
+          0,
+        ) >= proposedState.rules.jokerSlots) ||
+        ((operation.family === 'tarot' ||
+          operation.family === 'planet' ||
+          operation.family === 'spectral') &&
+          proposedState.inventory.consumables.length >=
+            proposedState.rules.consumableSlots));
+    if (lacksCapacity) return null;
+    const predicate = evaluateJokerPredicateV3(operation.predicate, {
+      state: proposedState,
+      facts,
+      sourceInstanceId: source.sourceInstanceId as JokerInstanceId,
+      window,
+      ...(cardId ? { cardId } : {}),
+      rngState,
+      originalStencilCount,
+    });
+    if (!predicate.ok) return predicate;
+    rngState = predicate.rngState;
+    modifierRolls.push(
+      ...predicate.rolls.map(({ value }) => ({ sourceId: source.effectId, value })),
+    );
+    if (!predicate.matched) return null;
+    const created = applyStateOperationV3(
+      { ...proposedState, rngState },
+      {
+        type: 'create-content-family',
+        family: operation.family,
+        count: operation.count,
+        rarity: operation.rarity,
+        capacityRequired: operation.capacityRequired,
+        stickerPolicy: operation.stickerPolicy,
+      },
+      {
+        window,
+        sourceInstanceId: source.sourceInstanceId,
+        effectId: source.effectId,
+      },
+    );
+    if (!created.ok) {
+      return { ok: false, code: created.code, message: created.message };
+    }
+    proposedState = created.state;
+    rngState = created.state.rngState;
+    return null;
+  };
   for (const source of beforeHand.operations) {
     const operation = source.operation;
     if (operation.type === 'add-chips') {
@@ -437,7 +782,18 @@ export function resolveHandScoreV2(
         ? Array.from({ length: source.operation.count }, () => source.effectId)
         : [],
     );
-    const retriggerSources = [...catalogRetriggerSources, ...jokerRetriggerSources];
+    const dslRetriggers = jokerRetriggerSourcesFor(
+      scoredCardEffects.operations,
+      'scored-card',
+      'scored-card',
+      card.id,
+    );
+    if (!dslRetriggers.ok) return dslRetriggers;
+    const retriggerSources = [
+      ...catalogRetriggerSources,
+      ...jokerRetriggerSources,
+      ...dslRetriggers.sources,
+    ];
     const passes = 1 + retriggerSources.length;
     for (let pass = 0; pass < passes; pass += 1) {
       operationCount += 1;
@@ -517,17 +873,17 @@ export function resolveHandScoreV2(
             `card-effect:${sourceTrace}:${source.effectId}:${card.id}:multx${operation.factor}`,
           );
         }
+        if (operation.type === 'joker-score') operationCount += 1;
+        const dslFailure = applyJokerScore(source, 'scored-card', card.id);
+        if (dslFailure) return dslFailure;
+        if (operation.type === 'joker-create-content') operationCount += 1;
+        const createFailure = applyJokerCreateContent(source, 'scored-card', card.id);
+        if (createFailure) return createFailure;
       }
     }
   }
 
   trace.push('window:held-card');
-  const playedIds = new Set(cards.map((card) => card.id));
-  const stateCardMap = new Map(state.deck.cards.map((card) => [card.id, card]));
-  const heldCards = (state.round?.handIds ?? [])
-    .filter((cardId) => !playedIds.has(cardId))
-    .map((cardId) => stateCardMap.get(cardId))
-    .filter((card): card is RunPlayingCard => card !== undefined);
   for (const card of heldCards) {
     if (debuffed.has(card.id)) continue;
     const heldOperations = modifierOperations(state, card, 'held-card');
@@ -536,7 +892,15 @@ export function resolveHandScoreV2(
         operation.type === 'baseline' &&
         operation.key === 'retrigger-scored-or-held-card-once',
     );
-    for (let pass = 0; pass < (heldRetrigger ? 2 : 1); pass += 1) {
+    const dslRetriggers = jokerRetriggerSourcesFor(
+      heldCardEffects.operations,
+      'held-card',
+      'held-card',
+      card.id,
+    );
+    if (!dslRetriggers.ok) return dslRetriggers;
+    const heldPasses = 1 + (heldRetrigger ? 1 : 0) + dslRetriggers.sources.length;
+    for (let pass = 0; pass < heldPasses; pass += 1) {
       for (const { sourceId, operation } of heldOperations) {
         operationCount += 1;
         if (operation.type === 'score-rule' && operation.key === 'add-chips') {
@@ -550,9 +914,15 @@ export function resolveHandScoreV2(
         }
         trace.push(`held-modifier:${sourceId}:${card.id}:pass:${pass + 1}`);
       }
+      for (const source of heldCardEffects.operations) {
+        if (source.operation.type === 'joker-score') operationCount += 1;
+        const dslFailure = applyJokerScore(source, 'held-card', card.id);
+        if (dslFailure) return dslFailure;
+      }
     }
     for (const source of heldCardEffects.operations) {
       const operation = source.operation;
+      if (operation.type === 'joker-score') continue;
       operationCount += 1;
       if (operation.type === 'add-chips') cardChips += operation.amount;
       if (operation.type === 'add-multiplier') multiplier += operation.amount;
@@ -587,6 +957,12 @@ export function resolveHandScoreV2(
       multiplier = multiplyScore(multiplier, operation.factor);
       trace.push(`joker:${sourceTrace}:${source.effectId}:multx${operation.factor}`);
     }
+    if (operation.type === 'joker-state-change') operationCount += 1;
+    const stateFailure = applyJokerStateChange(source, 'joker-independent');
+    if (stateFailure) return stateFailure;
+    if (operation.type === 'joker-score') operationCount += 1;
+    const dslFailure = applyJokerScore(source, 'joker-independent');
+    if (dslFailure) return dslFailure;
   }
 
   for (const source of afterHandEffects.operations) {
@@ -656,5 +1032,6 @@ export function resolveHandScoreV2(
     moneyDelta,
     destroyedCardIds: [...destroyedCardIds],
     modifierRolls,
+    proposedState: { ...proposedState, rngState },
   };
 }

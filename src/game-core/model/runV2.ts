@@ -17,8 +17,9 @@ import type {
 export const RUN_SCHEMA_VERSION_V2 = 2 as const;
 export const CONTENT_VERSION_V2 = 'run-economy-2' as const;
 
-export type ExecutableRunSchemaVersion = 2 | 3;
-export type ExecutableRunContentVersion = 'run-economy-2' | 'catalog-baseline-3';
+export type ExecutableRunSchemaVersion = 2 | 3 | 4;
+export type ExecutableRunContentVersion =
+  'run-economy-2' | 'catalog-baseline-3' | 'joker-catalog-1';
 export type RunModeV2 =
   | 'fixture-campaign'
   | 'migrated-foundation'
@@ -45,6 +46,7 @@ export const EFFECT_WINDOWS = [
   'item-acquired',
   'pack-opened',
   'ante-ended',
+  'passive',
 ] as const;
 
 export type EffectWindow = (typeof EFFECT_WINDOWS)[number];
@@ -114,6 +116,16 @@ export interface JokerDefinitionV2 extends ItemDefinitionBase {
   readonly kind: 'joker';
   readonly rarity: 'common' | 'uncommon' | 'rare' | 'legendary';
   readonly slotContribution: number;
+  /** Present on production catalog Jokers; omitted by legacy fixture snapshots. */
+  readonly copyPolicy?: 'output' | 'trigger' | 'none';
+  /** Present on production catalog Jokers; omitted by legacy fixture snapshots. */
+  readonly stickerEligibility?: {
+    readonly permanent: boolean;
+    readonly perishable: boolean;
+    readonly rental: true;
+  };
+  /** Present on production catalog Jokers; V4 acquisition materializes a copy. */
+  readonly initialAbilityState?: Readonly<Record<string, string | number | boolean>>;
 }
 
 export interface ConsumableDefinitionV2 extends ItemDefinitionBase {

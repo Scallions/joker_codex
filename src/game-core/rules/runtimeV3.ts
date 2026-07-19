@@ -1,4 +1,4 @@
-import { isRunStateV3, type RunStateV3 } from '../model/runV3';
+import { isRunStateV3, type CatalogRunState as RunStateV3 } from '../model/runV3';
 import type { CardId } from '../model/ids';
 import type { BlindKind, MaterializedBlind, RunStateV2 } from '../model/runV2';
 import { nextInteger } from '../rng/random';

@@ -19,6 +19,9 @@ import { nextInteger, type RandomState } from '../rng/random';
 import { pickStable, pickWeightedStable } from '../rng/weighted';
 import { purchasePrice } from './pricing';
 import { catalogRowIsExcludedBySemanticRules } from '../../content/runtime/eligibility';
+import { resolveJokerPassiveCapabilities } from '../rules/jokerPassiveCapabilitiesV3';
+import type { EffectQueueFailureCode } from '../effects/registry';
+import { drawJokerDefinitionV3 } from './jokerRarityV3';
 
 export interface MaterializedItemResultV2 {
   readonly item: MaterializedItem;
@@ -30,7 +33,7 @@ function definitionFamily(definition: ItemDefinitionV2): string {
   return definition.kind;
 }
 
-function definitionIsEligible(
+export function definitionIsEligibleV3(
   state: RunStateV2,
   definition: ItemDefinitionV2,
   source: 'shop' | 'pack' | 'generated',
@@ -74,6 +77,7 @@ function definitionIsEligible(
     return false;
   }
   if (
+    row.family !== 'joker' &&
     row.externalDependencyIds.some(
       (id) => !state.externalDependenciesV3.resolvedIds.includes(id),
     )
@@ -96,6 +100,20 @@ function definitionIsEligible(
   }
   if (row.availability.kind === 'challenge-only') {
     return state.setupV3.challengeId === row.availability.value;
+  }
+  if (row.availability.kind === 'deck-contains-modifier') {
+    const requiredModifierId = row.availability.value;
+    const mirrors = new Map(
+      state.modifiersV3.playingCards.map((modifier) => [modifier.cardId, modifier]),
+    );
+    return state.deck.cards.some((card) => {
+      const mirror = mirrors.get(card.id);
+      return [
+        mirror?.enhancementId ?? card.enhancementId,
+        mirror?.sealId ?? card.sealId,
+        mirror?.editionId ?? card.editionId,
+      ].includes(requiredModifierId);
+    });
   }
   return row.availability.kind !== 'profile-objective';
 }
@@ -210,7 +228,7 @@ function replacementPool(
       row.availability.value === 'bxqp:pool:spectral-rare-replacement';
     return kind === 'rare-spectral'
       ? rare
-      : !rare && definitionIsEligible(state, definition, 'pack');
+      : !rare && definitionIsEligibleV3(state, definition, 'pack');
   });
 }
 
@@ -239,7 +257,7 @@ export type ShopCreationV2 =
     }
   | {
       readonly ok: false;
-      readonly code: 'effect-handler-missing';
+      readonly code: EffectQueueFailureCode;
       readonly message: string;
     };
 
@@ -446,7 +464,7 @@ function drawItemDefinitions(
     (definition) =>
       allowedKinds.includes(definition.kind) &&
       definitionWeight(state, definition) > 0 &&
-      definitionIsEligible(state, definition, source) &&
+      definitionIsEligibleV3(state, definition, source) &&
       predicate(definition),
   );
   if (pool.length === 0) return { definitions: [], rngState };
@@ -460,16 +478,70 @@ function drawItemDefinitions(
         )
       : pool;
     if (eligible.length === 0) break;
-    const draw = pickWeightedStable(
-      eligible.map((definition) => ({
-        id: definition.contentId,
+    const jokerPool = eligible.filter(
+      (definition): definition is Extract<ItemDefinitionV2, { kind: 'joker' }> =>
+        definition.kind === 'joker',
+    );
+    if (jokerPool.length === eligible.length) {
+      const jokerDraw = drawJokerDefinitionV3(
+        jokerPool.map((definition) => ({
+          contentId: definition.contentId,
+          rarity: definition.rarity,
+          weightUnits: definitionWeight(state, definition),
+          value: definition,
+        })),
+        currentRng,
+        'ordinary',
+      );
+      if (!jokerDraw.ok) break;
+      definitions.push(jokerDraw.value);
+      currentRng = jokerDraw.rngState;
+      continue;
+    }
+    const nonJokers = eligible.filter((definition) => definition.kind !== 'joker');
+    type DrawGroup =
+      | { readonly kind: 'definition'; readonly definition: ItemDefinitionV2 }
+      | { readonly kind: 'joker' };
+    const groupDraw = pickWeightedStable<DrawGroup>(
+      [
+        ...nonJokers.map((definition) => ({
+          id: `definition:${definition.contentId}`,
+          weightUnits: definitionWeight(state, definition),
+          value: { kind: 'definition', definition } as const,
+        })),
+        ...(jokerPool.length > 0
+          ? [
+              {
+                id: 'family:joker',
+                weightUnits: jokerPool.reduce(
+                  (total, definition) => total + definitionWeight(state, definition),
+                  0,
+                ),
+                value: { kind: 'joker' } as const,
+              },
+            ]
+          : []),
+      ],
+      currentRng,
+    );
+    currentRng = groupDraw.state;
+    if (groupDraw.value.kind === 'definition') {
+      definitions.push(groupDraw.value.definition);
+      continue;
+    }
+    const jokerDraw = drawJokerDefinitionV3(
+      jokerPool.map((definition) => ({
+        contentId: definition.contentId,
+        rarity: definition.rarity,
         weightUnits: definitionWeight(state, definition),
         value: definition,
       })),
       currentRng,
+      'ordinary',
     );
-    definitions.push(draw.value);
-    currentRng = draw.state;
+    if (!jokerDraw.ok) break;
+    definitions.push(jokerDraw.value);
+    currentRng = jokerDraw.rngState;
   }
   return { definitions, rngState: currentRng };
 }
@@ -828,18 +900,21 @@ function materializeFreeJokerTags(
         definition.kind === 'joker' &&
         definition.rarity === rarity &&
         !usedContentIds.has(definition.contentId) &&
-        definitionIsEligible(state, definition, 'shop'),
+        definitionIsEligibleV3(state, definition, 'shop'),
     );
     if (pool.length === 0) continue;
-    const draw = pickWeightedStable(
+    const draw = drawJokerDefinitionV3(
       pool.map((definition) => ({
-        id: definition.contentId,
+        contentId: definition.contentId,
+        rarity: definition.rarity,
         weightUnits: definitionWeight(state, definition),
         value: definition,
       })),
       rngState,
+      rarity as Extract<ItemDefinitionV2, { kind: 'joker' }>['rarity'],
     );
-    rngState = draw.state;
+    if (!draw.ok) continue;
+    rngState = draw.rngState;
     usedContentIds.add(draw.value.contentId);
     const offerId = stableId<'shop-offer'>(
       `${shopId}:tag-joker:${offers.length}:${draw.value.contentId}`,
@@ -893,6 +968,8 @@ function applyEditionTags(
 }
 
 export function createShopV2(state: RunStateV2): ShopCreationV2 {
+  const passives = resolveJokerPassiveCapabilities(state);
+  if (!passives.ok) return passives;
   const shopId = stableId<'shop'>(
     `shop:${state.runId}:${state.progress.ante}:${state.progress.blindPosition}:${state.history.completedBlindIds.length + 1}`,
   );
@@ -995,7 +1072,7 @@ export function createShopV2(state: RunStateV2): ShopCreationV2 {
       rerollCount: 0,
       rerollCost: state.rules.baseRerollCost,
       purchasedOfferIds: [],
-      freeRerollAvailable: grantsFreeReroll,
+      freeRerollAvailable: grantsFreeReroll || passives.capabilities.freeRerollPerShop,
     },
     rngState: extraVouchers.rngState,
     tags: state.inventory.tags.map((tag) =>

@@ -196,6 +196,16 @@
   box-shadow: inset 0 0 0 0.22rem rgba(159, 47, 50, 0.08);
 }
 
+.offerArtwork {
+  width: 3.1rem;
+  height: 4.15rem;
+  margin: 0.15rem 0;
+  border: 1px solid rgba(87, 31, 31, 0.58);
+  border-radius: 0.2rem;
+  object-fit: cover;
+  box-shadow: 0 0.28rem 0.55rem rgba(42, 18, 21, 0.3);
+}
+
 .offer h2 {
   margin: 0;
   font-family: 'STKaiti', 'KaiTi', serif;
@@ -210,6 +220,24 @@
   font-size: 0.58rem;
   line-height: 1.2;
   text-align: center;
+}
+
+.jokerCurrentValue {
+  color: #84252f;
+  font-size: 0.56rem;
+  font-weight: 900;
+}
+
+.jokerFlavor {
+  max-width: 13rem;
+  margin: 0.05rem 0 0.18rem;
+  overflow: hidden;
+  color: rgba(66, 42, 35, 0.52);
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 0.5rem;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .offer > button {
@@ -276,7 +304,7 @@
 
 .ownedJokers article {
   display: grid;
-  grid-template-columns: 3.3rem 1fr auto;
+  grid-template-columns: 3.3rem minmax(0, 1fr);
   gap: 0.3rem 0.5rem;
   align-items: center;
   padding: 0.55rem;
@@ -284,26 +312,59 @@
   background: rgba(92, 25, 38, 0.45);
 }
 
-.ownedJokers article > span {
+.ownedJokerArtwork,
+.ownedJokerFallback {
+  grid-row: 1 / span 2;
+  width: 3.1rem;
+  height: 4.1rem;
+  border: 1px solid rgba(224, 181, 93, 0.38);
+  border-radius: 0.18rem;
+  object-fit: cover;
+}
+
+.ownedJokerFallback {
+  display: grid;
+  place-items: center;
+  color: #d5ac5c;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1.1rem;
+}
+
+.ownedJokerCopy {
+  display: grid;
+  min-width: 0;
+  gap: 0.08rem;
+}
+
+.ownedJokerCopy > span {
   color: #a98c58;
   font-size: 0.5rem;
 }
 
-.ownedJokers article > strong {
+.ownedJokerCopy > strong {
   color: #f0d7a3;
   font-family: 'STKaiti', 'KaiTi', serif;
   font-size: 0.88rem;
 }
 
-.ownedJokers article > em {
+.ownedJokerCopy > em {
   color: #eabf61;
   font-size: 0.58rem;
   font-style: normal;
 }
 
-.ownedJokers article > div {
+.ownedJokerCopy > small {
+  overflow: hidden;
+  color: rgba(230, 210, 170, 0.5);
+  font-size: 0.48rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ownedJokerActions {
   display: flex;
-  grid-column: 2 / -1;
+  grid-column: 2;
   gap: 0.25rem;
 }
 

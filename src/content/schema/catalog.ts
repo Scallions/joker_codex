@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const CATALOG_CONTENT_VERSION = 'catalog-baseline-3' as const;
 
-export const CATALOG_FAMILIES = [
+export const NON_JOKER_CATALOG_FAMILIES = [
   'deck',
   'stake',
   'challenge',
@@ -18,9 +18,14 @@ export const CATALOG_FAMILIES = [
   'edition',
 ] as const;
 
+export const CATALOG_FAMILIES = [...NON_JOKER_CATALOG_FAMILIES, 'joker'] as const;
+
+export type NonJokerCatalogFamily = (typeof NON_JOKER_CATALOG_FAMILIES)[number];
 export type CatalogFamily = (typeof CATALOG_FAMILIES)[number];
 
-export const EXPECTED_CATALOG_COUNTS: Readonly<Record<CatalogFamily, number>> = {
+export const EXPECTED_NON_JOKER_CATALOG_COUNTS: Readonly<
+  Record<NonJokerCatalogFamily, number>
+> = {
   deck: 15,
   stake: 8,
   challenge: 20,
@@ -36,7 +41,15 @@ export const EXPECTED_CATALOG_COUNTS: Readonly<Record<CatalogFamily, number>> = 
   edition: 5,
 };
 
-export const EXPECTED_CATALOG_TOTAL = 230;
+export const EXPECTED_JOKER_CATALOG_COUNT = 50;
+export const EXPECTED_CATALOG_COUNTS: Readonly<Record<CatalogFamily, number>> = {
+  ...EXPECTED_NON_JOKER_CATALOG_COUNTS,
+  joker: EXPECTED_JOKER_CATALOG_COUNT,
+};
+
+export const EXPECTED_NON_JOKER_CATALOG_TOTAL = 230;
+export const EXPECTED_JOKER_CATALOG_TOTAL = 50;
+export const EXPECTED_CATALOG_TOTAL = 280;
 
 export type AvailabilityRule =
   | { readonly kind: 'always'; readonly value: null }
@@ -44,10 +57,12 @@ export type AvailabilityRule =
   | { readonly kind: 'prerequisite'; readonly value: string }
   | { readonly kind: 'hand-played'; readonly value: string }
   | { readonly kind: 'challenge-only'; readonly value: string }
-  | { readonly kind: 'profile-objective'; readonly value: string };
+  | { readonly kind: 'profile-objective'; readonly value: string }
+  | { readonly kind: 'deck-contains-modifier'; readonly value: string };
 
 export type DiscoveryRule =
   | { readonly kind: 'visible'; readonly value: null }
+  | { readonly kind: 'first-acquisition'; readonly value: null }
   | { readonly kind: 'after-use'; readonly value: string }
   | { readonly kind: 'profile-objective'; readonly value: string };
 
@@ -91,10 +106,169 @@ export type RulePatchKey =
   | 'price-inflation'
   | 'maximum-selected-cards';
 
+export type JokerHandFact =
+  'pair' | 'three-of-a-kind' | 'two-pair' | 'straight' | 'flush';
+export type JokerSuit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
+export type JokerRank =
+  | '2'
+  | '3'
+  | '4'
+  | '5'
+  | '6'
+  | '7'
+  | '8'
+  | '9'
+  | '10'
+  | 'jack'
+  | 'queen'
+  | 'king'
+  | 'ace';
+export type JokerCopyFacet = 'output' | 'trigger' | 'none';
+
+export type JokerPredicate =
+  | { readonly kind: 'always' }
+  | {
+      readonly kind: 'all' | 'any';
+      readonly predicates: readonly JokerPredicate[];
+    }
+  | { readonly kind: 'hand-contains'; readonly fact: JokerHandFact }
+  | { readonly kind: 'played-card-count-at-most'; readonly count: number }
+  | { readonly kind: 'scored-card-suit'; readonly suit: JokerSuit }
+  | { readonly kind: 'scored-card-rank-in'; readonly ranks: readonly JokerRank[] }
+  | { readonly kind: 'scored-card-face' }
+  | {
+      readonly kind: 'scoring-cards-face';
+      readonly comparison: 'any' | 'none';
+    }
+  | { readonly kind: 'held-lowest-rank' }
+  | { readonly kind: 'all-held-suits'; readonly suits: readonly JokerSuit[] }
+  | {
+      readonly kind: 'remaining-discards';
+      readonly comparison: 'zero' | 'any';
+    }
+  | { readonly kind: 'final-hand' }
+  | { readonly kind: 'no-discards-used' }
+  | {
+      readonly kind: 'run-hand-modulo';
+      readonly divisor: number;
+      readonly equals: number;
+    }
+  | {
+      readonly kind: 'source-state-comparison';
+      readonly key: string;
+      readonly comparison: 'equal' | 'at-most' | 'at-least';
+      readonly value: number;
+    }
+  | {
+      readonly kind: 'chance';
+      readonly numerator: number;
+      readonly denominator: number;
+    };
+
+export type JokerValue =
+  | { readonly kind: 'fixed'; readonly value: number }
+  | { readonly kind: 'remaining-discards'; readonly scale: number }
+  | { readonly kind: 'empty-joker-slots-with-stencils' }
+  | {
+      readonly kind: 'full-deck-modifier-count';
+      readonly modifierId: string;
+      readonly scale: number;
+      readonly base: number;
+    }
+  | { readonly kind: 'owned-joker-count'; readonly scale: number }
+  | { readonly kind: 'matching-hand-history'; readonly includeCurrent: boolean }
+  | { readonly kind: 'selected-held-rank'; readonly scale: number }
+  | { readonly kind: 'source-state'; readonly key: string }
+  | {
+      readonly kind: 'uniform-integer';
+      readonly minimum: number;
+      readonly maximum: number;
+    };
+
 export type CatalogOperation =
   | {
       readonly type: 'baseline';
       readonly key: string;
+    }
+  | {
+      readonly type: 'passive-capability';
+      readonly capability: 'straight-flush-size' | 'allowed-debt';
+      readonly value: number;
+    }
+  | {
+      readonly type: 'passive-capability';
+      readonly capability: 'free-reroll-per-shop' | 'all-cards-face';
+      readonly value: boolean;
+    }
+  | {
+      readonly type: 'joker-score';
+      readonly metric: 'chips' | 'mult' | 'mult-factor' | 'money';
+      readonly predicate: JokerPredicate;
+      readonly value: JokerValue;
+      readonly copyFacet: JokerCopyFacet;
+    }
+  | {
+      readonly type: 'joker-retrigger-card';
+      readonly target: 'scored-card' | 'held-card';
+      readonly predicate: JokerPredicate;
+      readonly count: number;
+      readonly copyFacet: JokerCopyFacet;
+    }
+  | {
+      readonly type: 'joker-create-content';
+      readonly family: 'joker' | 'tarot' | 'planet' | 'spectral' | 'playing-card';
+      readonly count: number;
+      readonly rarity: 'any' | 'common' | 'uncommon' | 'rare' | 'legendary';
+      readonly predicate: JokerPredicate;
+      readonly capacityRequired: boolean;
+      readonly stickerPolicy: 'normal' | 'none' | 'copy-source';
+      readonly copyFacet: JokerCopyFacet;
+    }
+  | {
+      readonly type: 'joker-create-playing-card';
+      readonly enhancementId: string;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: JokerCopyFacet;
+    }
+  | {
+      readonly type: 'joker-destroy-right-grow';
+      readonly stateKey: string;
+      readonly saleValueScale: number;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-destroy-source';
+      readonly predicate: JokerPredicate;
+      readonly observationKey: string | null;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-state-change';
+      readonly key: string;
+      readonly mode: 'set' | 'add' | 'decrement';
+      readonly value: JokerValue;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-level-current-hand';
+      readonly levels: number;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'trigger';
+    }
+  | {
+      readonly type: 'joker-sell-value-add';
+      readonly amount: number;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-round-resource';
+      readonly resource: 'hands' | 'discards';
+      readonly mode: 'add' | 'set';
+      readonly value: number;
+      readonly predicate: JokerPredicate;
+      readonly copyFacet: 'trigger';
     }
   | {
       readonly type: 'rule-patch';
@@ -288,9 +462,8 @@ export interface CatalogEffect {
   readonly operations: readonly CatalogOperation[];
 }
 
-export interface CatalogRow {
+export interface CatalogRowBase {
   readonly id: string;
-  readonly family: CatalogFamily;
   readonly ordinal: number;
   readonly referenceIndex: string;
   readonly nameKey: string;
@@ -309,6 +482,36 @@ export interface CatalogRow {
   readonly effects: readonly CatalogEffect[];
   readonly mechanicalProfileId: string | null;
 }
+
+export interface NonJokerCatalogRow extends CatalogRowBase {
+  readonly family: NonJokerCatalogFamily;
+}
+
+export type JokerRarity = 'common' | 'uncommon' | 'rare' | 'legendary';
+export type JokerEnsemble =
+  | 'main-stage'
+  | 'mask-illusion'
+  | 'backstage-machinery'
+  | 'music-acrobatics'
+  | 'midnight-spirits';
+export type JokerCopyPolicy = 'output' | 'trigger' | 'none';
+export type JokerAbilityStateValue = string | number | boolean;
+
+export interface JokerCatalogRow extends CatalogRowBase {
+  readonly family: 'joker';
+  readonly rarity: JokerRarity;
+  readonly flavorKey: string;
+  readonly ensemble: JokerEnsemble;
+  readonly copyPolicy: JokerCopyPolicy;
+  readonly stickerEligibility: {
+    readonly permanent: boolean;
+    readonly perishable: boolean;
+    readonly rental: true;
+  };
+  readonly initialAbilityState: Readonly<Record<string, JokerAbilityStateValue>>;
+}
+
+export type CatalogRow = NonJokerCatalogRow | JokerCatalogRow;
 
 export interface BoosterProfile {
   readonly id: string;
@@ -331,18 +534,32 @@ export interface ExternalContentDependency {
   readonly consumerIds: readonly string[];
 }
 
-export interface AssetOwnershipRecord {
+interface AssetOwnershipRecordBase {
   readonly id: string;
   readonly contentId: string;
   readonly assetId: string;
   readonly assetPath: string;
   readonly focalKey: string;
-  readonly source: 'project-svg';
   readonly sourceFileOrPrompt: string;
   readonly author: '百戏奇牌项目';
   readonly reviewed: boolean;
   readonly notes: string;
 }
+
+export interface ProjectSvgAssetOwnershipRecord extends AssetOwnershipRecordBase {
+  readonly source: 'project-svg';
+}
+
+export interface GeneratedRasterAssetOwnershipRecord extends AssetOwnershipRecordBase {
+  readonly source: 'generated-raster';
+  readonly ensemble: JokerEnsemble;
+  readonly width: 768;
+  readonly height: 1024;
+  readonly inspectionStatus: 'approved';
+}
+
+export type AssetOwnershipRecord =
+  ProjectSvgAssetOwnershipRecord | GeneratedRasterAssetOwnershipRecord;
 
 export interface ContractCoverageRecord {
   readonly contentId: string;
@@ -362,73 +579,250 @@ export interface ProductionCatalog {
 const nonemptyId = z.string().min(1).max(180);
 const safeNonnegative = z.number().int().nonnegative().safe();
 const primitiveValue = z.union([z.string(), z.number().finite(), z.boolean()]);
+const jokerSuitSchema = z.enum(['hearts', 'diamonds', 'clubs', 'spades']);
+const jokerRankSchema = z.enum([
+  '2',
+  '3',
+  '4',
+  '5',
+  '6',
+  '7',
+  '8',
+  '9',
+  '10',
+  'jack',
+  'queen',
+  'king',
+  'ace',
+]);
 
-export const catalogRowSchema: z.ZodType<CatalogRow> = z
+export const jokerPredicateSchema: z.ZodType<JokerPredicate> = z.lazy(() =>
+  z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('always') }).strict(),
+    z
+      .object({
+        kind: z.literal('all'),
+        predicates: z.array(jokerPredicateSchema).min(1).max(8),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('any'),
+        predicates: z.array(jokerPredicateSchema).min(1).max(8),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('hand-contains'),
+        fact: z.enum(['pair', 'three-of-a-kind', 'two-pair', 'straight', 'flush']),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('played-card-count-at-most'),
+        count: safeNonnegative,
+      })
+      .strict(),
+    z.object({ kind: z.literal('scored-card-suit'), suit: jokerSuitSchema }).strict(),
+    z
+      .object({
+        kind: z.literal('scored-card-rank-in'),
+        ranks: z.array(jokerRankSchema).min(1).max(13),
+      })
+      .strict(),
+    z.object({ kind: z.literal('scored-card-face') }).strict(),
+    z
+      .object({
+        kind: z.literal('scoring-cards-face'),
+        comparison: z.enum(['any', 'none']),
+      })
+      .strict(),
+    z.object({ kind: z.literal('held-lowest-rank') }).strict(),
+    z
+      .object({
+        kind: z.literal('all-held-suits'),
+        suits: z.array(jokerSuitSchema).min(1).max(4),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('remaining-discards'),
+        comparison: z.enum(['zero', 'any']),
+      })
+      .strict(),
+    z.object({ kind: z.literal('final-hand') }).strict(),
+    z.object({ kind: z.literal('no-discards-used') }).strict(),
+    z
+      .object({
+        kind: z.literal('run-hand-modulo'),
+        divisor: safeNonnegative.min(1),
+        equals: safeNonnegative,
+      })
+      .strict()
+      .refine(({ divisor, equals }) => equals < divisor),
+    z
+      .object({
+        kind: z.literal('source-state-comparison'),
+        key: nonemptyId,
+        comparison: z.enum(['equal', 'at-most', 'at-least']),
+        value: z.number().finite(),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('chance'),
+        numerator: safeNonnegative,
+        denominator: safeNonnegative.min(1),
+      })
+      .strict()
+      .refine(({ numerator, denominator }) => numerator <= denominator),
+  ]),
+);
+
+export function validateJokerPredicateDepth(
+  predicate: JokerPredicate,
+  maximumDepth = 4,
+): boolean {
+  const visit = (node: JokerPredicate, depth: number): boolean =>
+    depth <= maximumDepth &&
+    (node.kind !== 'all' && node.kind !== 'any'
+      ? true
+      : node.predicates.every((child) => visit(child, depth + 1)));
+  return visit(predicate, 0);
+}
+
+export const jokerValueSchema: z.ZodType<JokerValue> = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('fixed'), value: z.number().finite() }).strict(),
+  z
+    .object({ kind: z.literal('remaining-discards'), scale: z.number().finite() })
+    .strict(),
+  z.object({ kind: z.literal('empty-joker-slots-with-stencils') }).strict(),
+  z
+    .object({
+      kind: z.literal('full-deck-modifier-count'),
+      modifierId: nonemptyId,
+      scale: z.number().finite(),
+      base: z.number().finite(),
+    })
+    .strict(),
+  z.object({ kind: z.literal('owned-joker-count'), scale: z.number().finite() }).strict(),
+  z
+    .object({ kind: z.literal('matching-hand-history'), includeCurrent: z.boolean() })
+    .strict(),
+  z
+    .object({ kind: z.literal('selected-held-rank'), scale: z.number().finite() })
+    .strict(),
+  z.object({ kind: z.literal('source-state'), key: nonemptyId }).strict(),
+  z
+    .object({
+      kind: z.literal('uniform-integer'),
+      minimum: z.number().int().safe(),
+      maximum: z.number().int().safe(),
+    })
+    .strict()
+    .refine(({ minimum, maximum }) => maximum >= minimum),
+]);
+
+const availabilityRuleSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('always'), value: z.null() }).strict(),
+  z.object({ kind: z.literal('minimum-ante'), value: safeNonnegative }).strict(),
+  z.object({ kind: z.literal('prerequisite'), value: nonemptyId }).strict(),
+  z.object({ kind: z.literal('hand-played'), value: nonemptyId }).strict(),
+  z.object({ kind: z.literal('challenge-only'), value: nonemptyId }).strict(),
+  z.object({ kind: z.literal('profile-objective'), value: nonemptyId }).strict(),
+  z.object({ kind: z.literal('deck-contains-modifier'), value: nonemptyId }).strict(),
+]);
+
+const discoveryRuleSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('visible'), value: z.null() }).strict(),
+  z.object({ kind: z.literal('first-acquisition'), value: z.null() }).strict(),
+  z.object({ kind: z.literal('after-use'), value: nonemptyId }).strict(),
+  z.object({ kind: z.literal('profile-objective'), value: nonemptyId }).strict(),
+]);
+
+const catalogEffectSchema = z
   .object({
     id: nonemptyId,
-    family: z.enum(CATALOG_FAMILIES),
-    ordinal: safeNonnegative.min(1),
-    referenceIndex: nonemptyId,
-    nameKey: nonemptyId,
-    descriptionKey: nonemptyId,
-    assetId: nonemptyId,
-    ownershipId: nonemptyId,
-    introducedIn: z.literal(CATALOG_CONTENT_VERSION),
-    availability: z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('always'), value: z.null() }).strict(),
-      z.object({ kind: z.literal('minimum-ante'), value: safeNonnegative }).strict(),
-      z.object({ kind: z.literal('prerequisite'), value: nonemptyId }).strict(),
-      z.object({ kind: z.literal('hand-played'), value: nonemptyId }).strict(),
-      z.object({ kind: z.literal('challenge-only'), value: nonemptyId }).strict(),
-      z.object({ kind: z.literal('profile-objective'), value: nonemptyId }).strict(),
+    handlerId: nonemptyId,
+    trigger: z.enum([
+      'run-setup',
+      'blind-selected',
+      'round-start',
+      'before-hand',
+      'scored-card',
+      'held-card',
+      'joker-independent',
+      'after-hand',
+      'discard',
+      'round-end',
+      'blind-skipped',
+      'shop-entered',
+      'shop-rerolled',
+      'item-acquired',
+      'pack-opened',
+      'ante-ended',
+      'consumable-used',
+      'passive',
     ]),
-    unlockObjectiveId: nonemptyId.nullable(),
-    discovery: z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('visible'), value: z.null() }).strict(),
-      z.object({ kind: z.literal('after-use'), value: nonemptyId }).strict(),
-      z.object({ kind: z.literal('profile-objective'), value: nonemptyId }).strict(),
-    ]),
-    cost: safeNonnegative,
-    weightUnits: safeNonnegative,
-    prerequisiteIds: z.array(nonemptyId),
-    externalDependencyIds: z.array(nonemptyId),
-    contractIds: z.array(nonemptyId).min(1),
-    effects: z
-      .array(
-        z
-          .object({
-            id: nonemptyId,
-            handlerId: nonemptyId,
-            trigger: z.enum([
-              'run-setup',
-              'blind-selected',
-              'round-start',
-              'before-hand',
-              'scored-card',
-              'held-card',
-              'joker-independent',
-              'after-hand',
-              'discard',
-              'round-end',
-              'blind-skipped',
-              'shop-entered',
-              'shop-rerolled',
-              'item-acquired',
-              'pack-opened',
-              'ante-ended',
-              'consumable-used',
-              'passive',
-            ]),
-            priority: z.number().int().safe(),
-            operations: z.array(
-              z
-                .object({ type: nonemptyId })
-                .catchall(z.union([primitiveValue, z.null(), z.array(primitiveValue)])),
-            ),
-          })
-          .strict(),
-      )
-      .min(1),
-    mechanicalProfileId: nonemptyId.nullable(),
+    priority: z.number().int().safe(),
+    operations: z.array(z.object({ type: nonemptyId }).catchall(z.unknown())).min(1),
   })
-  .strict() as unknown as z.ZodType<CatalogRow>;
+  .strict();
+
+const catalogRowBaseShape = {
+  id: nonemptyId,
+  ordinal: safeNonnegative.min(1),
+  referenceIndex: nonemptyId,
+  nameKey: nonemptyId,
+  descriptionKey: nonemptyId,
+  assetId: nonemptyId,
+  ownershipId: nonemptyId,
+  introducedIn: z.literal(CATALOG_CONTENT_VERSION),
+  availability: availabilityRuleSchema,
+  unlockObjectiveId: nonemptyId.nullable(),
+  discovery: discoveryRuleSchema,
+  cost: safeNonnegative,
+  weightUnits: safeNonnegative,
+  prerequisiteIds: z.array(nonemptyId),
+  externalDependencyIds: z.array(nonemptyId),
+  contractIds: z.array(nonemptyId).min(1),
+  effects: z.array(catalogEffectSchema).min(1),
+  mechanicalProfileId: nonemptyId.nullable(),
+} as const;
+
+const nonJokerCatalogRowSchema = z
+  .object({
+    ...catalogRowBaseShape,
+    family: z.enum(NON_JOKER_CATALOG_FAMILIES),
+  })
+  .strict();
+
+const jokerCatalogRowSchema = z
+  .object({
+    ...catalogRowBaseShape,
+    family: z.literal('joker'),
+    rarity: z.enum(['common', 'uncommon', 'rare', 'legendary']),
+    flavorKey: nonemptyId,
+    ensemble: z.enum([
+      'main-stage',
+      'mask-illusion',
+      'backstage-machinery',
+      'music-acrobatics',
+      'midnight-spirits',
+    ]),
+    copyPolicy: z.enum(['output', 'trigger', 'none']),
+    stickerEligibility: z
+      .object({
+        permanent: z.boolean(),
+        perishable: z.boolean(),
+        rental: z.literal(true),
+      })
+      .strict(),
+    initialAbilityState: z.record(z.string().min(1), primitiveValue),
+  })
+  .strict();
+
+export const catalogRowSchema: z.ZodType<CatalogRow> = z.union([
+  nonJokerCatalogRowSchema,
+  jokerCatalogRowSchema,
+]) as unknown as z.ZodType<CatalogRow>;

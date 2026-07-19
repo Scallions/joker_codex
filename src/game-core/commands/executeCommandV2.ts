@@ -2,14 +2,16 @@ import { applyRoundStartEffectsV2 } from '../effects/roundStartV2';
 import {
   acquireContentByIdV3,
   applyStateOperationV3,
+  type StateOperationFailureCodeV3,
 } from '../effects/applyStateOperationV3';
 import {
   applyResolvedRunOperationsV2,
   applyRunWindowEffectsV2,
 } from '../effects/runWindowV2';
 import { resolveHandScoreV2, validateBeforeHandV2 } from '../effects/scoreHandV2';
+import { resolvePlayedHandV3 } from '../effects/resolvePlayedHandV3';
 import { resolveEffectOperations, resolveEffectQueue } from '../effects/registry';
-import { canAfford, saleValue } from '../economy/pricing';
+import { saleValue } from '../economy/pricing';
 import {
   createShopV2,
   fillShopCardOffersV2,
@@ -20,9 +22,10 @@ import {
 import { stableId, type CardId } from '../model/ids';
 import {
   isRunStateV3,
+  isRunStateV4,
   materializeJokerStickersV3,
   synchronizeRunStateV3,
-  type RunStateV3,
+  type CatalogRunState as RunStateV3,
 } from '../model/runV3';
 import type {
   BlindDefinition,
@@ -70,6 +73,8 @@ import {
   applyDiscardModifierLifecycleV3,
   applyRoundEndModifierLifecycleV3,
 } from '../rules/playingCardModifierLifecycleV3';
+import { canAffordRunStateV3 } from '../rules/jokerPassiveCapabilitiesV3';
+import { recordFirstAcquisitionDiscoveryV3 } from '../rules/discoveryV3';
 import type {
   CancelChoiceCommandV2,
   BeginConsumableChoiceCommandV2,
@@ -479,9 +484,7 @@ function rewardReceipt(state: RunStateV2):
         | 'effect-cycle'
         | 'effect-budget'
         | 'effect-handler-missing'
-        | 'insufficient-funds'
-        | 'inventory-full'
-        | 'pool-empty';
+        | StateOperationFailureCodeV3;
       readonly message: string;
     } {
   if (!state.round) throw new Error('缺少活动回合');
@@ -657,17 +660,20 @@ function playSelected(
   });
   const restriction = validateBeforeHandV2(state, played);
   if (restriction) return reject('hand-restricted', restriction);
-  const resolution = resolveHandScoreV2(state, played);
+  const resolution =
+    isRunStateV4(state) && state.contentVersion === 'joker-catalog-1'
+      ? resolvePlayedHandV3(state, played)
+      : resolveHandScoreV2(state, played);
   if (!resolution.ok) return reject(resolution.code, resolution.message);
   const breakdown = resolution.breakdown;
   const score = addScore(state.round.score, breakdown.score);
   const handsRemaining = state.round.handsRemaining - 1;
   let scoredState: RunStateV2 = {
-    ...state,
+    ...resolution.proposedState,
     rngState: resolution.rngState,
     economy: {
-      ...state.economy,
-      money: state.economy.money + resolution.moneyDelta,
+      ...resolution.proposedState.economy,
+      money: resolution.proposedState.economy.money + resolution.moneyDelta,
     },
   };
   if (isRunStateV3(scoredState) && resolution.modifierRolls.length > 0) {
@@ -717,12 +723,12 @@ function playSelected(
     round: nextRound,
     lastHand: breakdown,
     history: {
-      ...state.history,
+      ...scoredState.history,
       playedCardIdsThisAnte: [
-        ...state.history.playedCardIdsThisAnte,
+        ...scoredState.history.playedCardIdsThisAnte,
         ...breakdown.playedCardIds,
       ],
-      playedHandTypes: [...state.history.playedHandTypes, breakdown.handType],
+      playedHandTypes: [...scoredState.history.playedHandTypes, breakdown.handType],
     },
   };
   let challengeAdjusted = base;
@@ -821,7 +827,7 @@ function discardSelected(
     return reject('forced-card', '强制选中的牌不能弃掉');
   }
   const discardCost = discardCostForRun(state);
-  if (!canAfford(state.economy.money, state.rules.allowedDebt, discardCost)) {
+  if (!canAffordRunStateV3(state, discardCost)) {
     return reject('insufficient-funds', '戏票不足，无法支付弃牌费用');
   }
   const discarded = state.round.selectedCardIds;
@@ -1033,9 +1039,15 @@ function acquireItem(
         jokers: [...state.inventory.jokers, owned],
       },
     };
+    const stickered = materializeJokerStickersV3(acquired, instanceId, identity);
     return {
       ok: true,
-      state: materializeJokerStickersV3(acquired, instanceId, identity),
+      state: recordFirstAcquisitionDiscoveryV3(
+        stickered,
+        item.contentId,
+        instanceId,
+        state.checkpointId + 1,
+      ),
     };
   }
   if (item.kind === 'consumable') {
@@ -1089,8 +1101,7 @@ type ImmediateItemEffectResult =
   | { readonly ok: true; readonly state: RunStateV2 }
   | {
       readonly ok: false;
-      readonly code:
-        'effect-handler-missing' | 'insufficient-funds' | 'inventory-full' | 'pool-empty';
+      readonly code: 'effect-handler-missing' | StateOperationFailureCodeV3;
       readonly message: string;
     };
 
@@ -1108,7 +1119,7 @@ function applyImmediateItemEffects(
     for (const operation of resolved.operations) {
       if (
         operation.type === 'spend-money' &&
-        !canAfford(next.economy.money, next.rules.allowedDebt, operation.amount)
+        !canAffordRunStateV3(next, operation.amount)
       ) {
         return {
           ok: false,
@@ -1279,7 +1290,7 @@ function rerollShop(state: RunStateV2, command: RerollShopCommandV2): CommandRes
     return reject('illegal-phase', '当前不在夜市');
   }
   const cost = state.shop.freeRerollAvailable ? 0 : state.shop.rerollCost;
-  if (!canAfford(state.economy.money, state.rules.allowedDebt, cost)) {
+  if (!canAffordRunStateV3(state, cost)) {
     return reject('insufficient-funds', '戏票不足，无法换摊');
   }
   const rerolled = rerollShopCardsV2(state);
@@ -1322,7 +1333,7 @@ function buyShopOffer(
     (candidate) => candidate.id === command.offerId,
   );
   if (!offer) return reject('offer-not-found', '商品已不存在');
-  if (!canAfford(state.economy.money, state.rules.allowedDebt, offer.price)) {
+  if (!canAffordRunStateV3(state, offer.price)) {
     return reject('insufficient-funds', '戏票不足，无法购买');
   }
   const acquired = acquireItem(state, offer.item, offer.id);
@@ -1367,7 +1378,7 @@ function buyPack(state: RunStateV2, command: BuyPackCommandV2): CommandResultV2 
     (candidate) => candidate.id === command.offerId,
   );
   if (!offer) return reject('offer-not-found', '卡包已不存在');
-  if (!canAfford(state.economy.money, state.rules.allowedDebt, offer.price)) {
+  if (!canAffordRunStateV3(state, offer.price)) {
     return reject('insufficient-funds', '戏票不足，无法购买卡包');
   }
   const definition = state.content.packs.find((pack) => pack.id === offer.packId);
@@ -1435,8 +1446,7 @@ function applyVoucherRules(
   | { readonly ok: true; readonly state: RunStateV2 }
   | {
       readonly ok: false;
-      readonly code:
-        'effect-handler-missing' | 'insufficient-funds' | 'inventory-full' | 'pool-empty';
+      readonly code: 'effect-handler-missing' | StateOperationFailureCodeV3;
       readonly message: string;
     } {
   let next = state;
@@ -1517,7 +1527,7 @@ function buyVoucher(state: RunStateV2, command: BuyVoucherCommandV2): CommandRes
   ].find(({ id }) => id === command.offerId);
   if (!offer) return reject('offer-not-found', '木牌已不存在');
   const isPrimaryOffer = offer.id === primaryOffer?.id;
-  if (!canAfford(state.economy.money, state.rules.allowedDebt, offer.price)) {
+  if (!canAffordRunStateV3(state, offer.price)) {
     return reject('insufficient-funds', '戏票不足，无法兑换木牌');
   }
   const voucher = state.content.vouchers.find(
@@ -2156,8 +2166,7 @@ function applyTargetEffect(
   | { readonly ok: true; readonly state: RunStateV2 }
   | {
       readonly ok: false;
-      readonly code:
-        'effect-handler-missing' | 'insufficient-funds' | 'inventory-full' | 'pool-empty';
+      readonly code: 'effect-handler-missing' | StateOperationFailureCodeV3;
       readonly message: string;
     } {
   const selected = new Set(choice.selectedIds as readonly CardId[]);

@@ -232,8 +232,6 @@ export function validateRunStateV2(state: RunStateV2): RunValidationResultV2 {
 
   if (!Number.isSafeInteger(state.economy.money)) {
     violations.push('戏票必须是安全整数');
-  } else if (state.economy.money < -state.rules.allowedDebt) {
-    violations.push('戏票不能超出允许的欠票额度');
   }
 
   const lineupBoss = blindById.get(state.progress.lineup.boss.definitionId);
@@ -573,7 +571,7 @@ export function validateRunStateV2(state: RunStateV2): RunValidationResultV2 {
       receipt.total !== expectedTotal ||
       receipt.claimed ||
       claimedEconomyIds.includes(receipt.id) ||
-      state.economy.money + receipt.total < -state.rules.allowedDebt
+      !Number.isSafeInteger(state.economy.money + receipt.total)
     ) {
       violations.push('待领取奖励必须有效且尚未领取');
     }

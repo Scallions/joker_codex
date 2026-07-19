@@ -8,6 +8,7 @@ import { evaluatePokerHand } from '../../game-core/poker/evaluate';
 import { canSellJokerForRun, hasActiveBlindRule } from '../../game-core/rules/runtimeV3';
 import { formatScore } from '../../game-core/score/score';
 import { selectHandCardsV2 } from '../../game-core/selectors/runV2';
+import { selectOwnedJokerPresentation } from '../selectors/jokerPresentation';
 import styles from './GameTableScreen.module.css';
 
 const SUIT_LABEL: Record<Suit, string> = {
@@ -166,38 +167,60 @@ export function GameTableScreen() {
           </div>
         </div>
         <div className={styles.jokerSlots}>
-          {run.inventory.jokers.map((joker, index) => (
-            <motion.article
-              className={styles.jokerPlacard}
-              key={joker.instanceId}
-              initial={{ y: -14, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: index * 0.04 }}
-              title={concealJokers ? '压轴幕布遮住了这张奇牌' : joker.description}
-            >
-              <span>奇牌 {index + 1}</span>
-              <strong>{concealJokers ? '幕后剪影' : joker.name}</strong>
-              <em>{concealJokers ? '覆面' : joker.debuffed ? '压制' : '生效'}</em>
-              {sellToEnable ? (
-                <button
-                  type="button"
-                  className={styles.blindSaleButton}
-                  disabled={busy || !canSellJokerForRun(run, joker.instanceId)}
-                  onClick={() =>
-                    void dispatch(
-                      submitRunCommand({
-                        type: 'sell-joker',
-                        checkpointId: run.checkpointId,
-                        jokerInstanceId: joker.instanceId,
-                      }),
-                    )
-                  }
-                >
-                  售出解禁
-                </button>
-              ) : null}
-            </motion.article>
-          ))}
+          {run.inventory.jokers.map((joker, index) => {
+            const presentation = selectOwnedJokerPresentation(run, joker);
+            const showArtwork = Boolean(presentation) && !concealJokers;
+            return (
+              <motion.article
+                className={styles.jokerPlacard}
+                key={joker.instanceId}
+                initial={{ y: -14, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: index * 0.04 }}
+                title={concealJokers ? '压轴幕布遮住了这张奇牌' : joker.description}
+                data-has-art={String(showArtwork)}
+                data-joker-rarity={presentation?.rarity}
+                data-joker-ensemble={presentation?.ensemble}
+              >
+                {showArtwork && presentation ? (
+                  <img
+                    className={styles.jokerPlacardArtwork}
+                    src={presentation.assetPath}
+                    alt=""
+                    data-testid={`joker-art-${presentation.contentId}`}
+                    data-focal-key={presentation.focalKey}
+                  />
+                ) : null}
+                <span>奇牌 {index + 1}</span>
+                <strong>{concealJokers ? '幕后剪影' : joker.name}</strong>
+                <em>
+                  {concealJokers
+                    ? '覆面'
+                    : joker.debuffed
+                      ? '压制'
+                      : (presentation?.currentValue ?? '生效')}
+                </em>
+                {sellToEnable ? (
+                  <button
+                    type="button"
+                    className={styles.blindSaleButton}
+                    disabled={busy || !canSellJokerForRun(run, joker.instanceId)}
+                    onClick={() =>
+                      void dispatch(
+                        submitRunCommand({
+                          type: 'sell-joker',
+                          checkpointId: run.checkpointId,
+                          jokerInstanceId: joker.instanceId,
+                        }),
+                      )
+                    }
+                  >
+                    售出解禁
+                  </button>
+                ) : null}
+              </motion.article>
+            );
+          })}
           {Array.from(
             { length: Math.max(0, run.rules.jokerSlots - run.inventory.jokers.length) },
             (_, index) => (

@@ -6,6 +6,9 @@ import {
   CATALOG_FAMILIES,
   EXPECTED_CATALOG_COUNTS,
   EXPECTED_CATALOG_TOTAL,
+  EXPECTED_NON_JOKER_CATALOG_COUNTS,
+  EXPECTED_NON_JOKER_CATALOG_TOTAL,
+  NON_JOKER_CATALOG_FAMILIES,
 } from '../../src/content/schema/catalog';
 import {
   CatalogValidationError,
@@ -13,23 +16,27 @@ import {
 } from '../../src/content/schema/validateCatalog';
 
 describe('生产非奇牌目录审计', () => {
-  it('冻结 230 项总账、13 个家族与 32 对 15 卡包映射', () => {
+  it('冻结 230 项非奇牌、50 项奇牌与 32 对 15 卡包映射', () => {
     const report = validateProductionCatalog(PRODUCTION_CATALOG);
 
     expect(report.totalRows).toBe(EXPECTED_CATALOG_TOTAL);
+    expect(report.nonJokerRows).toBe(EXPECTED_NON_JOKER_CATALOG_TOTAL);
+    expect(report.jokerRows).toBe(50);
     expect(report.boosterRows).toBe(32);
     expect(report.boosterProfiles).toBe(15);
     expect(report.familyCounts).toEqual(EXPECTED_CATALOG_COUNTS);
     expect(Object.keys(report.familyCounts)).toEqual(CATALOG_FAMILIES);
+    expect(report.nonJokerFamilyCounts).toEqual(EXPECTED_NON_JOKER_CATALOG_COUNTS);
+    expect(Object.keys(report.nonJokerFamilyCounts)).toEqual(NON_JOKER_CATALOG_FAMILIES);
   });
 
   it('让每项中文、本地资产、权属和合约记录闭合', () => {
     const report = validateProductionCatalog(PRODUCTION_CATALOG);
     const assetPaths = new Set(PRODUCTION_CATALOG.assets.map((asset) => asset.assetPath));
 
-    expect(report.localizationEntries).toBe(460);
-    expect(report.assetRecords).toBe(230);
-    expect(report.contractRecords).toBe(230);
+    expect(report.localizationEntries).toBe(610);
+    expect(report.assetRecords).toBe(280);
+    expect(report.contractRecords).toBe(280);
     expect(report.reservedExternalIds).toBe(150);
     expect(
       [...assetPaths].every((path) =>
@@ -43,7 +50,7 @@ describe('生产非奇牌目录审计', () => {
     ).toBe(true);
     expect(
       Object.entries(PRODUCTION_CATALOG.localization)
-        .filter(([key]) => key.endsWith('.description'))
+        .filter(([key]) => key.endsWith('.description') && !key.startsWith('bxqp:joker:'))
         .every(([, value]) => !/[A-Za-z]/.test(value)),
     ).toBe(true);
   });
@@ -52,7 +59,8 @@ describe('生产非奇牌目录审计', () => {
     const child = validateProductionCatalog(PRODUCTION_CATALOG, {
       mode: 'catalog-child',
     });
-    expect(child.unresolvedExternalIds).toHaveLength(150);
+    expect(child.resolvedJokerIds).toHaveLength(50);
+    expect(child.unresolvedExternalIds).toHaveLength(100);
 
     expect(() =>
       validateProductionCatalog(PRODUCTION_CATALOG, {
@@ -60,13 +68,19 @@ describe('生产非奇牌目录审计', () => {
       }),
     ).toThrow(CatalogValidationError);
 
-    const resolved = new Set(PRODUCTION_CATALOG.dependencies.map(({ id }) => id));
+    const resolved = new Set(child.unresolvedExternalIds);
     expect(
       validateProductionCatalog(PRODUCTION_CATALOG, {
         mode: 'integration-strict',
         resolvedExternalIds: resolved,
       }).unresolvedExternalIds,
     ).toEqual([]);
+
+    expect(() =>
+      validateProductionCatalog(PRODUCTION_CATALOG, {
+        resolvedExternalIds: new Set(['bxqp:joker:001']),
+      }),
+    ).toThrow(/不得以外部能力覆盖/);
   });
 
   it('拒绝缺失本地化、重复 ID 和失联机械档案', () => {

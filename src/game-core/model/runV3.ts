@@ -101,7 +101,49 @@ export interface RunStateV3 extends RunStateV2 {
   readonly migrationV3: MigrationMetadataV3;
 }
 
-export function isRunStateV3(run: RunStateV2): run is RunStateV3 {
+export const RUN_SCHEMA_VERSION_V4 = 4 as const;
+export const CONTENT_VERSION_V4 = 'joker-catalog-1' as const;
+
+export type AbilityStateValueV4 = string | number | boolean;
+
+export interface JokerModifierStateV4 extends JokerModifierStateV3 {
+  readonly abilityState: Readonly<Record<string, AbilityStateValueV4>>;
+}
+
+export interface RunModifiersV4 extends Omit<RunModifiersV3, 'jokers'> {
+  readonly jokers: readonly JokerModifierStateV4[];
+}
+
+export interface MigrationMetadataV4 {
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4;
+  readonly sourceContentVersion: string;
+  readonly sourceCheckpointId: number;
+  readonly recoveryFingerprint: string;
+}
+
+export type RunStateV4 = Omit<
+  RunStateV3,
+  'schemaVersion' | 'contentVersion' | 'modifiersV3'
+> & {
+  readonly schemaVersion: typeof RUN_SCHEMA_VERSION_V4;
+  readonly contentVersion:
+    'run-economy-2' | 'catalog-baseline-3' | typeof CONTENT_VERSION_V4;
+  readonly modifiersV3: RunModifiersV4;
+  readonly migrationV4: MigrationMetadataV4;
+};
+
+export type CatalogRunState = Omit<
+  RunStateV3,
+  'schemaVersion' | 'contentVersion' | 'modifiersV3'
+> & {
+  readonly schemaVersion: typeof RUN_SCHEMA_VERSION_V3 | typeof RUN_SCHEMA_VERSION_V4;
+  readonly contentVersion:
+    'run-economy-2' | typeof CONTENT_VERSION_V3 | typeof CONTENT_VERSION_V4;
+  readonly modifiersV3: RunModifiersV3;
+  readonly migrationV4?: MigrationMetadataV4;
+};
+
+export function isLegacyRunStateV3(run: RunStateV2): run is RunStateV3 {
   return (
     run.schemaVersion === RUN_SCHEMA_VERSION_V3 &&
     'setupV3' in run &&
@@ -114,14 +156,43 @@ export function isRunStateV3(run: RunStateV2): run is RunStateV3 {
   );
 }
 
+export function isRunStateV4(run: RunStateV2): run is RunStateV4 {
+  return (
+    run.schemaVersion === RUN_SCHEMA_VERSION_V4 &&
+    'setupV3' in run &&
+    'productionContentV3' in run &&
+    'rulesV3' in run &&
+    'modifiersV3' in run &&
+    'externalDependenciesV3' in run &&
+    'materializedChoicesV3' in run &&
+    'migrationV3' in run &&
+    'migrationV4' in run
+  );
+}
+
+export function isCatalogRunState(run: RunStateV2): run is CatalogRunState {
+  return isLegacyRunStateV3(run) || isRunStateV4(run);
+}
+
+/** Compatibility guard used by V3-era engine services; includes V4 runs. */
+export function isRunStateV3(run: RunStateV2): run is CatalogRunState {
+  return isCatalogRunState(run);
+}
+
+function isJokerModifierStateV4(
+  modifier: JokerModifierStateV3 | JokerModifierStateV4,
+): modifier is JokerModifierStateV4 {
+  return 'abilityState' in modifier;
+}
+
 function defaultJokerModifier(
-  run: RunStateV3,
+  run: CatalogRunState,
   instanceId: JokerInstanceId,
-): JokerModifierStateV3 {
+): JokerModifierStateV3 | JokerModifierStateV4 {
   const joker = run.inventory.jokers.find(
     (candidate) => candidate.instanceId === instanceId,
   );
-  return {
+  const base: JokerModifierStateV3 = {
     instanceId,
     stickerIds: [],
     perishableRoundsRemaining: null,
@@ -129,27 +200,61 @@ function defaultJokerModifier(
     saleAllowed: true,
     slotContribution: joker?.slotContribution ?? 1,
   };
+  if (!isRunStateV4(run)) return base;
+  const definition = joker
+    ? run.content.items.find(
+        (item) => item.kind === 'joker' && item.contentId === joker.contentId,
+      )
+    : undefined;
+  return {
+    ...base,
+    abilityState: {
+      ...(definition?.kind === 'joker' ? (definition.initialAbilityState ?? {}) : {}),
+    },
+  };
 }
 
 /** Keep the V3 modifier mirror aligned after a V2-compatible command updates cards. */
 export function synchronizeRunStateV3(run: RunStateV2): RunStateV2 {
-  if (!isRunStateV3(run)) return run;
+  if (!isCatalogRunState(run)) return run;
   const cardModifiers = new Map(
     run.modifiersV3.playingCards.map((modifier) => [modifier.cardId, modifier]),
   );
   const jokerModifiers = new Map(
     run.modifiersV3.jokers.map((modifier) => [modifier.instanceId, modifier]),
   );
-  const synchronized: RunStateV3 = {
+  const playingCards = run.deck.cards.map((card) => ({
+    cardId: card.id,
+    enhancementId: card.enhancementId,
+    sealId: card.sealId,
+    editionId: card.editionId,
+    debuffed: cardModifiers.get(card.id)?.debuffed ?? false,
+  }));
+  if (isRunStateV4(run)) {
+    const synchronized: RunStateV4 = {
+      ...run,
+      modifiersV3: {
+        playingCards,
+        jokers: run.inventory.jokers.map((joker) => {
+          const existing =
+            jokerModifiers.get(joker.instanceId) ??
+            defaultJokerModifier(run, joker.instanceId);
+          const modifier = isJokerModifierStateV4(existing)
+            ? existing
+            : defaultJokerModifier(run, joker.instanceId);
+          if (!isJokerModifierStateV4(modifier)) {
+            throw new Error('V4 奇牌缺少能力状态');
+          }
+          return { ...modifier, slotContribution: joker.slotContribution };
+        }),
+      },
+    };
+    return synchronized;
+  }
+  const synchronized: CatalogRunState = {
     ...run,
     modifiersV3: {
-      playingCards: run.deck.cards.map((card) => ({
-        cardId: card.id,
-        enhancementId: card.enhancementId,
-        sealId: card.sealId,
-        editionId: card.editionId,
-        debuffed: cardModifiers.get(card.id)?.debuffed ?? false,
-      })),
+      playingCards,
       jokers: run.inventory.jokers.map((joker) => {
         const existing =
           jokerModifiers.get(joker.instanceId) ??
@@ -170,11 +275,33 @@ export function materializeJokerStickersV3(
   instanceId: JokerInstanceId,
   identity: string,
 ): RunStateV2 {
-  if (!isRunStateV3(run)) return run;
+  if (!isCatalogRunState(run)) return run;
+  const joker = run.inventory.jokers.find(
+    (candidate) => candidate.instanceId === instanceId,
+  );
+  const definition = joker
+    ? run.content.items.find(
+        (item) => item.kind === 'joker' && item.contentId === joker.contentId,
+      )
+    : undefined;
+  const stickerEligible = (stickerId: string): boolean => {
+    if (!definition || definition.kind !== 'joker' || !definition.stickerEligibility) {
+      return true;
+    }
+    if (stickerId === 'bxqp:sticker:permanent') {
+      return definition.stickerEligibility.permanent;
+    }
+    if (stickerId === 'bxqp:sticker:perishable') {
+      return definition.stickerEligibility.perishable;
+    }
+    return definition.stickerEligibility.rental;
+  };
   const permanentOnAcquire =
     run.rulesV3.excludedRuleKeys.includes('permanent-jokers') &&
     run.rulesV3.excludedRuleKeys.includes('all-acquired');
-  if (run.rulesV3.stickerRuleIds.length === 0 && !permanentOnAcquire) return run;
+  if (run.rulesV3.stickerRuleIds.length === 0 && !permanentOnAcquire) {
+    return synchronizeRunStateV3(run);
+  }
   const existing = run.modifiersV3.jokers.find(
     (modifier) => modifier.instanceId === instanceId,
   );
@@ -183,18 +310,17 @@ export function materializeJokerStickersV3(
   let rngState = run.rngState;
   const stickerIds: string[] = [];
   const rolls: number[] = [];
-  for (const stickerId of run.rulesV3.stickerRuleIds) {
+  for (const stickerId of run.rulesV3.stickerRuleIds.filter(stickerEligible)) {
     const roll = nextInteger(rngState, STICKER_ROLL_DENOMINATOR);
     rolls.push(roll.value);
     rngState = roll.state;
     if (roll.value < STICKER_ROLL_NUMERATOR) stickerIds.push(stickerId);
   }
-  if (permanentOnAcquire) stickerIds.push('bxqp:sticker:permanent');
+  if (permanentOnAcquire && stickerEligible('bxqp:sticker:permanent')) {
+    stickerIds.push('bxqp:sticker:permanent');
+  }
   const uniqueStickerIds = [...new Set(stickerIds)];
-  const joker = run.inventory.jokers.find(
-    (candidate) => candidate.instanceId === instanceId,
-  );
-  const modifier: JokerModifierStateV3 = {
+  const modifierBase: JokerModifierStateV3 = {
     instanceId,
     stickerIds: uniqueStickerIds,
     perishableRoundsRemaining: uniqueStickerIds.includes('bxqp:sticker:perishable')
@@ -204,23 +330,42 @@ export function materializeJokerStickersV3(
     saleAllowed: !uniqueStickerIds.includes('bxqp:sticker:permanent'),
     slotContribution: joker?.slotContribution ?? 1,
   };
-  const materialized: RunStateV3 = {
+  const materializedChoicesV3: readonly MaterializedChoiceV3[] = [
+    ...run.materializedChoicesV3,
+    {
+      id: `bxqp:choice:joker-stickers:${identity}`,
+      kind: 'joker-sticker-roll',
+      valueIds: uniqueStickerIds,
+      valueNumbers: rolls,
+      checkpointId: run.checkpointId + 1,
+    },
+  ];
+  if (isRunStateV4(run)) {
+    const modifier: JokerModifierStateV4 = {
+      ...modifierBase,
+      abilityState: {
+        ...(definition?.kind === 'joker' ? (definition.initialAbilityState ?? {}) : {}),
+      },
+    };
+    const materialized: RunStateV4 = {
+      ...run,
+      rngState,
+      materializedChoicesV3,
+      modifiersV3: {
+        ...run.modifiersV3,
+        jokers: [...run.modifiersV3.jokers, modifier],
+      },
+    };
+    return materialized;
+  }
+  const materialized: CatalogRunState = {
     ...run,
     rngState,
+    materializedChoicesV3,
     modifiersV3: {
       ...run.modifiersV3,
-      jokers: [...run.modifiersV3.jokers, modifier],
+      jokers: [...run.modifiersV3.jokers, modifierBase],
     },
-    materializedChoicesV3: [
-      ...run.materializedChoicesV3,
-      {
-        id: `bxqp:choice:joker-stickers:${identity}`,
-        kind: 'joker-sticker-roll',
-        valueIds: uniqueStickerIds,
-        valueNumbers: rolls,
-        checkpointId: run.checkpointId + 1,
-      },
-    ],
   };
   return materialized;
 }

@@ -6,6 +6,7 @@ import type {
   EffectWindow,
   PackDefinition,
   PackFamily,
+  JokerDefinitionV2,
   RunContentSnapshot,
   TagDefinition,
   TargetKind,
@@ -15,6 +16,7 @@ import type {
   BoosterProfile,
   CatalogOperation,
   CatalogRow,
+  JokerCatalogRow,
   ProductionCatalog,
 } from '../schema/catalog';
 
@@ -30,6 +32,78 @@ function operationParameters(
   switch (operation.type) {
     case 'baseline':
       return { key: operation.key };
+    case 'passive-capability':
+      return { capability: operation.capability, value: operation.value };
+    case 'joker-score':
+      return {
+        metric: operation.metric,
+        predicate: JSON.stringify(operation.predicate),
+        value: JSON.stringify(operation.value),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-retrigger-card':
+      return {
+        target: operation.target,
+        predicate: JSON.stringify(operation.predicate),
+        count: operation.count,
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-create-content':
+      return {
+        family: operation.family,
+        count: operation.count,
+        rarity: operation.rarity,
+        predicate: JSON.stringify(operation.predicate),
+        capacityRequired: operation.capacityRequired,
+        stickerPolicy: operation.stickerPolicy,
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-create-playing-card':
+      return {
+        enhancementId: operation.enhancementId,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-destroy-right-grow':
+      return {
+        stateKey: operation.stateKey,
+        saleValueScale: operation.saleValueScale,
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-destroy-source':
+      return {
+        predicate: JSON.stringify(operation.predicate),
+        observationKey: operation.observationKey,
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-state-change':
+      return {
+        key: operation.key,
+        mode: operation.mode,
+        value: JSON.stringify(operation.value),
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-level-current-hand':
+      return {
+        levels: operation.levels,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-sell-value-add':
+      return {
+        amount: operation.amount,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
+    case 'joker-round-resource':
+      return {
+        resource: operation.resource,
+        mode: operation.mode,
+        value: operation.value,
+        predicate: JSON.stringify(operation.predicate),
+        copyFacet: operation.copyFacet,
+      };
     case 'rule-patch':
       return { key: operation.key, mode: operation.mode, value: operation.value };
     case 'deck-recipe':
@@ -186,6 +260,7 @@ function tagWindows(operation: CatalogOperation): readonly EffectWindow[] {
 
 function operationWindows(
   row: CatalogRow,
+  trigger: CatalogRow['effects'][number]['trigger'],
   operation: CatalogOperation,
 ): readonly EffectWindow[] {
   if (row.family === 'blind') return blindWindows(operation);
@@ -201,11 +276,8 @@ function operationWindows(
     return ['item-acquired'];
   }
   if (row.family === 'booster') return ['pack-opened'];
-  const trigger = row.effects[0]?.trigger;
-  return trigger &&
-    trigger !== 'run-setup' &&
-    trigger !== 'consumable-used' &&
-    trigger !== 'passive'
+  if (trigger === 'passive') return ['passive'];
+  return trigger && trigger !== 'run-setup' && trigger !== 'consumable-used'
     ? [trigger]
     : ['item-acquired'];
 }
@@ -215,7 +287,7 @@ function runtimeEffects(row: CatalogRow): readonly EffectReference[] {
     effect.operations.map((operation, index) => ({
       id: `${effect.id}:operation:${index}`,
       handlerId: `bxqp:handler:${operation.type}`,
-      windows: operationWindows(row, operation),
+      windows: operationWindows(row, effect.trigger, operation),
       priority: effect.priority + index,
       parameters: operationParameters(operation),
     })),
@@ -314,6 +386,26 @@ function consumable(row: CatalogRow, catalog: ProductionCatalog): ConsumableDefi
   };
 }
 
+function joker(row: JokerCatalogRow, catalog: ProductionCatalog): JokerDefinitionV2 {
+  return {
+    kind: 'joker',
+    contentId: row.id,
+    name: text(catalog, row.nameKey),
+    description: text(catalog, row.descriptionKey),
+    baseCost: row.cost,
+    weightUnits: row.weightUnits,
+    effects: runtimeEffects(row),
+    targetKind: 'none',
+    minimumTargets: 0,
+    maximumTargets: 0,
+    rarity: row.rarity,
+    slotContribution: 1,
+    copyPolicy: row.copyPolicy,
+    stickerEligibility: row.stickerEligibility,
+    initialAbilityState: row.initialAbilityState,
+  };
+}
+
 function packFamily(family: BoosterProfile['family']): PackFamily {
   switch (family) {
     case 'standard':
@@ -380,6 +472,7 @@ export function createProductionRunContent(
     tags,
     vouchers,
     items: [
+      ...rows('joker').map((row) => joker(row as JokerCatalogRow, catalog)),
       ...rows('tarot').map((row) => consumable(row, catalog)),
       ...rows('planet').map((row) => consumable(row, catalog)),
       ...rows('spectral').map((row) => consumable(row, catalog)),

@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { submitRunCommand } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import type { Rank, Suit } from '../../game-core/model/cards';
+import { selectJokerPresentation } from '../selectors/jokerPresentation';
 import styles from './DecisionScreen.module.css';
 
 const SUIT: Record<Suit, string> = {
@@ -53,39 +54,69 @@ export function ChoiceScreen() {
           </div>
         </header>
         <section className={styles.options}>
-          {choice.options.map((option) => (
-            <article className={styles.option} key={option.id}>
-              <small>
-                {option.item.kind === 'joker'
-                  ? '奇牌'
-                  : option.item.kind === 'consumable'
-                    ? '变牌诀'
-                    : '永久戏牌'}
-              </small>
-              <h2>{option.item.name}</h2>
-              <p>{option.item.description}</p>
-              {option.item.generatedCard ? (
-                <span className={styles.tag}>
-                  {SUIT[option.item.generatedCard.suit]}{' '}
-                  {RANK[option.item.generatedCard.rank]}
-                </span>
-              ) : null}
-              <button
-                type="button"
-                disabled={busy || option.consumed}
-                onClick={() =>
-                  command({
-                    type: 'choose-pack-option',
-                    checkpointId: run.checkpointId,
-                    choiceId: choice.id,
-                    optionId: option.id,
-                  })
-                }
+          {choice.options.map((option) => {
+            const presentation =
+              option.item.kind === 'joker'
+                ? selectJokerPresentation(option.item.contentId)
+                : undefined;
+            return (
+              <article
+                className={styles.option}
+                key={option.id}
+                data-joker-rarity={presentation?.rarity}
+                data-joker-ensemble={presentation?.ensemble}
               >
-                {option.consumed ? '已取' : '选此件'}
-              </button>
-            </article>
-          ))}
+                {presentation ? (
+                  <img
+                    className={styles.jokerOptionArtwork}
+                    src={presentation.assetPath}
+                    alt=""
+                    data-testid={`joker-art-${presentation.contentId}`}
+                    data-focal-key={presentation.focalKey}
+                  />
+                ) : null}
+                <small>
+                  {option.item.kind === 'joker'
+                    ? presentation
+                      ? `奇牌 · ${presentation.rarityLabel}`
+                      : '奇牌'
+                    : option.item.kind === 'consumable'
+                      ? '变牌诀'
+                      : '永久戏牌'}
+                </small>
+                <h2>{option.item.name}</h2>
+                <p>{option.item.description}</p>
+                {presentation?.currentValue ? (
+                  <strong className={styles.jokerCurrentValue}>
+                    {presentation.currentValue}
+                  </strong>
+                ) : null}
+                {presentation ? (
+                  <q className={styles.jokerFlavor}>{presentation.flavor}</q>
+                ) : null}
+                {option.item.generatedCard ? (
+                  <span className={styles.tag}>
+                    {SUIT[option.item.generatedCard.suit]}{' '}
+                    {RANK[option.item.generatedCard.rank]}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={busy || option.consumed}
+                  onClick={() =>
+                    command({
+                      type: 'choose-pack-option',
+                      checkpointId: run.checkpointId,
+                      choiceId: choice.id,
+                      optionId: option.id,
+                    })
+                  }
+                >
+                  {option.consumed ? '已取' : '选此件'}
+                </button>
+              </article>
+            );
+          })}
         </section>
         <div className={styles.footerActions}>
           <button

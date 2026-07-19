@@ -3,8 +3,16 @@ import {
   CATALOG_FAMILIES,
   EXPECTED_CATALOG_COUNTS,
   EXPECTED_CATALOG_TOTAL,
+  EXPECTED_JOKER_CATALOG_TOTAL,
+  EXPECTED_NON_JOKER_CATALOG_COUNTS,
+  EXPECTED_NON_JOKER_CATALOG_TOTAL,
+  NON_JOKER_CATALOG_FAMILIES,
   catalogRowSchema,
+  jokerPredicateSchema,
+  jokerValueSchema,
+  validateJokerPredicateDepth,
   type CatalogFamily,
+  type NonJokerCatalogFamily,
   type ProductionCatalog,
 } from './catalog';
 
@@ -18,13 +26,17 @@ export interface CatalogValidationOptions {
 export interface CatalogAuditReport {
   readonly mode: CatalogValidationMode;
   readonly totalRows: number;
+  readonly nonJokerRows: number;
+  readonly jokerRows: number;
   readonly familyCounts: Readonly<Record<CatalogFamily, number>>;
+  readonly nonJokerFamilyCounts: Readonly<Record<NonJokerCatalogFamily, number>>;
   readonly boosterRows: number;
   readonly boosterProfiles: number;
   readonly localizationEntries: number;
   readonly assetRecords: number;
   readonly contractRecords: number;
   readonly reservedExternalIds: number;
+  readonly resolvedJokerIds: readonly string[];
   readonly unresolvedExternalIds: readonly string[];
 }
 
@@ -91,6 +103,33 @@ export function validateProductionCatalog(
     ) {
       violations.push(`未注册目录处理器：${row.id}`);
     }
+    for (const operation of row.effects.flatMap((effect) => effect.operations)) {
+      if (
+        operation.type !== 'joker-score' &&
+        operation.type !== 'joker-retrigger-card' &&
+        operation.type !== 'joker-create-content' &&
+        operation.type !== 'joker-create-playing-card' &&
+        operation.type !== 'joker-destroy-source' &&
+        operation.type !== 'joker-state-change' &&
+        operation.type !== 'joker-level-current-hand' &&
+        operation.type !== 'joker-sell-value-add' &&
+        operation.type !== 'joker-round-resource'
+      ) {
+        continue;
+      }
+      const predicate = jokerPredicateSchema.safeParse(operation.predicate);
+      const value =
+        operation.type === 'joker-score' || operation.type === 'joker-state-change'
+          ? jokerValueSchema.safeParse(operation.value)
+          : { success: true as const };
+      if (
+        !predicate.success ||
+        !value.success ||
+        !validateJokerPredicateDepth(operation.predicate)
+      ) {
+        violations.push(`奇牌 DSL 无效：${row.id}`);
+      }
+    }
   }
 
   const familyCounts = Object.fromEntries(
@@ -99,6 +138,9 @@ export function validateProductionCatalog(
       catalog.rows.filter((row) => row.family === family).length,
     ]),
   ) as Record<CatalogFamily, number>;
+  const nonJokerFamilyCounts = Object.fromEntries(
+    NON_JOKER_CATALOG_FAMILIES.map((family) => [family, familyCounts[family]]),
+  ) as Record<NonJokerCatalogFamily, number>;
   for (const family of CATALOG_FAMILIES) {
     if (familyCounts[family] !== EXPECTED_CATALOG_COUNTS[family]) {
       violations.push(
@@ -120,6 +162,32 @@ export function validateProductionCatalog(
   if (catalog.rows.length !== EXPECTED_CATALOG_TOTAL) {
     violations.push(`总数应为 ${EXPECTED_CATALOG_TOTAL}，实际 ${catalog.rows.length}`);
   }
+  const nonJokerRows = catalog.rows.filter((row) => row.family !== 'joker');
+  const jokerRows = catalog.rows.filter((row) => row.family === 'joker');
+  if (nonJokerRows.length !== EXPECTED_NON_JOKER_CATALOG_TOTAL) {
+    violations.push(
+      `非奇牌总数应为 ${EXPECTED_NON_JOKER_CATALOG_TOTAL}，实际 ${nonJokerRows.length}`,
+    );
+  }
+  if (jokerRows.length !== EXPECTED_JOKER_CATALOG_TOTAL) {
+    violations.push(
+      `奇牌总数应为 ${EXPECTED_JOKER_CATALOG_TOTAL}，实际 ${jokerRows.length}`,
+    );
+  }
+  for (const family of NON_JOKER_CATALOG_FAMILIES) {
+    if (nonJokerFamilyCounts[family] !== EXPECTED_NON_JOKER_CATALOG_COUNTS[family]) {
+      violations.push(`${family} 非奇牌账本数量漂移`);
+    }
+  }
+  if (jokerRows.filter((row) => row.rarity === 'common').length !== 36) {
+    violations.push('常见奇牌数量应为 36');
+  }
+  if (jokerRows.filter((row) => row.rarity === 'uncommon').length !== 14) {
+    violations.push('少见奇牌数量应为 14');
+  }
+  if (jokerRows.some((row) => row.rarity === 'rare' || row.rarity === 'legendary')) {
+    violations.push('001-050 不应包含稀有或传奇奇牌');
+  }
 
   pushDuplicates(
     violations,
@@ -134,7 +202,11 @@ export function validateProductionCatalog(
   pushDuplicates(
     violations,
     '本地化键',
-    catalog.rows.flatMap((row) => [row.nameKey, row.descriptionKey]),
+    catalog.rows.flatMap((row) => [
+      row.nameKey,
+      row.descriptionKey,
+      ...(row.family === 'joker' ? [row.flavorKey] : []),
+    ]),
   );
   pushDuplicates(
     violations,
@@ -168,10 +240,17 @@ export function validateProductionCatalog(
     const description = catalog.localization[row.descriptionKey];
     if (!name?.trim()) violations.push(`${row.id} 缺少中文名称`);
     if (!description?.trim()) violations.push(`${row.id} 缺少中文说明`);
+    if (row.family === 'joker' && !catalog.localization[row.flavorKey]?.trim()) {
+      violations.push(`${row.id} 缺少中文风味文本`);
+    }
   }
 
   const requiredLocalizationKeys = new Set(
-    catalog.rows.flatMap((row) => [row.nameKey, row.descriptionKey]),
+    catalog.rows.flatMap((row) => [
+      row.nameKey,
+      row.descriptionKey,
+      ...(row.family === 'joker' ? [row.flavorKey] : []),
+    ]),
   );
   const orphanLocalizationKeys = Object.keys(catalog.localization).filter(
     (key) => !requiredLocalizationKeys.has(key),
@@ -208,6 +287,29 @@ export function validateProductionCatalog(
     }
     if (/^https?:\/\//i.test(asset.assetPath) || !asset.assetPath.startsWith('/')) {
       violations.push(`${row.id} 使用非本地资产路径`);
+    }
+    if (row.family === 'joker') {
+      const ordinal = row.ordinal.toString().padStart(3, '0');
+      if (asset.source !== 'generated-raster') {
+        violations.push(`${row.id} 奇牌必须使用已审生成栅格插画`);
+      } else {
+        if (
+          asset.assetPath !== `/assets/jokers/${ordinal}.webp` ||
+          asset.sourceFileOrPrompt !== `/assets/jokers/provenance/${ordinal}.md`
+        ) {
+          violations.push(`${row.id} 奇牌插画与来源侧车路径不闭合`);
+        }
+        if (
+          asset.width !== 768 ||
+          asset.height !== 1024 ||
+          asset.ensemble !== row.ensemble ||
+          asset.inspectionStatus !== 'approved'
+        ) {
+          violations.push(`${row.id} 奇牌插画尺寸、班目或目检状态不合格`);
+        }
+      }
+    } else if (asset.source !== 'project-svg') {
+      violations.push(`${row.id} 非奇牌不得占用奇牌栅格清单`);
     }
   }
   for (const asset of catalog.assets) {
@@ -292,8 +394,17 @@ export function validateProductionCatalog(
     }
   }
 
+  const locallyResolvedIds = new Set(jokerRows.map((row) => row.id));
+  for (const id of resolvedExternalIds) {
+    if (locallyResolvedIds.has(id)) {
+      violations.push(`${id} 已由生产定义解析，不得以外部能力覆盖`);
+    }
+  }
+  const resolvedJokerIds = RESERVED_JOKER_IDS.filter(
+    (id) => locallyResolvedIds.has(id) || resolvedExternalIds.has(id),
+  );
   const unresolvedExternalIds = RESERVED_JOKER_IDS.filter(
-    (id) => !resolvedExternalIds.has(id),
+    (id) => !locallyResolvedIds.has(id) && !resolvedExternalIds.has(id),
   );
   if (mode === 'integration-strict' && unresolvedExternalIds.length > 0) {
     violations.push(`严格集成仍缺少 ${unresolvedExternalIds.length} 个奇牌定义`);
@@ -304,13 +415,17 @@ export function validateProductionCatalog(
   return {
     mode,
     totalRows: catalog.rows.length,
+    nonJokerRows: nonJokerRows.length,
+    jokerRows: jokerRows.length,
     familyCounts,
+    nonJokerFamilyCounts,
     boosterRows: boosterRows.length,
     boosterProfiles: catalog.boosterProfiles.length,
     localizationEntries: Object.keys(catalog.localization).length,
     assetRecords: catalog.assets.length,
     contractRecords: catalog.contracts.length,
     reservedExternalIds: catalog.dependencies.length,
+    resolvedJokerIds,
     unresolvedExternalIds,
   };
 }

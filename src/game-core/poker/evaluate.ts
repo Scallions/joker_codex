@@ -291,14 +291,23 @@ function detectCandidates(
       : null,
   );
   const straightFlushSize = Math.max(context.straightSize, context.flushSize);
-  const straightFlush = bestSubset(rankCards, straightFlushSize, (candidate) => {
-    const straightCandidate = bestSubset(candidate, context.straightSize, straightHigh);
-    const flushCandidate = bestSubset(candidate, context.flushSize, (subset) =>
-      flushSuit(subset) ? 1 : null,
-    );
-    if (!straightCandidate || !flushCandidate || !flushSuit(candidate)) return null;
-    return straightHigh(straightCandidate);
-  });
+  const sameSubsetStraightFlush = bestSubset(
+    rankCards,
+    straightFlushSize,
+    (candidate) => {
+      const straightCandidate = bestSubset(candidate, context.straightSize, straightHigh);
+      const flushCandidate = bestSubset(candidate, context.flushSize, (subset) =>
+        flushSuit(subset) ? 1 : null,
+      );
+      if (!straightCandidate || !flushCandidate || !flushSuit(candidate)) return null;
+      return straightHigh(straightCandidate);
+    },
+  );
+  const mixedFourCardStraightFlush =
+    context.straightSize === 4 && context.flushSize === 4 && straight && flush
+      ? rankCards.filter((card) => straight.includes(card) || flush.includes(card))
+      : null;
+  const straightFlush = sameSubsetStraightFlush ?? mixedFourCardStraightFlush;
   const allFlush = flushSuit(rankCards) !== null;
   const candidates: Candidate[] = [];
   if (counts[0] === 5 && allFlush)

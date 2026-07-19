@@ -1,23 +1,26 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
 import { validateRunStateV2 } from '../game-core/invariants/validateRunStateV2';
-import { validateRunStateV3 } from '../game-core/invariants/validateRunStateV3';
+import { validateRunStateV4 } from '../game-core/invariants/validateRunStateV4';
 import type { ProfileId } from '../game-core/model/ids';
 import type { RunState as RunStateV1 } from '../game-core/model/run';
 import type { RunStateV2 } from '../game-core/model/runV2';
+import { isRunStateV3, type RunStateV3 } from '../game-core/model/runV3';
 import {
-  CONTENT_VERSION_V3,
-  RUN_SCHEMA_VERSION_V3,
-  isRunStateV3,
-  type RunStateV3,
-} from '../game-core/model/runV3';
+  CONTENT_VERSION_V4,
+  RUN_SCHEMA_VERSION_V4,
+  isRunStateV4,
+  type RunStateV4,
+} from '../game-core/model/runV4';
 import { migrateRunV1ToV2 } from './migrations/migrateRunV1ToV2';
 import { migrateRunV2ToV3 } from './migrations/migrateRunV2ToV3';
+import { migrateRunV3ToV4 } from './migrations/migrateRunV3ToV4';
 import type { ProfileRecord } from './profiles';
 import type { GameRepository } from './repository';
 import { profileRecordSchema, runStateSchema } from './schemas';
 import { runStateV2Schema } from './schemasV2';
 import { runStateV3Schema } from './schemasV3';
+import { runStateV4Schema } from './schemasV4';
 
 type StoredRun = RunStateV1 | RunStateV2;
 
@@ -71,12 +74,12 @@ const DEFAULT_SETTINGS: DeviceSettings = {
 };
 
 interface DecodedStoredRun {
-  readonly run: RunStateV3;
+  readonly run: RunStateV4;
   readonly migrated: boolean;
 }
 
-function assertValidV3(run: RunStateV3, prefix: string): RunStateV3 {
-  const validation = validateRunStateV3(run);
+function assertValidV4(run: RunStateV4, prefix: string): RunStateV4 {
+  const validation = validateRunStateV4(run);
   if (!validation.ok) {
     throw new Error(`${prefix}：${validation.violations.join('；')}`);
   }
@@ -84,49 +87,60 @@ function assertValidV3(run: RunStateV3, prefix: string): RunStateV3 {
 }
 
 function decodeStoredRun(raw: unknown): DecodedStoredRun {
-  const current = runStateV3Schema.safeParse(raw);
+  const current = runStateV4Schema.safeParse(raw);
   if (current.success) {
-    return { run: assertValidV3(current.data, '牌局状态无效'), migrated: false };
+    return { run: assertValidV4(current.data, '牌局状态无效'), migrated: false };
+  }
+  const v3 = runStateV3Schema.safeParse(raw);
+  if (v3.success) {
+    return {
+      run: assertValidV4(migrateRunV3ToV4(v3.data), '迁移牌局无效'),
+      migrated: true,
+    };
   }
   const v2 = runStateV2Schema.safeParse(raw);
   if (v2.success) {
     return {
-      run: assertValidV3(migrateRunV2ToV3(v2.data), '迁移牌局无效'),
+      run: assertValidV4(migrateRunV3ToV4(migrateRunV2ToV3(v2.data)), '迁移牌局无效'),
       migrated: true,
     };
   }
   const v1 = runStateSchema.safeParse(raw);
   if (v1.success) {
-    const migrated = migrateRunV2ToV3(migrateRunV1ToV2(v1.data));
+    const migratedV3 = migrateRunV2ToV3(migrateRunV1ToV2(v1.data));
+    const migratedWithSource: RunStateV3 = {
+      ...migratedV3,
+      migrationV3: {
+        ...migratedV3.migrationV3,
+        sourceSchemaVersion: 1,
+        sourceContentVersion: v1.data.contentVersion,
+      },
+    };
+    const migrated = migrateRunV3ToV4(migratedWithSource);
     return {
-      run: assertValidV3(
-        {
-          ...migrated,
-          migrationV3: {
-            ...migrated.migrationV3,
-            sourceSchemaVersion: 1,
-            sourceContentVersion: v1.data.contentVersion,
-          },
-        },
-        '迁移牌局无效',
-      ),
+      run: assertValidV4(migrated, '迁移牌局无效'),
       migrated: true,
     };
   }
   throw new Error('本地牌局格式无效');
 }
 
-function normalizeRunForStorage(run: RunStateV2): RunStateV3 {
+function normalizeRunForStorage(run: RunStateV2): RunStateV4 {
+  if (isRunStateV4(run)) {
+    const parsed = runStateV4Schema.safeParse(run);
+    if (!parsed.success) throw new Error('拒绝保存无效 V4 检查点');
+    return assertValidV4(parsed.data, '拒绝保存');
+  }
   if (isRunStateV3(run)) {
     const parsed = runStateV3Schema.safeParse(run);
     if (!parsed.success) throw new Error('拒绝保存无效 V3 检查点');
-    return assertValidV3(parsed.data, '拒绝保存');
+    return assertValidV4(migrateRunV3ToV4(parsed.data), '拒绝保存');
   }
   const parsed = runStateV2Schema.safeParse(run);
   if (!parsed.success) throw new Error('拒绝保存无效 V2 检查点');
   const validation = validateRunStateV2(parsed.data);
   if (!validation.ok) throw new Error(`拒绝保存：${validation.violations.join('；')}`);
-  return assertValidV3(migrateRunV2ToV3(parsed.data), '拒绝保存');
+  return assertValidV4(migrateRunV3ToV4(migrateRunV2ToV3(parsed.data)), '拒绝保存');
 }
 
 export class IndexedDbGameRepository implements GameRepository {
@@ -154,8 +168,8 @@ export class IndexedDbGameRepository implements GameRepository {
     if (!(await metaStore.get('state'))) {
       await metaStore.put(
         {
-          schemaVersion: RUN_SCHEMA_VERSION_V3,
-          contentVersion: CONTENT_VERSION_V3,
+          schemaVersion: RUN_SCHEMA_VERSION_V4,
+          contentVersion: CONTENT_VERSION_V4,
           activeProfileId: null,
         },
         'state',
@@ -164,14 +178,14 @@ export class IndexedDbGameRepository implements GameRepository {
       const meta = await metaStore.get('state');
       if (
         meta &&
-        (meta.schemaVersion !== RUN_SCHEMA_VERSION_V3 ||
-          meta.contentVersion !== CONTENT_VERSION_V3)
+        (meta.schemaVersion !== RUN_SCHEMA_VERSION_V4 ||
+          meta.contentVersion !== CONTENT_VERSION_V4)
       ) {
         await metaStore.put(
           {
             ...meta,
-            schemaVersion: RUN_SCHEMA_VERSION_V3,
-            contentVersion: CONTENT_VERSION_V3,
+            schemaVersion: RUN_SCHEMA_VERSION_V4,
+            contentVersion: CONTENT_VERSION_V4,
           },
           'state',
         );

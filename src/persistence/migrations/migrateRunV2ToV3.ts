@@ -1,11 +1,11 @@
 import type { RunStateV2 } from '../../game-core/model/runV2';
 import {
   RUN_SCHEMA_VERSION_V3,
-  isRunStateV3,
+  isLegacyRunStateV3,
   type RunStateV3,
 } from '../../game-core/model/runV3';
 
-function fingerprint(run: RunStateV2): string {
+export function runMigrationFingerprint(run: RunStateV2): string {
   const text = [
     run.runId,
     run.checkpointId,
@@ -24,7 +24,7 @@ function fingerprint(run: RunStateV2): string {
 }
 
 export function migrateRunV2ToV3(run: RunStateV2): RunStateV3 {
-  if (isRunStateV3(run)) return run;
+  if (isLegacyRunStateV3(run)) return run;
   if (run.schemaVersion !== 2 || run.contentVersion !== 'run-economy-2') {
     throw new Error('仅支持将 run-economy-2 的 V2 牌局迁移到 V3');
   }
@@ -93,7 +93,7 @@ export function migrateRunV2ToV3(run: RunStateV2): RunStateV3 {
       sourceSchemaVersion: 2,
       sourceContentVersion: run.contentVersion,
       sourceCheckpointId: run.checkpointId,
-      recoveryFingerprint: fingerprint(run),
+      recoveryFingerprint: runMigrationFingerprint(run),
     },
   };
 }
