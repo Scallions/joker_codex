@@ -203,3 +203,36 @@ Implemented and verified the final 50 production Jokers, V6 deterministic runtim
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Complete progression tutorial and modes
+
+**Date**: 2026-07-20
+**Task**: Complete progression tutorial and modes
+**Branch**: `main`
+
+### Summary
+
+Implemented V7 run identity, profile progression, tutorial and mode flows, atomic persistence and recovery, Chinese functional screens, durable route restoration, and full browser coverage.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fe8fbd3` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
