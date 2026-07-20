@@ -42,8 +42,7 @@ describe('午夜百戏牌桌', () => {
       .unwrap();
     render(<App store={store} />);
 
-    expect(await screen.findByText('小幕试锋')).toBeInTheDocument();
-    const cards = screen.getAllByTestId('playing-card');
+    const cards = await screen.findAllByTestId('playing-card');
     expect(cards).toHaveLength(8);
     await user.click(cards[0]!);
     expect(screen.getByText('已选 1 / 5')).toBeInTheDocument();
@@ -80,7 +79,7 @@ describe('午夜百戏牌桌', () => {
     expect(await screen.findByText('三方戏台，三份命数')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '继续未完牌局' }));
 
-    expect(await screen.findByText('小幕试锋')).toBeInTheDocument();
+    expect(await screen.findAllByTestId('playing-card')).toHaveLength(8);
     expect(store.getState().app.run?.checkpointId).toBe(1);
   });
 

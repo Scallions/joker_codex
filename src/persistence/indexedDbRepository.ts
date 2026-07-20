@@ -102,6 +102,30 @@ interface DecodedStoredProfile {
   readonly migrated: boolean;
 }
 
+export type PersistenceWriteStage =
+  | 'settings:before-put'
+  | 'meta:before-put'
+  | 'profile:before-put'
+  | 'profile:before-delete'
+  | 'run:before-put'
+  | 'run:before-delete'
+  | 'recovery:before-put'
+  | 'recovery:before-delete'
+  | 'profile-action-recovery:before-put'
+  | 'profile-action-recovery:before-delete'
+  | 'before-transaction-done';
+
+export type PersistenceFaultHook = (stage: PersistenceWriteStage) => boolean;
+
+export interface IndexedDbGameRepositoryOptions {
+  readonly faultHook?: PersistenceFaultHook;
+}
+
+interface AbortableTransaction {
+  readonly done: Promise<unknown>;
+  abort(): void;
+}
+
 function recoveryKey(kind: RecoveryKind, profileId: ProfileId): string {
   return `${kind}:${profileId}`;
 }
@@ -285,8 +309,10 @@ function normalizeRunForStorage(run: RunStateV2): RunStateV7 {
 
 export class IndexedDbGameRepository implements GameRepository {
   readonly #databasePromise: Promise<IDBPDatabase<BaixiDatabase>>;
+  readonly #faultHook: PersistenceFaultHook | undefined;
 
-  constructor(databaseName = 'baixiqipai') {
+  constructor(databaseName = 'baixiqipai', options: IndexedDbGameRepositoryOptions = {}) {
+    this.#faultHook = options.faultHook;
     this.#databasePromise = openDB<BaixiDatabase>(databaseName, 1, {
       upgrade(database) {
         database.createObjectStore('meta');
@@ -299,6 +325,17 @@ export class IndexedDbGameRepository implements GameRepository {
     });
   }
 
+  #injectFault(stage: PersistenceWriteStage, transaction: AbortableTransaction): void {
+    if (!this.#faultHook?.(stage)) return;
+    void transaction.done.catch(() => undefined);
+    try {
+      transaction.abort();
+    } catch {
+      // The test hook is one-shot; an already-aborted transaction is equivalent.
+    }
+    throw new Error(`测试故障：${stage}`);
+  }
+
   async #migrateStoredPairs(): Promise<void> {
     const database = await this.#databasePromise;
     const transaction = database.transaction(
@@ -309,6 +346,7 @@ export class IndexedDbGameRepository implements GameRepository {
     const runs = transaction.objectStore('runs');
     const recovery = transaction.objectStore('recovery');
     const rawProfiles = await profiles.getAll();
+    let wrote = false;
     try {
       for (const rawProfile of rawProfiles) {
         const profileId = rawProfile.id;
@@ -318,6 +356,7 @@ export class IndexedDbGameRepository implements GameRepository {
         if (decodedProfile.migrated || decodedRun?.migrated) {
           const key = recoveryKey('migration', profileId);
           if (!(await recovery.get(key))) {
+            this.#injectFault('recovery:before-put', transaction);
             await recovery.put(
               {
                 kind: 'migration',
@@ -327,16 +366,27 @@ export class IndexedDbGameRepository implements GameRepository {
               },
               key,
             );
+            wrote = true;
           }
+          this.#injectFault('profile:before-put', transaction);
           await profiles.put(decodedProfile.profile);
-          if (decodedRun) await runs.put(decodedRun.run, profileId);
+          wrote = true;
+          if (decodedRun) {
+            this.#injectFault('run:before-put', transaction);
+            await runs.put(decodedRun.run, profileId);
+          }
         }
       }
     } catch (error) {
-      transaction.abort();
+      try {
+        transaction.abort();
+      } catch {
+        // The injected fault may already have aborted the transaction.
+      }
       await transaction.done.catch(() => undefined);
       throw error;
     }
+    if (wrote) this.#injectFault('before-transaction-done', transaction);
     await transaction.done;
   }
 
@@ -359,6 +409,7 @@ export class IndexedDbGameRepository implements GameRepository {
     const settingsStore = transaction.objectStore('settings');
 
     if (!(await metaStore.get('state'))) {
+      this.#injectFault('meta:before-put', transaction);
       await metaStore.put(
         {
           schemaVersion: RUN_SCHEMA_VERSION_V7,
@@ -374,6 +425,7 @@ export class IndexedDbGameRepository implements GameRepository {
         (meta.schemaVersion !== RUN_SCHEMA_VERSION_V7 ||
           meta.contentVersion !== CONTENT_VERSION_V7)
       ) {
+        this.#injectFault('meta:before-put', transaction);
         await metaStore.put(
           {
             ...meta,
@@ -385,9 +437,11 @@ export class IndexedDbGameRepository implements GameRepository {
       }
     }
     if (!(await settingsStore.get('device'))) {
+      this.#injectFault('settings:before-put', transaction);
       await settingsStore.put(DEFAULT_DEVICE_SETTINGS, 'device');
     }
 
+    this.#injectFault('before-transaction-done', transaction);
     await transaction.done;
     await this.#migrateStoredPairs();
   }
@@ -418,10 +472,16 @@ export class IndexedDbGameRepository implements GameRepository {
       const rawRun = await transaction.objectStore('runs').get(profile.id);
       const run = rawRun ? decodeStoredRun(rawRun).run : null;
       assertValidProfileRunPair(parsed.data, run, '拒绝保存无效档案');
+      this.#injectFault('profile:before-put', transaction);
       await transaction.objectStore('profiles').put(parsed.data);
+      this.#injectFault('before-transaction-done', transaction);
       await transaction.done;
     } catch (error) {
-      transaction.abort();
+      try {
+        transaction.abort();
+      } catch {
+        // The injected fault may already have aborted the transaction.
+      }
       await transaction.done.catch(() => undefined);
       throw error;
     }
@@ -436,17 +496,22 @@ export class IndexedDbGameRepository implements GameRepository {
     const metaStore = transaction.objectStore('meta');
     const meta = await metaStore.get('state');
 
+    this.#injectFault('profile:before-delete', transaction);
     await transaction.objectStore('profiles').delete(profileId);
+    this.#injectFault('run:before-delete', transaction);
     await transaction.objectStore('runs').delete(profileId);
     const recovery = transaction.objectStore('recovery');
     for (const key of await recovery.getAllKeys()) {
       if (key === profileId || String(key).endsWith(`:${profileId}`)) {
+        this.#injectFault('recovery:before-delete', transaction);
         await recovery.delete(key);
       }
     }
     if (meta?.activeProfileId === profileId) {
+      this.#injectFault('meta:before-put', transaction);
       await metaStore.put({ ...meta, activeProfileId: null }, 'state');
     }
+    this.#injectFault('before-transaction-done', transaction);
     await transaction.done;
   }
 
@@ -463,7 +528,9 @@ export class IndexedDbGameRepository implements GameRepository {
       transaction.abort();
       throw new Error('数据库尚未初始化');
     }
+    this.#injectFault('meta:before-put', transaction);
     await metaStore.put({ ...meta, activeProfileId: profileId }, 'state');
+    this.#injectFault('before-transaction-done', transaction);
     await transaction.done;
   }
 
@@ -496,6 +563,7 @@ export class IndexedDbGameRepository implements GameRepository {
       const rawProfile = await transaction.objectStore('profiles').get(profileId);
       const key = recoveryKey('migration', profileId);
       if (!(await transaction.objectStore('recovery').get(key))) {
+        this.#injectFault('recovery:before-put', transaction);
         await transaction.objectStore('recovery').put(
           {
             kind: 'migration',
@@ -506,8 +574,10 @@ export class IndexedDbGameRepository implements GameRepository {
           key,
         );
       }
+      this.#injectFault('run:before-put', transaction);
       await runs.put(decoded.run, profileId);
     }
+    if (decoded.migrated) this.#injectFault('before-transaction-done', transaction);
     await transaction.done;
     return decoded.run;
   }
@@ -560,6 +630,7 @@ export class IndexedDbGameRepository implements GameRepository {
       const currentProfile = await profiles.get(profileId);
       const currentRun = await runs.get(profileId);
       if (!currentProfile) throw new Error('当前档案不存在');
+      this.#injectFault('profile-action-recovery:before-put', transaction);
       await recovery.put(
         {
           kind: 'profile-action',
@@ -569,13 +640,25 @@ export class IndexedDbGameRepository implements GameRepository {
         },
         key,
       );
+      this.#injectFault('profile:before-put', transaction);
       await profiles.put(restored.profile);
-      if (restored.run) await runs.put(restored.run, profileId);
-      else await runs.delete(profileId);
+      if (restored.run) {
+        this.#injectFault('run:before-put', transaction);
+        await runs.put(restored.run, profileId);
+      } else {
+        this.#injectFault('run:before-delete', transaction);
+        await runs.delete(profileId);
+      }
+      this.#injectFault('before-transaction-done', transaction);
       await transaction.done;
       return restored;
     } catch (error) {
-      transaction.abort();
+      try {
+        transaction.abort();
+      } catch {
+        // The injected fault may already have aborted the transaction.
+      }
+      await transaction.done.catch(() => undefined);
       throw error;
     }
   }
@@ -608,6 +691,7 @@ export class IndexedDbGameRepository implements GameRepository {
         decodedProfile.createdAtEpochMs,
       );
       const reset: ProfileRecord = { ...fresh, updatedAtEpochMs: nowEpochMs };
+      this.#injectFault('profile-action-recovery:before-put', transaction);
       await recovery.put(
         {
           kind: 'profile-action',
@@ -617,12 +701,20 @@ export class IndexedDbGameRepository implements GameRepository {
         },
         recoveryKey('profile-action', profileId),
       );
+      this.#injectFault('profile:before-put', transaction);
       await profiles.put(reset);
+      this.#injectFault('run:before-delete', transaction);
       await runs.delete(profileId);
+      this.#injectFault('before-transaction-done', transaction);
       await transaction.done;
       return reset;
     } catch (error) {
-      transaction.abort();
+      try {
+        transaction.abort();
+      } catch {
+        // The injected fault may already have aborted the transaction.
+      }
+      await transaction.done.catch(() => undefined);
       throw error;
     }
   }
@@ -644,6 +736,7 @@ export class IndexedDbGameRepository implements GameRepository {
     const previousProfile = await transaction.objectStore('profiles').get(profile.id);
 
     if (previous) {
+      this.#injectFault('recovery:before-put', transaction);
       await recovery.put(
         {
           kind: 'checkpoint',
@@ -654,14 +747,19 @@ export class IndexedDbGameRepository implements GameRepository {
         recoveryKey('checkpoint', profile.id),
       );
     } else {
+      this.#injectFault('recovery:before-delete', transaction);
       await recovery.delete(recoveryKey('checkpoint', profile.id));
     }
+    this.#injectFault('profile:before-put', transaction);
     await transaction.objectStore('profiles').put(profile);
     if (profile.activeRunId === null) {
+      this.#injectFault('run:before-delete', transaction);
       await runs.delete(profile.id);
     } else {
+      this.#injectFault('run:before-put', transaction);
       await runs.put(normalizedRun, profile.id);
     }
+    this.#injectFault('before-transaction-done', transaction);
     await transaction.done;
   }
 
@@ -684,6 +782,7 @@ export class IndexedDbGameRepository implements GameRepository {
     const previousProfile = await transaction.objectStore('profiles').get(profile.id);
 
     if (previousProfile) {
+      this.#injectFault('profile-action-recovery:before-put', transaction);
       await recovery.put(
         {
           kind: 'profile-action',
@@ -694,14 +793,19 @@ export class IndexedDbGameRepository implements GameRepository {
         recoveryKey('profile-action', profile.id),
       );
     } else {
+      this.#injectFault('profile-action-recovery:before-delete', transaction);
       await recovery.delete(recoveryKey('profile-action', profile.id));
     }
+    this.#injectFault('profile:before-put', transaction);
     await transaction.objectStore('profiles').put(profile);
     if (normalizedRun) {
+      this.#injectFault('run:before-put', transaction);
       await runs.put(normalizedRun, profile.id);
     } else {
+      this.#injectFault('run:before-delete', transaction);
       await runs.delete(profile.id);
     }
+    this.#injectFault('before-transaction-done', transaction);
     await transaction.done;
   }
 
@@ -735,6 +839,7 @@ export class IndexedDbGameRepository implements GameRepository {
     const previous = await transaction.objectStore('runs').get(profile.id);
     const previousProfile = await transaction.objectStore('profiles').get(profile.id);
     if (previous) {
+      this.#injectFault('recovery:before-put', transaction);
       await transaction.objectStore('recovery').put(
         {
           kind: 'checkpoint',
@@ -745,8 +850,11 @@ export class IndexedDbGameRepository implements GameRepository {
         recoveryKey('checkpoint', profile.id),
       );
     }
+    this.#injectFault('run:before-delete', transaction);
     await transaction.objectStore('runs').delete(profile.id);
+    this.#injectFault('profile:before-put', transaction);
     await transaction.objectStore('profiles').put(clearedProfile);
+    this.#injectFault('before-transaction-done', transaction);
     await transaction.done;
   }
 
@@ -755,7 +863,11 @@ export class IndexedDbGameRepository implements GameRepository {
     const stored = await database.get('settings', 'device');
     const decoded = decodeDeviceSettings(stored);
     if (!stored || !('schemaVersion' in stored)) {
-      await database.put('settings', decoded, 'device');
+      const transaction = database.transaction('settings', 'readwrite');
+      this.#injectFault('settings:before-put', transaction);
+      await transaction.objectStore('settings').put(decoded, 'device');
+      this.#injectFault('before-transaction-done', transaction);
+      await transaction.done;
     }
     return decoded;
   }
@@ -764,7 +876,11 @@ export class IndexedDbGameRepository implements GameRepository {
     const validation = validateDeviceSettings(settings);
     if (!validation.ok) throw new RangeError(validation.violations.join('；'));
     const database = await this.#databasePromise;
-    await database.put('settings', settings, 'device');
+    const transaction = database.transaction('settings', 'readwrite');
+    this.#injectFault('settings:before-put', transaction);
+    await transaction.objectStore('settings').put(settings, 'device');
+    this.#injectFault('before-transaction-done', transaction);
+    await transaction.done;
   }
 
   close(): void {

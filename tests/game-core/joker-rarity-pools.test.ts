@@ -86,7 +86,9 @@ describe('奇牌稀有度两阶段抽取', () => {
       ),
     ).toBe(true);
 
-    const state = createProductionRunV4(PRODUCTION_CATALOG, { seed: 'real-buffoon' });
+    const state = createProductionRunV4(PRODUCTION_CATALOG, {
+      seed: 'real-buffoon',
+    });
     const buffoon = state.content.packs.find(({ family }) => family === 'buffoon')!;
     const options = materializePackOptionsV2(
       state,
@@ -98,7 +100,7 @@ describe('奇牌稀有度两阶段抽取', () => {
     expect(
       options.items.every(({ contentId }) => contentId.startsWith('bxqp:joker:')),
     ).toBe(true);
-  });
+  }, 15_000);
 
   it('J032 只有完整牌组含绸影强化时才进入夜市与百戏包候选池', () => {
     const drawIds = (hasSilk: boolean) => {

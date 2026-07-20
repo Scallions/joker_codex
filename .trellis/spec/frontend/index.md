@@ -21,6 +21,7 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
 | [Gameplay and Local Persistence](./gameplay-contracts.md) | Deterministic engine, commands, IndexedDB, and stage contracts | Active |
+| [Release Integration and Quality](./release-quality-contracts.md) | Release ledger, replay, transaction fault, browser, and build-budget contracts | Active |
 
 ---
 

@@ -3,7 +3,7 @@
   "name": "integration-quality-gate",
   "title": "Full Integration and Quality Gate",
   "description": "Integrate every catalog and mode, close interaction gaps, validate persistence, performance, and supported browsers.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

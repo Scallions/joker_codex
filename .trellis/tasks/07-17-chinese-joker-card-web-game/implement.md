@@ -137,6 +137,34 @@ Directory: `07-17-integration-quality-gate`
 
 Gate: every parent PRD criterion has direct evidence and no child remains active.
 
+## Current Acceptance State (2026-07-20)
+
+The ninth child's final release dossier is the current source of evidence. This
+table records acceptance readiness only; it does not authorize archiving this
+parent task.
+
+| Parent criterion | Current state |
+|---|---|
+| AC-01 Local launch | PASS |
+| AC-02 Complete modes | PASS |
+| AC-03 Catalog completeness | PASS |
+| AC-04 Rule correctness | PASS |
+| AC-05 Determinism | PASS |
+| AC-06 Atomic recovery | PASS |
+| AC-07 Profile isolation | PASS |
+| AC-08 Tutorial and reference | PASS |
+| AC-09 Progression | PASS |
+| AC-10 Original Chinese presentation | PASS |
+| AC-11 Desktop experience | PASS WITH APPROVED SAFARI WEBDRIVER EXCEPTION |
+| AC-12 Audio and animation | PASS |
+| AC-13 Parent integration | PASS AT CHILD HANDOFF |
+
+Detailed command, browser, catalog, persistence, asset, and archived-child
+evidence is retained in
+`.trellis/tasks/archive/2026-07/07-17-integration-quality-gate/evidence.md` after
+the child finish workflow. The parent remains unarchived until a separate explicit
+user approval.
+
 ## Validation Commands
 
 Children may add focused commands, but the repository must converge on:
@@ -169,4 +197,3 @@ Manual gates:
 - Any balance deviation requires a documented content-version change and fixtures.
 - Final completion requires parent PRD convergence, all child archives, full
   integration evidence, spec updates, and the Trellis finish workflow.
-

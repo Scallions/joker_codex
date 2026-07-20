@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:audit": "node scripts/audit-build-budget.mjs",
     "preview": "vite preview",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -19,7 +20,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "content:audit": "vitest run tests/content/catalog-audit.test.ts tests/content/catalog-operations.test.ts",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run build:audit"
   },
   "dependencies": {
     "@reduxjs/toolkit": "2.12.0",
