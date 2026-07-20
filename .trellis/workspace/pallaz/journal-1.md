@@ -236,3 +236,36 @@ Implemented V7 run identity, profile progression, tutorial and mode flows, atomi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Deliver Midnight Variety Presentation
+
+**Date**: 2026-07-20
+**Task**: Deliver Midnight Variety Presentation
+**Branch**: `main`
+
+### Summary
+
+Delivered the original Midnight Variety visual system, 230 catalog emblems, 15 scenes, typed score performance, local audio engine and assets, persistent sound settings, performance probes, dual-engine browser coverage, and accepted real-browser exception evidence.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `962c1aa` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
