@@ -53,6 +53,15 @@ export default tseslint.config(
     },
   },
   {
+    files: ['scripts/**/*.{js,mjs,cjs}'],
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      ecmaVersion: 2023,
+      globals: globals.node,
+    },
+    rules: tseslint.configs.disableTypeChecked.rules,
+  },
+  {
     files: ['src/game-core/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
@@ -69,8 +78,13 @@ export default tseslint.config(
             'motion',
             'motion/**',
             '../app/**',
+            '../../app/**',
+            '../../../app/**',
             '../persistence/**',
-            '../presentation/**',
+            '../../persistence/**',
+            '../../../persistence/**',
+            '../../presentation/**',
+            '../../../presentation/**',
           ],
         },
       ],

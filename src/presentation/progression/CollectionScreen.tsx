@@ -5,8 +5,9 @@ import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import { PRODUCTION_CATALOG } from '../../content/productionCatalog';
 import type { CatalogFamily } from '../../content/schema/catalog';
 import type { JokerRarity } from '../../content/schema/catalog';
-import { CatalogGlyph } from '../catalog/CatalogGlyph';
 import { selectCollectionRows } from '../../progression/selectors';
+import { CatalogEmblem } from '../catalog/CatalogEmblem';
+import { PaperLedger } from '../components/StagePrimitives';
 import styles from './ProgressionScreens.module.css';
 
 const FAMILY_NAMES: Readonly<Record<CatalogFamily, string>> = {
@@ -76,7 +77,7 @@ export function CollectionScreen() {
   ).length;
 
   return (
-    <section className={styles.screen}>
+    <PaperLedger className={styles.screen}>
       <header className={styles.header}>
         <div>
           <p>已发现 {profile.collection.discoveredJokerIds.length} / 150 张奇牌</p>
@@ -195,17 +196,28 @@ export function CollectionScreen() {
                 className={styles.catalogRow}
                 data-collection-row
                 data-content-id={row.contentId}
+                data-family={row.family}
                 data-hidden={!row.discovered}
                 data-locked={row.locked}
               >
                 <div className={styles.catalogArtwork} data-silhouette={!row.discovered}>
                   {row.assetPath && row.assetFocalKey ? (
-                    <>
-                      <img src={row.assetPath} alt="" />
-                      {row.assetSource === 'project-svg' ? (
-                        <CatalogGlyph focalKey={row.assetFocalKey} />
-                      ) : null}
-                    </>
+                    row.family === 'joker' ? (
+                      <img
+                        src={row.assetPath}
+                        alt=""
+                        loading="lazy"
+                        data-focal-key={row.assetFocalKey}
+                        data-asset-source={row.assetSource}
+                      />
+                    ) : (
+                      <CatalogEmblem
+                        family={row.family}
+                        assetPath={row.assetPath}
+                        focalKey={row.assetFocalKey}
+                        alt=""
+                      />
+                    )
                   ) : (
                     <i aria-hidden="true" />
                   )}
@@ -242,6 +254,6 @@ export function CollectionScreen() {
           })}
         </div>
       </div>
-    </section>
+    </PaperLedger>
   );
 }

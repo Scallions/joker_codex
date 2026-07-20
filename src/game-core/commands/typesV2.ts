@@ -8,6 +8,7 @@ import type {
   VoucherOfferId,
 } from '../model/ids';
 import type { BlindPosition, HandSortModeV2, RunStateV2 } from '../model/runV2';
+import type { ScorePresentationEvidenceV3 } from '../presentation/scoreEvidenceV3';
 
 interface CommandBaseV2 {
   readonly checkpointId: number;
@@ -223,8 +224,10 @@ export type PresentationEventV2 =
   | { readonly type: 'card-selection'; readonly cardId: CardId }
   | { readonly type: 'cards-reordered'; readonly mode: HandSortModeV2 }
   | { readonly type: 'cards-swept'; readonly cardIds: readonly CardId[] }
-  | { readonly type: 'hand-reveal'; readonly name: string }
-  | { readonly type: 'score-stamp'; readonly score: number }
+  | {
+      readonly type: 'score-performance';
+      readonly evidence: ScorePresentationEvidenceV3;
+    }
   | { readonly type: 'blind-cleared' }
   | { readonly type: 'run-failed' }
   | { readonly type: 'reward-receipt'; readonly amount: number }

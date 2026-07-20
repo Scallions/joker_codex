@@ -470,6 +470,7 @@ test('1280×720 基准画面覆盖名簿、盲注、牌桌、奖励、夜市与�
   for (const cardId of fixture.cardIds)
     await page.locator(`[data-card-id="${cardId}"]`).click();
   await page.getByRole('button', { name: '出牌' }).click();
+  await page.getByRole('button', { name: '落定演出，显示已提交结果' }).click();
   await parkPointer(page);
   await expect(page).toHaveScreenshot('reward-screen-v2.png', {
     animations: 'disabled',
@@ -481,4 +482,36 @@ test('1280×720 基准画面覆盖名簿、盲注、牌桌、奖励、夜市与�
     animations: 'disabled',
     fullPage: true,
   });
+});
+
+test('1920×1080 名簿与牌桌保持固定舞台、无页面滚动和无遮挡操作', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/');
+  await expect(page.getByText('三方戏台，三份命数')).toBeVisible();
+  await parkPointer(page);
+
+  const geometry = await page.evaluate(() => ({
+    height: document.documentElement.scrollHeight,
+    width: document.documentElement.scrollWidth,
+  }));
+  expect(geometry).toEqual({ height: 1080, width: 1920 });
+  await expect(page.getByLabel('午夜百戏舞台')).toHaveScreenshot(
+    'profile-screen-1920-v1.png',
+    { animations: 'disabled' },
+  );
+
+  await createProfileAndRun(page, 'WIDE0001', '宽幕戏主');
+  await parkPointer(page);
+  await expect(page.getByRole('button', { name: '出牌' })).toBeInViewport();
+  await expect(page.getByRole('button', { name: '弃牌' })).toBeInViewport();
+  await expect(page.getByLabel('午夜百戏舞台')).toHaveScreenshot(
+    'table-screen-1920-v1.png',
+    { animations: 'disabled' },
+  );
+  expect(
+    await page.evaluate(() => ({
+      height: document.documentElement.scrollHeight,
+      width: document.documentElement.scrollWidth,
+    })),
+  ).toEqual({ height: 1080, width: 1920 });
 });

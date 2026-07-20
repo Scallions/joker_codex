@@ -33,4 +33,30 @@ describe('架构边界', () => {
 
     expect(violations).toEqual([]);
   });
+
+  it('纯规则引擎不接触浏览器媒体对象或声场实现', () => {
+    const forbiddenImport = /from\s+['"][^'"]*presentation\/audio[^'"]*['"]/;
+    const browserObject =
+      /\b(?:document|navigator|AudioContext|AudioBuffer|HTMLElement|CSSProperties)\b/;
+    const violations = sourceFiles(join(root, 'src/game-core'))
+      .filter((path) => /\.[cm]?[jt]sx?$/.test(path))
+      .filter((path) => {
+        const source = readFileSync(path, 'utf8');
+        return forbiddenImport.test(source) || browserObject.test(source);
+      })
+      .map((path) => relative(root, path));
+
+    expect(violations).toEqual([]);
+  });
+
+  it('界面只消费类型化演出证据，不解析计分调试 trace', () => {
+    const traceParser =
+      /\b(?:breakdown|scoreBreakdown)\.trace\b|ScoreBreakdownV2\s*\[\s*['"]trace['"]\s*\]/;
+    const violations = sourceFiles(join(root, 'src/presentation'))
+      .filter((path) => /\.[cm]?[jt]sx?$/.test(path))
+      .filter((path) => traceParser.test(readFileSync(path, 'utf8')))
+      .map((path) => relative(root, path));
+
+    expect(violations).toEqual([]);
+  });
 });

@@ -243,6 +243,8 @@
   display: grid;
   grid-template-rows: 78px 1fr auto;
   min-width: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 260px;
 }
 
 .catalogArtwork {
@@ -262,12 +264,10 @@
   opacity: 0.42;
 }
 
-.catalogArtwork :global(.catalog-glyph) {
-  position: absolute;
-  inset: 7px;
-  width: calc(100% - 14px);
-  height: calc(100% - 14px);
-  filter: drop-shadow(0 4px 7px rgb(0 0 0 / 50%));
+.catalogArtwork img[data-asset-source='project-svg'] {
+  padding: 5px;
+  object-fit: contain;
+  opacity: 0.92;
 }
 
 .catalogArtwork[data-silhouette='true'] {

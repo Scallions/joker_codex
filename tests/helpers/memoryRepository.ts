@@ -2,11 +2,16 @@ import type { ProfileId } from '../../src/game-core/model/ids';
 import type { RunStateV2 } from '../../src/game-core/model/runV2';
 import { createProfile, type ProfileRecord } from '../../src/persistence/profiles';
 import type { GameRepository } from '../../src/persistence/repository';
+import {
+  DEFAULT_DEVICE_SETTINGS,
+  type DeviceSettingsV1,
+} from '../../src/persistence/deviceSettings';
 
 interface MemoryRepositorySeed {
   readonly profiles?: readonly ProfileRecord[];
   readonly runs?: ReadonlyArray<readonly [ProfileId, RunStateV2]>;
   readonly activeProfileId?: ProfileId | null;
+  readonly settings?: DeviceSettingsV1;
 }
 
 export function createMemoryRepository(seed: MemoryRepositorySeed = {}): GameRepository {
@@ -20,9 +25,14 @@ export function createMemoryRepository(seed: MemoryRepositorySeed = {}): GameRep
     { readonly profile: ProfileRecord; readonly run: RunStateV2 | null }
   >();
   let activeProfileId: ProfileId | null = seed.activeProfileId ?? null;
+  let settings = seed.settings ?? DEFAULT_DEVICE_SETTINGS;
 
   return {
     initialize: async () => undefined,
+    getSettings: async () => settings,
+    saveSettings: async (nextSettings) => {
+      settings = nextSettings;
+    },
     listProfiles: async () => [...profiles.values()].sort((a, b) => a.slot - b.slot),
     getProfile: async (id) => profiles.get(id),
     saveProfile: async (profile) => void profiles.set(profile.id, profile),

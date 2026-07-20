@@ -17,9 +17,11 @@ describe('生产目录审计界面', () => {
       for (const card of cards) {
         contentIds.add(card.getAttribute('data-content-id') ?? '');
         const image = card.querySelector('img');
-        const glyph = card.querySelector('[data-focal-key]');
-        expect(image?.getAttribute('src')).toMatch(/^\/assets\//);
-        focalKeys.add(glyph?.getAttribute('data-focal-key') ?? '');
+        expect(image?.getAttribute('src')).toMatch(
+          /^\/assets\/catalog\/[a-z-]+\/[a-z][0-9]{2}\.svg$/,
+        );
+        focalKeys.add(image?.getAttribute('data-focal-key') ?? '');
+        expect(card.querySelector('.catalog-glyph')).not.toBeInTheDocument();
       }
       const next = screen.getByRole('button', { name: '下一页' });
       if (next.hasAttribute('disabled')) break;

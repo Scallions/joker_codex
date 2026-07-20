@@ -1,0 +1,33 @@
+.image {
+  display: block;
+}
+
+.fallback {
+  position: absolute;
+  inset: 8%;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgb(207 162 76 / 32%);
+  background:
+    radial-gradient(circle, rgb(194 60 55 / 22%), transparent 58%), rgb(9 15 32 / 92%);
+}
+
+.fallback svg {
+  width: 72%;
+  height: 72%;
+  fill: rgb(197 67 58 / 16%);
+  stroke: #cba558;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.fallback[data-family='planet'] svg,
+.fallback[data-family='spectral'] svg {
+  stroke: #79b9af;
+}
+
+.fallback[data-family='blind'] svg,
+.fallback[data-family='challenge'] svg {
+  stroke: #df715a;
+}

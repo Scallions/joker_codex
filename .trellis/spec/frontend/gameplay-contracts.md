@@ -719,3 +719,194 @@ registry["fixture:run-economy:handler:add-money"] = (effect) => [
   { type: "add-money", amount: readSafeInteger(effect, "amount") },
 ];
 ```
+
+## Scenario: Post-commit stage presentation and local device audio
+
+### 1. Scope / Trigger
+
+- Trigger: changing score arithmetic evidence, `PresentationEventV2`, the transient
+  presentation queue, device settings, the IndexedDB `settings` store, scene audio,
+  or the React audio director.
+- These paths cross the pure engine, persistence, Redux, React, and browser media
+  boundaries. They must preserve the rule that durable gameplay commits before any
+  optional performance is revealed.
+
+### 2. Signatures
+
+```ts
+type PresentationSpeed = "full" | "brisk";
+
+interface DeviceSettingsV1 {
+  readonly schemaVersion: 1;
+  readonly masterVolume: number;
+  readonly musicVolume: number;
+  readonly sfxVolume: number;
+  readonly muted: boolean;
+  readonly presentationSpeed: PresentationSpeed;
+}
+
+interface GameRepository {
+  getSettings(): Promise<DeviceSettingsV1>;
+  saveSettings(settings: DeviceSettingsV1): Promise<void>;
+}
+
+interface ScorePresentationEvidenceV3 {
+  readonly version: 1;
+  readonly cues: readonly ScorePresentationCueV3[];
+}
+
+type PresentationEventV2 =
+  | { readonly type: "score-performance"; readonly evidence: ScorePresentationEvidenceV3 }
+  | /* other typed cues */ never;
+
+function planPresentationSequence(input: {
+  readonly events: readonly PresentationEventV2[];
+  readonly runId: string;
+  readonly checkpointId: number;
+}): PresentationSequenceV1 | null;
+
+interface AudioDirectorEngine {
+  unlock(): Promise<boolean>;
+  setSettings(settings: DeviceSettingsV1): void;
+  setScene(sceneId: PresentationSceneId): void;
+  playOneShot(id: PresentationAudioId, cueKey: string): Promise<boolean>;
+  suspend(): Promise<void>;
+  resume(): Promise<void>;
+  destroy(): Promise<void>;
+}
+```
+
+### 3. Contracts
+
+- The score resolver that owns the arithmetic emits structured hand, card, source,
+  and total evidence. Presentation code consumes that union and must not parse a
+  debug trace or recompute score, repetitions, money, or Joker effects.
+- One accepted played-hand command emits one `score-performance` event. Redux calls
+  `planPresentationSequence` only in `submitRunCommand.fulfilled`, after
+  `commitCheckpoint` has resolved. A rejected or failed write reveals no sequence.
+- `PresentationSequenceV1` is transient application state. It is never added to
+  `RunState`, IndexedDB run/profile records, recovery, or profile transfer JSON.
+  Reload resumes the committed phase without replaying the old performance.
+- A sequence ID is `<runId>:<checkpointId>`. Adjacent equivalent cues coalesce,
+  rendered cues are bounded to 48, overflow retains an exact omitted-repetition
+  count, and the final total remains present. A score performance lasts at most
+  10 seconds in `full` mode or 3 seconds in `brisk` mode.
+- Skip, tab hiding, completed playback, or a performer error may only clear the
+  transient sequence. They must not dispatch a gameplay command or write a second
+  checkpoint. A performer error shows a non-blocking Chinese warning and leaves the
+  committed screen usable.
+- Device settings live at IndexedDB `settings["device"]`, independently from every
+  profile and run. Each volume is finite and inclusive in `[0, 1]`. Legacy V0 data
+  migrates to V1 with `presentationSpeed: "full"`; an absent record uses
+  `DEFAULT_DEVICE_SETTINGS`; a future schema is rejected rather than downgraded.
+- The settings thunk may update the controls optimistically, but it stores the prior
+  `DeviceSettingsV1` and restores it if `saveSettings` rejects. A settings read
+  failure falls back to defaults with a warning and must not block initialization.
+- `AudioDirector` is lazy-loaded and may create/unlock Web Audio only after a trusted
+  pointer or keyboard event. Initial navigation must request no audio asset. The
+  three 96-second music stems share one epoch/phase; scene changes ramp stem gains
+  over 400 ms and setting changes ramp gains over 40 ms.
+- Media is an optional browser adapter. Missing Web Audio, autoplay denial, fetch or
+  decode failure, suspend/resume failure, and teardown failure must resolve to a
+  silent/error status rather than reject gameplay or navigation. A failed unlock is
+  retryable on the next trusted activation.
+- One-shots deduplicate by stable cue key, suppress the same sound within 40 ms, and
+  cap concurrent sources at 8. Visibility changes suspend/resume the audio context;
+  a hidden document also finishes the visual sequence.
+- React StrictMode performs a simulated unmount/remount. Audio teardown must be
+  scheduled for the next task and cancelled by the immediate remount; synchronous
+  cleanup would close the only engine before its first trusted unlock.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| Any volume is non-finite or outside `[0, 1]` | Reject settings; persist nothing |
+| Settings schema is greater than 1 | `设备声场设置版本过新`; never downgrade |
+| Legacy settings omit `schemaVersion` and `presentationSpeed` | Migrate once with `presentationSpeed: "full"` |
+| Settings write rejects | Restore the exact prior Redux settings and show a Chinese error |
+| Gameplay persistence rejects | Keep prior run and `presentationSequence: null` |
+| Presentation event list is empty | Planner returns `null` |
+| Expanded score cues exceed the render bound | Coalesce/bound to at most 48 cues and preserve exact overflow count/final total |
+| Skip occurs before or after any cue | Clear only the transient sequence; saved run remains byte-equivalent |
+| Browser denies autoplay or has no AudioContext | Status becomes `error`; next trusted activation may retry |
+| Audio fetch/decode fails | Silence audio, show non-blocking warning, keep all routes and commands usable |
+| Cue key was played, same sound fired within 40 ms, or 8 one-shots are active | Return `false`; create no extra source |
+| Document becomes hidden | Finish visual sequence and suspend audio without changing durable state |
+
+### 5. Good / Base / Bad Cases
+
+- Good: a played hand is committed, Redux reveals a sequence derived from the same
+  typed evidence, the player skips it, and IndexedDB remains exactly equal before
+  and after the skip and reload.
+- Good: a trusted click unlocks three synchronized stems; changing scenes crossfades
+  their gains without restarting them, while cue IDs trigger bounded one-shots.
+- Base: audio is unavailable, so the stage stays silent and displays one warning;
+  profile creation, navigation, commands, save/reload, and deterministic replay all
+  continue normally.
+- Base: a legacy device record loads at the same volumes/mute value and gains the
+  default full-speed performance setting.
+- Bad: React parses score debug text, starts a performance before
+  `transaction.done`, persists a queue cursor in the run, preloads audio on first
+  paint, or lets a media promise reject a gameplay thunk.
+
+### 6. Tests Required
+
+- Unit-test settings defaults, V0 migration, V1 decode, future-version rejection,
+  non-finite/out-of-range volumes, repository round-trip, and Redux write rollback.
+- Score goldens assert the exact typed evidence at the arithmetic owner and exactly
+  one `score-performance` event per accepted played hand. Architecture tests reject
+  browser/audio imports from `src/game-core/**` and debug-trace parsing from
+  presentation modules.
+- Sequence tests assert adjacent coalescing, exact repetition counts, 48-cue bound,
+  final-total preservation, stable IDs, full/brisk duration caps, skip, hidden, and
+  performer-failure completion.
+- Audio engine tests use fakes to assert trusted unlock retry, synchronized stem
+  offsets, 400/40 ms ramps, deduplication, the 8-source cap, visibility behavior,
+  media-failure isolation, and best-effort teardown. Component tests include the
+  StrictMode simulated unmount/remount lifecycle.
+- Playwright runs Chromium and WebKit and asserts settings persistence, no initial
+  audio requests, media-failure-safe navigation, exact saved-run equality across
+  full/brisk skip and reload, 1280x720 visual baselines, and a fixed 1920x1080 stage
+  with no outer scrolling. The repeatable motion probe keeps frame-gap P95 at or
+  below 50 ms, requires zero Chromium Long Task entries above 50 ms, and uses a
+  timer-drift fallback where the Long Task API is unavailable.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// Reveals uncommitted work and lets presentation reinterpret engine output.
+dispatch(showPerformance(parseScoreDebug(result.debugTrace)));
+await repository.commitCheckpoint(profile, result.state);
+
+// Starts browser media during initial render and lets failure escape to the app.
+const engine = new PresentationAudioEngine();
+await engine.unlock();
+```
+
+#### Correct
+
+```ts
+const committed = await commitRunCommand(
+  repository,
+  profile,
+  run,
+  command,
+  nowEpochMs,
+);
+
+// The fulfilled reducer runs only after persistence and consumes typed evidence.
+state.run = committed.run;
+state.presentationSequence = planPresentationSequence({
+  events: committed.presentationEvents,
+  runId: committed.run.runId,
+  checkpointId: committed.run.checkpointId,
+});
+
+// A trusted activation owns media startup; failure changes audio status only.
+window.addEventListener("pointerdown", (event) => {
+  if (event.isTrusted) void engine.unlock();
+});
+```

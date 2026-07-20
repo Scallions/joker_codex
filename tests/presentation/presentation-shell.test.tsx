@@ -55,8 +55,8 @@ describe('演出队列与壳层保护', () => {
     );
 
     expect(screen.getByText('选牌落定')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '跳过演出提示' }));
-    expect(store.getState().app.presentationEvents).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: '落定演出，显示已提交结果' }));
+    expect(store.getState().app.presentationSequence).toBeNull();
   });
 
   it('渲染故障时保留应用壳并说明本地档案未改动', () => {

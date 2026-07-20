@@ -10,6 +10,11 @@ import type {
 } from '../model/runV2';
 import type { RandomState } from '../rng/random';
 import { multiplyScore } from '../score/score';
+import type {
+  ScoreMetricV3,
+  ScorePresentationCueV3,
+  ScorePresentationEvidenceV3,
+} from '../presentation/scoreEvidenceV3';
 import {
   effectiveCardForPokerV3,
   projectEffectivePlayingCardV3,
@@ -51,6 +56,7 @@ export type ScoreResolution =
         readonly value: number;
       }[];
       readonly proposedState: RunStateV2;
+      readonly evidence: ScorePresentationEvidenceV3;
     }
   | {
       readonly ok: false;
@@ -539,6 +545,46 @@ export function resolveHandScoreV2(
     `base:${evaluation.baseChips}x${multiplier}`,
     `window:scored-card`,
   ];
+  const evidenceCues: ScorePresentationCueV3[] = [
+    {
+      type: 'hand',
+      handType: evaluation.type,
+      name: evaluation.name,
+      level: evaluation.level,
+      baseChips: evaluation.baseChips,
+      baseMultiplier: evaluation.baseMultiplier,
+    },
+  ];
+  const jokerInstanceIds = new Set(
+    state.inventory.jokers.map(({ instanceId }) => instanceId),
+  );
+  const sourceKindFor = (
+    source: ResolvedEffectOperation,
+    fallback: 'held-card' | 'global' = 'global',
+  ): 'held-card' | 'joker' | 'global' =>
+    [source.sourceInstanceId, ...source.copiedBy].some((id) =>
+      jokerInstanceIds.has(id as JokerInstanceId),
+    )
+      ? 'joker'
+      : fallback;
+  const pushSourceCue = (
+    sourceKind: 'held-card' | 'joker' | 'global',
+    sourceId: string,
+    effectId: string,
+    metric: ScoreMetricV3,
+    value: number,
+    repeatCount = 1,
+  ) => {
+    evidenceCues.push({
+      type: 'source',
+      sourceKind,
+      sourceId,
+      effectId,
+      metric,
+      value,
+      repeatCount,
+    });
+  };
   const originalStencilCount = new Set(
     independentEffects.operations
       .filter(
@@ -582,6 +628,19 @@ export function resolveHandScoreV2(
       multiplier = multiplyScore(multiplier, resolved.value);
     }
     if (source.operation.metric === 'money') moneyDelta += resolved.value;
+    const metric: ScoreMetricV3 =
+      source.operation.metric === 'mult'
+        ? 'mult-add'
+        : source.operation.metric === 'mult-factor'
+          ? 'mult-factor'
+          : source.operation.metric;
+    pushSourceCue(
+      sourceKindFor(source, window === 'held-card' ? 'held-card' : 'global'),
+      source.sourceInstanceId,
+      source.effectId,
+      metric,
+      resolved.value,
+    );
     trace.push(
       `joker-dsl:${window}:${sourceTrace}:${source.effectId}:${source.operation.metric}:${resolved.value}`,
     );
@@ -876,23 +935,66 @@ export function resolveHandScoreV2(
     }
     if (operation.type === 'add-chips') {
       cardChips += operation.amount;
+      pushSourceCue(
+        sourceKindFor(source),
+        source.sourceInstanceId,
+        source.effectId,
+        'chips',
+        operation.amount,
+      );
       trace.splice(-1, 0, `before:${source.effectId}:chips+${operation.amount}`);
     }
     if (operation.type === 'add-multiplier') {
       multiplier += operation.amount;
+      pushSourceCue(
+        sourceKindFor(source),
+        source.sourceInstanceId,
+        source.effectId,
+        'mult-add',
+        operation.amount,
+      );
       trace.splice(-1, 0, `before:${source.effectId}:mult+${operation.amount}`);
     }
     if (operation.type === 'multiply-multiplier') {
       multiplier = multiplyScore(multiplier, operation.factor);
+      pushSourceCue(
+        sourceKindFor(source),
+        source.sourceInstanceId,
+        source.effectId,
+        'mult-factor',
+        operation.factor,
+      );
       trace.splice(-1, 0, `before:${source.effectId}:multx${operation.factor}`);
     }
     if (operation.type === 'multiply-final-score') {
       finalScoreFactor = multiplyScore(finalScoreFactor, operation.factor);
+      pushSourceCue(
+        sourceKindFor(source),
+        source.sourceInstanceId,
+        source.effectId,
+        'score-factor',
+        operation.factor,
+      );
       trace.splice(-1, 0, `before:${source.effectId}:scorex${operation.factor}`);
     }
     if (operation.type === 'catalog-score-rule' && operation.key === 'halve-base') {
+      const previousBaseChips = baseChips;
       baseChips = Math.floor(baseChips * operation.amount);
       multiplier = multiplyScore(multiplier, operation.amount);
+      pushSourceCue(
+        sourceKindFor(source),
+        source.sourceInstanceId,
+        source.effectId,
+        'chips',
+        baseChips - previousBaseChips,
+      );
+      pushSourceCue(
+        sourceKindFor(source),
+        source.sourceInstanceId,
+        source.effectId,
+        'mult-factor',
+        operation.amount,
+      );
       trace.splice(-1, 0, `before:${source.effectId}:base-x${operation.amount}`);
     }
     if (
@@ -903,6 +1005,13 @@ export function resolveHandScoreV2(
       )
     ) {
       multiplier = multiplyScore(multiplier, 1.5);
+      pushSourceCue(
+        sourceKindFor(source),
+        source.sourceInstanceId,
+        source.effectId,
+        'mult-factor',
+        1.5,
+      );
       trace.splice(-1, 0, `before:${source.effectId}:held-planet-x1.5`);
     }
   }
@@ -926,7 +1035,20 @@ export function resolveHandScoreV2(
     }
   }
 
-  for (const [cardIndex, card] of scoringCards.entries()) {
+  let scoringCardIndex = 0;
+  for (const card of cards) {
+    if (!scoringIds.has(card.id)) {
+      evidenceCues.push({
+        type: 'card',
+        cardId: card.id,
+        pass: 1,
+        chips: 0,
+        scoring: false,
+      });
+      continue;
+    }
+    const cardIndex = scoringCardIndex;
+    scoringCardIndex += 1;
     operationCount += 1;
     if (operationCount > MAX_EFFECT_OPERATIONS) {
       return {
@@ -936,6 +1058,13 @@ export function resolveHandScoreV2(
       };
     }
     if (debuffed.has(card.id)) {
+      evidenceCues.push({
+        type: 'card',
+        cardId: card.id,
+        pass: 1,
+        chips: 0,
+        scoring: false,
+      });
       trace.push(`card:${card.id}:debuffed`);
       continue;
     }
@@ -980,6 +1109,13 @@ export function resolveHandScoreV2(
         getCardChipValue(compatibleCard(proposedState, currentCard)) +
         currentCard.bonusChips;
       cardChips += value;
+      evidenceCues.push({
+        type: 'card',
+        cardId: card.id,
+        pass: pass + 1,
+        chips: value,
+        scoring: true,
+      });
       trace.push(
         pass === 0
           ? `card:${card.id}:chips+${value}`
@@ -1023,19 +1159,26 @@ export function resolveHandScoreV2(
               entry.operation.type === 'baseline' &&
               entry.operation.key === 'playing-card-has-no-effective-rank-or-suit',
           );
-          if (!stoneIdentity) cardChips += operation.amount;
+          if (!stoneIdentity) {
+            cardChips += operation.amount;
+            pushSourceCue('global', card.id, sourceId, 'chips', operation.amount);
+          }
         }
         if (operation.type === 'score-rule' && operation.key === 'add-mult') {
           multiplier += operation.amount;
+          pushSourceCue('global', card.id, sourceId, 'mult-add', operation.amount);
         }
         if (operation.type === 'score-rule' && operation.key === 'multiply-mult') {
           multiplier = multiplyScore(multiplier, operation.amount);
+          pushSourceCue('global', card.id, sourceId, 'mult-factor', operation.amount);
         }
         if (operation.type === 'score-rule' && operation.key === 'chance-money') {
           moneyDelta += operation.amount;
+          pushSourceCue('global', card.id, sourceId, 'money', operation.amount);
         }
         if (operation.type === 'money' && operation.mode === 'add') {
           moneyDelta += operation.amount;
+          pushSourceCue('global', card.id, sourceId, 'money', operation.amount);
         }
         if (
           operation.type === 'baseline' &&
@@ -1090,6 +1233,13 @@ export function resolveHandScoreV2(
         if (operation.type === 'add-chips') {
           operationCount += 1;
           cardChips += operation.amount;
+          pushSourceCue(
+            sourceKindFor(source),
+            source.sourceInstanceId,
+            source.effectId,
+            'chips',
+            operation.amount,
+          );
           trace.push(
             `card-effect:${sourceTrace}:${source.effectId}:${card.id}:chips+${operation.amount}`,
           );
@@ -1097,6 +1247,13 @@ export function resolveHandScoreV2(
         if (operation.type === 'add-multiplier') {
           operationCount += 1;
           multiplier += operation.amount;
+          pushSourceCue(
+            sourceKindFor(source),
+            source.sourceInstanceId,
+            source.effectId,
+            'mult-add',
+            operation.amount,
+          );
           trace.push(
             `card-effect:${sourceTrace}:${source.effectId}:${card.id}:mult+${operation.amount}`,
           );
@@ -1104,6 +1261,13 @@ export function resolveHandScoreV2(
         if (operation.type === 'multiply-multiplier') {
           operationCount += 1;
           multiplier = multiplyScore(multiplier, operation.factor);
+          pushSourceCue(
+            sourceKindFor(source),
+            source.sourceInstanceId,
+            source.effectId,
+            'mult-factor',
+            operation.factor,
+          );
           trace.push(
             `card-effect:${sourceTrace}:${source.effectId}:${card.id}:multx${operation.factor}`,
           );
@@ -1146,12 +1310,15 @@ export function resolveHandScoreV2(
         operationCount += 1;
         if (operation.type === 'score-rule' && operation.key === 'add-chips') {
           cardChips += operation.amount;
+          pushSourceCue('held-card', card.id, sourceId, 'chips', operation.amount);
         }
         if (operation.type === 'score-rule' && operation.key === 'add-mult') {
           multiplier += operation.amount;
+          pushSourceCue('held-card', card.id, sourceId, 'mult-add', operation.amount);
         }
         if (operation.type === 'score-rule' && operation.key === 'multiply-mult') {
           multiplier = multiplyScore(multiplier, operation.amount);
+          pushSourceCue('held-card', card.id, sourceId, 'mult-factor', operation.amount);
         }
         trace.push(`held-modifier:${sourceId}:${card.id}:pass:${pass + 1}`);
       }
@@ -1165,10 +1332,35 @@ export function resolveHandScoreV2(
       const operation = source.operation;
       if (operation.type === 'joker-score') continue;
       operationCount += 1;
-      if (operation.type === 'add-chips') cardChips += operation.amount;
-      if (operation.type === 'add-multiplier') multiplier += operation.amount;
+      if (operation.type === 'add-chips') {
+        cardChips += operation.amount;
+        pushSourceCue(
+          sourceKindFor(source, 'held-card'),
+          source.sourceInstanceId,
+          source.effectId,
+          'chips',
+          operation.amount,
+        );
+      }
+      if (operation.type === 'add-multiplier') {
+        multiplier += operation.amount;
+        pushSourceCue(
+          sourceKindFor(source, 'held-card'),
+          source.sourceInstanceId,
+          source.effectId,
+          'mult-add',
+          operation.amount,
+        );
+      }
       if (operation.type === 'multiply-multiplier') {
         multiplier = multiplyScore(multiplier, operation.factor);
+        pushSourceCue(
+          sourceKindFor(source, 'held-card'),
+          source.sourceInstanceId,
+          source.effectId,
+          'mult-factor',
+          operation.factor,
+        );
       }
       if (
         operation.type === 'add-chips' ||
@@ -1197,14 +1389,35 @@ export function resolveHandScoreV2(
         : source.sourceInstanceId;
       if (operation.type === 'add-chips') {
         cardChips += operation.amount;
+        pushSourceCue(
+          'joker',
+          source.sourceInstanceId,
+          source.effectId,
+          'chips',
+          operation.amount,
+        );
         trace.push(`joker:${sourceTrace}:${source.effectId}:chips+${operation.amount}`);
       }
       if (operation.type === 'add-multiplier') {
         multiplier += operation.amount;
+        pushSourceCue(
+          'joker',
+          source.sourceInstanceId,
+          source.effectId,
+          'mult-add',
+          operation.amount,
+        );
         trace.push(`joker:${sourceTrace}:${source.effectId}:mult+${operation.amount}`);
       }
       if (operation.type === 'multiply-multiplier') {
         multiplier = multiplyScore(multiplier, operation.factor);
+        pushSourceCue(
+          'joker',
+          source.sourceInstanceId,
+          source.effectId,
+          'mult-factor',
+          operation.factor,
+        );
         trace.push(`joker:${sourceTrace}:${source.effectId}:multx${operation.factor}`);
       }
       if (operation.type === 'joker-state-change') operationCount += 1;
@@ -1274,6 +1487,13 @@ export function resolveHandScoreV2(
       );
       if (!predicate.matched) continue;
       multiplier = multiplyScore(multiplier, operation.factor);
+      pushSourceCue(
+        'joker',
+        source.sourceInstanceId,
+        source.effectId,
+        'mult-factor',
+        operation.factor,
+      );
       trace.push(
         `joker-after-rarity:${ownedJoker.instanceId}:${source.sourceInstanceId}:${operation.factor}`,
       );
@@ -1294,6 +1514,13 @@ export function resolveHandScoreV2(
     const operation = source.operation;
     if (operation.type === 'multiply-final-score') {
       finalScoreFactor = multiplyScore(finalScoreFactor, operation.factor);
+      pushSourceCue(
+        sourceKindFor(source),
+        source.sourceInstanceId,
+        source.effectId,
+        'score-factor',
+        operation.factor,
+      );
       trace.push(`after:${source.effectId}:scorex${operation.factor}`);
     }
     if (operation.type === 'joker-create-content') {
@@ -1305,18 +1532,46 @@ export function resolveHandScoreV2(
   for (const source of globalAfterHandEffects.operations) {
     if (source.operation.type === 'multiply-final-score') {
       finalScoreFactor = multiplyScore(finalScoreFactor, source.operation.factor);
+      pushSourceCue(
+        'global',
+        source.sourceInstanceId,
+        source.effectId,
+        'score-factor',
+        source.operation.factor,
+      );
       trace.push(`global:${source.effectId}:scorex${source.operation.factor}`);
     }
     if (source.operation.type === 'add-chips') {
       cardChips += source.operation.amount;
+      pushSourceCue(
+        'global',
+        source.sourceInstanceId,
+        source.effectId,
+        'chips',
+        source.operation.amount,
+      );
       trace.push(`global:${source.effectId}:chips+${source.operation.amount}`);
     }
     if (source.operation.type === 'add-multiplier') {
       multiplier += source.operation.amount;
+      pushSourceCue(
+        'global',
+        source.sourceInstanceId,
+        source.effectId,
+        'mult-add',
+        source.operation.amount,
+      );
       trace.push(`global:${source.effectId}:mult+${source.operation.amount}`);
     }
     if (source.operation.type === 'multiply-multiplier') {
       multiplier = multiplyScore(multiplier, source.operation.factor);
+      pushSourceCue(
+        'global',
+        source.sourceInstanceId,
+        source.effectId,
+        'mult-factor',
+        source.operation.factor,
+      );
       trace.push(`global:${source.effectId}:multx${source.operation.factor}`);
     }
   }
@@ -1467,19 +1722,44 @@ export function resolveHandScoreV2(
   for (const operation of setupOperations(state)) {
     if (operation.type !== 'score-rule') continue;
     if (operation.key === 'average-chips-mult') {
+      const previousTotalChips = totalChips;
+      const previousMultiplier = multiplier;
       const average = (totalChips + multiplier) / 2;
       totalChips = average;
       multiplier = average;
+      pushSourceCue(
+        'global',
+        'setup',
+        'setup:average-chips-mult',
+        'chips',
+        totalChips - previousTotalChips,
+      );
+      pushSourceCue(
+        'global',
+        'setup',
+        'setup:average-chips-mult',
+        'mult-add',
+        multiplier - previousMultiplier,
+      );
       trace.push('setup:average-chips-mult');
     }
     if (operation.key === 'money-chip-cap') {
+      const previousTotalChips = totalChips;
       totalChips = Math.min(totalChips, Math.max(0, state.economy.money));
+      pushSourceCue(
+        'global',
+        'setup',
+        'setup:money-chip-cap',
+        'chips',
+        totalChips - previousTotalChips,
+      );
       trace.push(`setup:money-chip-cap:${totalChips}`);
     }
   }
   const score = Math.floor(
     multiplyScore(multiplyScore(totalChips, multiplier), finalScoreFactor),
   );
+  evidenceCues.push({ type: 'total', chips: totalChips, multiplier, score });
   trace.push('window:after-hand', `score:${score}`);
   return {
     ok: true,
@@ -1500,5 +1780,6 @@ export function resolveHandScoreV2(
     destroyedCardIds: [...destroyedCardIds],
     modifierRolls,
     proposedState: { ...proposedState, rngState },
+    evidence: { version: 1, cues: evidenceCues },
   };
 }

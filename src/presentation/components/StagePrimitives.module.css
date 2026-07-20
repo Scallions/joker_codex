@@ -1,0 +1,116 @@
+.paperLedger,
+.lacquerPanel,
+.placard,
+.dialog,
+.emblemFrame {
+  position: relative;
+}
+
+.paperLedger {
+  border-color: color-mix(in srgb, var(--bx-brass-500) 54%, transparent);
+  box-shadow:
+    var(--bx-shadow-raised),
+    inset 0 0 0 0.3rem rgb(255 255 255 / 2%);
+}
+
+.paperLedger::after,
+.lacquerPanel::after,
+.dialog::after {
+  position: absolute;
+  inset: 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--bx-brass-500) 18%, transparent);
+  content: '';
+  pointer-events: none;
+}
+
+.lacquerPanel {
+  border-color: color-mix(in srgb, var(--bx-vermilion-400) 48%, var(--bx-brass-500));
+  box-shadow:
+    var(--bx-shadow-raised),
+    inset 0 -1.25rem 3rem rgb(0 0 0 / 18%);
+}
+
+.placard {
+  border: 1px solid color-mix(in srgb, var(--bx-brass-500) 55%, transparent);
+  background: linear-gradient(145deg, var(--bx-vermilion-500), var(--bx-vermilion-700));
+  box-shadow: var(--bx-shadow-paper);
+}
+
+.sealButton {
+  min-height: 2.5rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--bx-brass-500) 72%, transparent);
+  border-radius: var(--bx-radius-paper);
+  color: var(--bx-paper-100);
+  background: var(--bx-vermilion-700);
+  box-shadow: 0 0.2rem 0 rgb(45 6 14 / 72%);
+  font: inherit;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition:
+    transform var(--bx-duration-routine) var(--bx-ease-stage),
+    filter var(--bx-duration-routine) linear,
+    box-shadow var(--bx-duration-routine) linear;
+}
+
+.sealButton[data-tone='jade'] {
+  background: var(--bx-jade-700);
+}
+
+.sealButton[data-tone='paper'] {
+  color: var(--bx-vermilion-700);
+  background: var(--bx-paper-100);
+}
+
+.sealButton:hover:not(:disabled) {
+  filter: brightness(1.12);
+  transform: translateY(-0.08rem);
+}
+
+.sealButton:active:not(:disabled) {
+  box-shadow: 0 0.05rem 0 rgb(45 6 14 / 72%);
+  transform: translateY(0.12rem);
+}
+
+.sealButton:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.72);
+  opacity: 0.45;
+}
+
+.brassCounter {
+  display: grid;
+  min-width: 5rem;
+  gap: 0.12rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--bx-brass-500) 48%, transparent);
+  background: rgb(6 11 28 / 76%);
+  text-align: right;
+}
+
+.brassCounter span {
+  color: var(--bx-paper-300);
+  font-size: var(--bx-type-caption);
+  letter-spacing: 0.12em;
+}
+
+.brassCounter strong {
+  color: var(--bx-brass-300);
+  font-family: var(--bx-number-font);
+  font-size: 1.2rem;
+}
+
+.dialog {
+  border: 1px solid color-mix(in srgb, var(--bx-brass-500) 50%, transparent);
+  background: linear-gradient(150deg, rgb(34 17 26 / 96%), rgb(8 14 32 / 98%));
+  box-shadow: var(--bx-shadow-raised);
+}
+
+.emblemFrame {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--bx-brass-500) 46%, transparent);
+  border-radius: var(--bx-radius-panel);
+  background: linear-gradient(145deg, rgb(246 232 197 / 12%), rgb(7 10 27 / 42%));
+  box-shadow: inset 0 0 0 0.2rem rgb(255 255 255 / 3%);
+}

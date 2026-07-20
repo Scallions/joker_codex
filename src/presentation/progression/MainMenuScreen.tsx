@@ -15,6 +15,7 @@ import {
 } from '../../app/store/appSlice';
 import { selectAvailableChallenges } from '../../progression/selectors';
 import { TUTORIAL_FIXED_SEED } from '../../tutorial/script';
+import { LacquerPanel } from '../components/StagePrimitives';
 import styles from './ProgressionScreens.module.css';
 
 export function MainMenuScreen() {
@@ -39,7 +40,7 @@ export function MainMenuScreen() {
     );
 
   return (
-    <section className={styles.screen}>
+    <LacquerPanel className={styles.screen}>
       <header className={styles.header}>
         <div>
           <p>
@@ -205,6 +206,6 @@ export function MainMenuScreen() {
           </div>
         </aside>
       ) : null}
-    </section>
+    </LacquerPanel>
   );
 }

@@ -17,6 +17,13 @@ import {
   type RunStateV7,
 } from '../game-core/model/runV7';
 import { PROFILE_HAND_TYPES } from '../progression/definitions';
+import {
+  DEFAULT_DEVICE_SETTINGS,
+  decodeDeviceSettings,
+  validateDeviceSettings,
+  type DeviceSettingsV1,
+  type LegacyDeviceSettingsV0,
+} from './deviceSettings';
 import { migrateRunV1ToV2 } from './migrations/migrateRunV1ToV2';
 import { migrateRunV2ToV3 } from './migrations/migrateRunV2ToV3';
 import { migrateRunV3ToV4 } from './migrations/migrateRunV3ToV4';
@@ -40,13 +47,6 @@ import { runStateV7Schema } from './schemasV7';
 
 type StoredRun = RunStateV1 | RunStateV2;
 type StoredProfile = ProfileRecord | LegacyProfileRecordV0;
-
-export interface DeviceSettings {
-  readonly masterVolume: number;
-  readonly musicVolume: number;
-  readonly sfxVolume: number;
-  readonly muted: boolean;
-}
 
 interface DatabaseMeta {
   readonly schemaVersion: number;
@@ -75,7 +75,7 @@ interface BaixiDatabase extends DBSchema {
   };
   settings: {
     key: string;
-    value: DeviceSettings;
+    value: DeviceSettingsV1 | LegacyDeviceSettingsV0;
   };
   profiles: {
     key: string;
@@ -91,13 +91,6 @@ interface BaixiDatabase extends DBSchema {
     value: RecoveryRecord | LegacyRecoveryRecord;
   };
 }
-
-const DEFAULT_SETTINGS: DeviceSettings = {
-  masterVolume: 0.8,
-  musicVolume: 0.7,
-  sfxVolume: 0.9,
-  muted: false,
-};
 
 interface DecodedStoredRun {
   readonly run: RunStateV7;
@@ -392,7 +385,7 @@ export class IndexedDbGameRepository implements GameRepository {
       }
     }
     if (!(await settingsStore.get('device'))) {
-      await settingsStore.put(DEFAULT_SETTINGS, 'device');
+      await settingsStore.put(DEFAULT_DEVICE_SETTINGS, 'device');
     }
 
     await transaction.done;
@@ -757,16 +750,19 @@ export class IndexedDbGameRepository implements GameRepository {
     await transaction.done;
   }
 
-  async getSettings(): Promise<DeviceSettings> {
+  async getSettings(): Promise<DeviceSettingsV1> {
     const database = await this.#databasePromise;
-    return (await database.get('settings', 'device')) ?? DEFAULT_SETTINGS;
+    const stored = await database.get('settings', 'device');
+    const decoded = decodeDeviceSettings(stored);
+    if (!stored || !('schemaVersion' in stored)) {
+      await database.put('settings', decoded, 'device');
+    }
+    return decoded;
   }
 
-  async saveSettings(settings: DeviceSettings): Promise<void> {
-    const volumes = [settings.masterVolume, settings.musicVolume, settings.sfxVolume];
-    if (volumes.some((volume) => !Number.isFinite(volume) || volume < 0 || volume > 1)) {
-      throw new RangeError('音量必须在 0 到 1 之间');
-    }
+  async saveSettings(settings: DeviceSettingsV1): Promise<void> {
+    const validation = validateDeviceSettings(settings);
+    if (!validation.ok) throw new RangeError(validation.violations.join('；'));
     const database = await this.#databasePromise;
     await database.put('settings', settings, 'device');
   }

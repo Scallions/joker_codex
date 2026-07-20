@@ -15,6 +15,7 @@ import {
   type ImportedProfile,
 } from '../../persistence/profileTransfer';
 import type { ProfileSlot } from '../../persistence/profiles';
+import { PaperLedger } from '../components/StagePrimitives';
 import styles from './ProgressionScreens.module.css';
 
 interface ImportCandidate {
@@ -103,7 +104,7 @@ export function ProfileMaintenanceScreen() {
     normalizedName(deleteName) === normalizedName(profile.displayName);
 
   return (
-    <section className={styles.screen}>
+    <PaperLedger className={styles.screen}>
       <header className={styles.header}>
         <div>
           <p>
@@ -271,6 +272,6 @@ export function ProfileMaintenanceScreen() {
 
         {localMessage ? <p className={styles.localMessage}>{localMessage}</p> : null}
       </div>
-    </section>
+    </PaperLedger>
   );
 }

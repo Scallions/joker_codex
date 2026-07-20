@@ -1,5 +1,5 @@
 import type { AssetOwnershipRecord, CatalogRow } from '../../content/schema/catalog';
-import { CatalogGlyph } from './CatalogGlyph';
+import { CatalogEmblem } from './CatalogEmblem';
 import styles from './CatalogAudit.module.css';
 
 interface CatalogCardProps {
@@ -30,16 +30,22 @@ export function CatalogCard({
       data-testid="catalog-card"
     >
       <div className={styles.artwork}>
-        <img
-          src={asset.assetPath}
-          alt=""
-          data-focal-key={
-            asset.source === 'generated-raster' ? asset.focalKey : undefined
-          }
-        />
-        {asset.source === 'project-svg' ? (
-          <CatalogGlyph focalKey={asset.focalKey} />
-        ) : null}
+        {row.family === 'joker' ? (
+          <img
+            src={asset.assetPath}
+            alt=""
+            data-focal-key={asset.focalKey}
+            data-asset-source={asset.source}
+          />
+        ) : (
+          <CatalogEmblem
+            family={row.family}
+            assetPath={asset.assetPath}
+            focalKey={asset.focalKey}
+            alt=""
+            loading="eager"
+          />
+        )}
         <span>{row.referenceIndex}</span>
       </div>
       <div className={styles.copy}>

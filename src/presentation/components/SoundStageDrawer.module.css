@@ -1,0 +1,221 @@
+.globalControls {
+  position: absolute;
+  top: 1rem;
+  left: 1.25rem;
+  z-index: 32;
+  display: flex;
+  gap: 0.45rem;
+}
+
+.soundButton,
+.muteButton,
+.closeButton,
+.speedButtons button {
+  border: 1px solid rgb(214 167 79 / 62%);
+  color: #f5e5bf;
+  background: linear-gradient(180deg, rgb(40 58 56 / 96%), rgb(17 32 34 / 96%));
+  box-shadow:
+    inset 0 0 0 1px rgb(255 242 197 / 8%),
+    0 8px 24px rgb(0 0 0 / 28%);
+  font: inherit;
+  cursor: pointer;
+}
+
+.soundButton {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.38rem 0.72rem 0.38rem 0.42rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+}
+
+.soundButton span {
+  display: grid;
+  width: 1.55rem;
+  height: 1.55rem;
+  place-items: center;
+  border: 1px solid rgb(227 102 78 / 72%);
+  color: #ffc6a8;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  transform: rotate(-4deg);
+}
+
+.muteButton {
+  padding: 0.38rem 0.62rem;
+  color: #d8bd85;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  background:
+    linear-gradient(90deg, rgb(4 6 19 / 38%), rgb(4 6 19 / 78%)),
+    radial-gradient(circle at 78% 42%, rgb(177 43 42 / 16%), transparent 34%);
+  backdrop-filter: blur(2px);
+}
+
+.drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(34%, 31rem);
+  min-width: 26rem;
+  padding: 2.25rem 2rem 1.6rem;
+  border-left: 1px solid rgb(212 164 75 / 65%);
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 2%) 1px, transparent 1px) 0 0 / 1.4rem 1.4rem,
+    radial-gradient(circle at 60% 8%, rgb(175 42 44 / 24%), transparent 26%),
+    linear-gradient(160deg, #172b2d 0%, #0b171d 58%, #100d1d 100%);
+  box-shadow:
+    -2rem 0 5rem rgb(0 0 0 / 52%),
+    inset 0 0 4rem rgb(0 0 0 / 34%);
+  color: #f4e4bf;
+}
+
+.headingRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid rgb(211 165 76 / 34%);
+}
+
+.headingRow p,
+.pacing p {
+  margin: 0 0 0.35rem;
+  color: #bd9655;
+  font-size: 0.64rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+}
+
+.headingRow h2 {
+  margin: 0;
+  font-family: 'STKaiti', 'KaiTi', 'Songti SC', serif;
+  font-size: 2rem;
+  letter-spacing: 0.12em;
+}
+
+.closeButton {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-color: rgb(208 70 58 / 75%);
+  color: #ffd7bd;
+  background: #7d2027;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1rem;
+  transform: rotate(3deg);
+}
+
+.mixer {
+  display: grid;
+  gap: 0.72rem;
+  margin: 1.35rem 0;
+}
+
+.fader {
+  display: grid;
+  grid-template-columns: 2.1rem 3.2rem 1fr 2.3rem;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgb(208 176 112 / 18%);
+  background: rgb(244 229 190 / 5%);
+  color: #dfcfaa;
+  font-size: 0.75rem;
+}
+
+.faderMark {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border: 1px solid rgb(192 55 55 / 60%);
+  color: #e68b72;
+  font-family: 'STKaiti', 'KaiTi', serif;
+}
+
+.fader input {
+  width: 100%;
+  accent-color: #c83d3e;
+}
+
+.fader output {
+  color: #d9b568;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.pacing {
+  padding: 1rem;
+  border: 1px solid rgb(208 176 112 / 22%);
+  background: rgb(6 10 19 / 34%);
+}
+
+.pacing h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.speedButtons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+}
+
+.speedButtons button {
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.72rem 0.5rem;
+  font-size: 0.76rem;
+}
+
+.speedButtons button[aria-pressed='true'] {
+  border-color: #e46f52;
+  background: linear-gradient(180deg, #922d34, #551922);
+  box-shadow:
+    inset 0 0 0 2px rgb(255 215 164 / 9%),
+    0 0 1.8rem rgb(198 50 48 / 16%);
+}
+
+.speedButtons small {
+  color: rgb(241 223 184 / 58%);
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+}
+
+.statusLine {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1.2rem;
+  color: rgb(226 210 177 / 54%);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+}
+
+.error {
+  margin: 0.8rem 0 0;
+  padding: 0.55rem 0.7rem;
+  border-left: 2px solid #d55043;
+  background: rgb(102 19 26 / 38%);
+  color: #ffd5bf;
+  font-size: 0.66rem;
+}
+
+.soundButton:disabled,
+.muteButton:disabled,
+.closeButton:disabled,
+.speedButtons button:disabled,
+.fader input:disabled {
+  cursor: wait;
+  opacity: 0.56;
+}

@@ -44,14 +44,16 @@ describe('局外功能页面', () => {
     expect(screen.getByText('全局解锁')).toBeInTheDocument();
     expect(screen.getByText('牌组筹码')).toBeInTheDocument();
     expect(screen.getByText('奇牌印记')).toBeInTheDocument();
+    const emblemImages = container.querySelectorAll(
+      '[data-collection-row] img[src^="/assets/catalog/"]',
+    );
+    expect(emblemImages).toHaveLength(230);
     expect(
-      container.querySelector(
-        '[data-collection-row] img[src="/assets/catalog-stage.svg"]',
-      ),
-    ).toBeInTheDocument();
+      new Set([...emblemImages].map((image) => image.getAttribute('src'))).size,
+    ).toBe(230);
     expect(
       container.querySelector('[data-collection-row] .catalog-glyph'),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(
       container.querySelector('[data-collection-row][data-hidden="true"] img'),
     ).not.toBeInTheDocument();

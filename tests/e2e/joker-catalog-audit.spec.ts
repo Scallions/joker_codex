@@ -21,6 +21,7 @@ const ENSEMBLE_LABELS = [
 test('150 张奇牌均由本地审定素材解码，并为十五个班目留下画面证据', async ({
   page,
 }, testInfo) => {
+  test.setTimeout(60_000);
   const remoteRequests: string[] = [];
   page.on('request', (request) => {
     const url = new URL(request.url());

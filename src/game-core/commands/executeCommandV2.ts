@@ -1023,8 +1023,7 @@ function playSelected(
     { type: 'hand-scored', score: breakdown.score, handName: breakdown.handName },
   ];
   const presentationEvents: PresentationEventV2[] = [
-    { type: 'hand-reveal', name: breakdown.handName },
-    { type: 'score-stamp', score: breakdown.score },
+    { type: 'score-performance', evidence: resolution.evidence },
   ];
   if (won) {
     domainEvents.push({

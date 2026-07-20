@@ -2,6 +2,7 @@ import { resumeRun, showMenu, startLocalProductionRun } from '../../app/store/ap
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import { selectHandReference, TERMINOLOGY_REFERENCE } from '../../tutorial/reference';
 import { TUTORIAL_FIXED_SEED } from '../../tutorial/script';
+import { PaperLedger } from '../components/StagePrimitives';
 import styles from './ProgressionScreens.module.css';
 
 export function HelpReferenceScreen() {
@@ -13,7 +14,7 @@ export function HelpReferenceScreen() {
     !run && profile !== undefined && profile.tutorial.status !== 'not-started';
 
   return (
-    <section className={styles.screen}>
+    <PaperLedger className={styles.screen}>
       <header className={styles.header}>
         <div>
           <p>随时查阅 · 当前牌局等级会同步显示</p>
@@ -68,6 +69,6 @@ export function HelpReferenceScreen() {
           ))}
         </ul>
       </div>
-    </section>
+    </PaperLedger>
   );
 }

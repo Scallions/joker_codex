@@ -28,3 +28,19 @@
   font-size: 0.92rem;
   letter-spacing: 0.1em;
 }
+
+.warning {
+  position: absolute;
+  z-index: var(--bx-layer-notice);
+  right: 1.8rem;
+  bottom: 1.5rem;
+  max-width: 28rem;
+  margin: 0;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid rgb(225 177 83 / 52%);
+  color: var(--bx-paper-100);
+  background: rgb(72 16 28 / 94%);
+  box-shadow: var(--bx-shadow-raised);
+  font-size: var(--bx-type-caption);
+  pointer-events: none;
+}

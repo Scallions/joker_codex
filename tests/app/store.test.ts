@@ -13,6 +13,7 @@ import {
 } from '../../src/app/store/appSlice';
 import type { ProfileId } from '../../src/game-core/model/ids';
 import type { RunStateV2 } from '../../src/game-core/model/runV2';
+import { DEFAULT_DEVICE_SETTINGS } from '../../src/persistence/deviceSettings';
 import type { GameRepository } from '../../src/persistence/repository';
 import { createProfile, type ProfileRecord } from '../../src/persistence/profiles';
 
@@ -24,9 +25,14 @@ function memoryRepository(): GameRepository {
     { readonly profile: ProfileRecord; readonly run: RunStateV2 | null }
   >();
   let activeProfileId: ProfileId | null = null;
+  let settings = DEFAULT_DEVICE_SETTINGS;
 
   return {
     initialize: async () => undefined,
+    getSettings: async () => settings,
+    saveSettings: async (nextSettings) => {
+      settings = nextSettings;
+    },
     listProfiles: async () => [...profiles.values()].sort((a, b) => a.slot - b.slot),
     getProfile: async (id) => profiles.get(id),
     saveProfile: async (profile) => void profiles.set(profile.id, profile),

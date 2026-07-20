@@ -131,6 +131,12 @@
   opacity: 0.42;
 }
 
+.artwork img[data-asset-source='project-svg'] {
+  padding: 0.32rem;
+  object-fit: contain;
+  opacity: 0.92;
+}
+
 .artwork :global(.catalog-glyph) {
   position: absolute;
   inset: 0.55rem;

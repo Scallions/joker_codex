@@ -8,12 +8,20 @@ import type { ProfileId } from '../../game-core/model/ids';
 import type { RunStateV2 } from '../../game-core/model/runV2';
 import { isRunStateV7, type RunClassV7 } from '../../game-core/model/runV7';
 import {
+  DEFAULT_DEVICE_SETTINGS,
+  type DeviceSettingsV1,
+} from '../../persistence/deviceSettings';
+import {
   createProfile,
   renameProfile,
   type ProfileRecord,
   type ProfileSlot,
 } from '../../persistence/profiles';
 import type { GameRepository } from '../../persistence/repository';
+import {
+  planPresentationSequence,
+  type PresentationSequenceV1,
+} from '../../presentation/motion/presentationSequence';
 import {
   exportProfileToJson,
   importProfileFromJson,
@@ -57,9 +65,14 @@ export interface AppState {
   readonly profiles: readonly ProfileRecord[];
   readonly activeProfileId: ProfileId | null;
   readonly run: RunStateV2 | null;
-  readonly presentationEvents: readonly PresentationEventV2[];
+  readonly presentationSequence: PresentationSequenceV1 | null;
   readonly setupMode: ModeSetupKind | null;
   readonly setupSeed: string | null;
+  readonly settings: DeviceSettingsV1;
+  readonly settingsOpen: boolean;
+  readonly settingsBusy: boolean;
+  readonly settingsError: string | null;
+  readonly settingsRollback: DeviceSettingsV1 | null;
 }
 
 interface ApplicationRootState {
@@ -84,9 +97,14 @@ const initialState: AppState = {
   profiles: [],
   activeProfileId: null,
   run: null,
-  presentationEvents: [],
+  presentationSequence: null,
   setupMode: null,
   setupSeed: null,
+  settings: DEFAULT_DEVICE_SETTINGS,
+  settingsOpen: false,
+  settingsBusy: false,
+  settingsError: null,
+  settingsRollback: null,
 };
 
 export const generateLocalSetupSeed = createAsyncThunk<string, void, AppThunkConfig>(
@@ -108,20 +126,50 @@ function sortedProfiles(profiles: readonly ProfileRecord[]): ProfileRecord[] {
   return [...profiles].sort((left, right) => left.slot - right.slot);
 }
 
+export const saveDeviceSettings = createAsyncThunk<
+  DeviceSettingsV1,
+  DeviceSettingsV1,
+  AppThunkConfig
+>(
+  'app/save-device-settings',
+  async (settings, { extra, rejectWithValue }) => {
+    try {
+      await extra.repository.saveSettings(settings);
+      return settings;
+    } catch (error) {
+      return rejectWithValue(`声场设置保存失败：${errorMessage(error)}`);
+    }
+  },
+  {
+    condition: (_settings, { getState }) => !getState().app.settingsBusy,
+  },
+);
+
 export const initializeApplication = createAsyncThunk<
   {
     profiles: ProfileRecord[];
     activeProfileId: ProfileId | null;
     run: RunStateV2 | null;
     initialRoute: DurableAppRoute | null;
+    settings: DeviceSettingsV1;
+    settingsError: string | null;
   },
   void,
   AppThunkConfig
 >('app/initialize', async (_argument, { extra, rejectWithValue }) => {
   try {
     await extra.repository.initialize();
-    const profiles = await extra.repository.listProfiles();
-    const storedActiveId = await extra.repository.getActiveProfileId();
+    const [profiles, storedActiveId, settingsResult] = await Promise.all([
+      extra.repository.listProfiles(),
+      extra.repository.getActiveProfileId(),
+      extra.repository
+        .getSettings()
+        .then((settings) => ({ settings, error: null }))
+        .catch((error: unknown) => ({
+          settings: DEFAULT_DEVICE_SETTINGS,
+          error: `声场设置读取失败：${errorMessage(error)}`,
+        })),
+    ]);
     const activeProfileId = profiles.some((profile) => profile.id === storedActiveId)
       ? storedActiveId
       : null;
@@ -133,6 +181,8 @@ export const initializeApplication = createAsyncThunk<
       activeProfileId,
       run,
       initialRoute: extra.readInitialRoute(),
+      settings: settingsResult.settings,
+      settingsError: settingsResult.error,
     };
   } catch (error) {
     return rejectWithValue(`无法读取本地档案：${errorMessage(error)}`);
@@ -570,16 +620,29 @@ const appSlice = createSlice({
     clearError(state) {
       state.error = null;
     },
-    clearPresentationEvents(state) {
-      state.presentationEvents = [];
+    openSoundStageDrawer(state) {
+      state.settingsOpen = true;
     },
-    consumePresentationEvent(state) {
-      state.presentationEvents = state.presentationEvents.slice(1);
+    closeSoundStageDrawer(state) {
+      state.settingsOpen = false;
+    },
+    skipPresentationSequence(state) {
+      state.presentationSequence = null;
+    },
+    finishPresentationSequence(state) {
+      state.presentationSequence = null;
+    },
+    advancePresentationSequence(state) {
+      const sequence = state.presentationSequence;
+      if (!sequence) return;
+      const nextCursor = sequence.cursor + 1;
+      state.presentationSequence =
+        nextCursor >= sequence.cues.length ? null : { ...sequence, cursor: nextCursor };
     },
     showProfiles(state) {
       state.status = 'profiles';
       state.run = null;
-      state.presentationEvents = [];
+      state.presentationSequence = null;
       state.setupMode = null;
       state.setupSeed = null;
     },
@@ -617,6 +680,24 @@ const appSlice = createSlice({
   },
   extraReducers(builder) {
     builder
+      .addCase(saveDeviceSettings.pending, (state, action) => {
+        state.settingsBusy = true;
+        state.settingsError = null;
+        state.settingsRollback = state.settings;
+        state.settings = action.meta.arg;
+      })
+      .addCase(saveDeviceSettings.fulfilled, (state, action) => {
+        state.settingsBusy = false;
+        state.settings = action.payload;
+        state.settingsRollback = null;
+      })
+      .addCase(saveDeviceSettings.rejected, (state, action) => {
+        state.settingsBusy = false;
+        if (state.settingsRollback) state.settings = state.settingsRollback;
+        state.settingsRollback = null;
+        state.settingsError =
+          action.payload ?? action.error.message ?? '声场设置保存失败';
+      })
       .addCase(generateLocalSetupSeed.fulfilled, (state, action) => {
         state.setupSeed = action.payload;
         state.error = null;
@@ -634,6 +715,8 @@ const appSlice = createSlice({
         profiles: action.payload.profiles,
         activeProfileId: action.payload.activeProfileId,
         run: action.payload.run,
+        settings: action.payload.settings,
+        settingsError: action.payload.settingsError,
         status: (() => {
           if (action.payload.run) return 'playing';
           if (!action.payload.activeProfileId) return 'profiles';
@@ -687,7 +770,7 @@ const appSlice = createSlice({
         activeProfileId: action.payload.profileId,
         run: action.payload.run,
         status: action.payload.run ? 'playing' : 'menu',
-        presentationEvents: [],
+        presentationSequence: null,
       }))
       .addCase(selectLocalProfile.rejected, (state, action) => {
         state.busy = false;
@@ -717,7 +800,9 @@ const appSlice = createSlice({
         activeProfileId: action.payload.activeProfileId,
         run: action.payload.deletedActive ? null : state.run,
         status: action.payload.deletedActive ? 'profiles' : state.status,
-        presentationEvents: action.payload.deletedActive ? [] : state.presentationEvents,
+        presentationSequence: action.payload.deletedActive
+          ? null
+          : state.presentationSequence,
       }))
       .addCase(deleteLocalProfile.rejected, (state, action) => {
         state.busy = false;
@@ -733,6 +818,7 @@ const appSlice = createSlice({
         profiles: action.payload.profiles,
         run: action.payload.run,
         status: 'playing',
+        presentationSequence: null,
       }))
       .addCase(startLocalFixtureRun.rejected, (state, action) => {
         state.busy = false;
@@ -749,6 +835,7 @@ const appSlice = createSlice({
         run: action.payload.run,
         status: 'playing',
         setupSeed: null,
+        presentationSequence: null,
       }))
       .addCase(startLocalProductionRun.rejected, (state, action) => {
         state.busy = false;
@@ -763,7 +850,11 @@ const appSlice = createSlice({
         busy: false,
         profiles: action.payload.profiles,
         run: action.payload.run,
-        presentationEvents: action.payload.presentationEvents,
+        presentationSequence: planPresentationSequence({
+          events: action.payload.presentationEvents,
+          runId: action.payload.run.runId,
+          checkpointId: action.payload.run.checkpointId,
+        }),
       }))
       .addCase(submitRunCommand.rejected, (state, action) => {
         state.busy = false;
@@ -779,7 +870,7 @@ const appSlice = createSlice({
         profiles: action.payload.profiles,
         run: null,
         status: 'menu',
-        presentationEvents: [],
+        presentationSequence: null,
       }))
       .addCase(finishLocalRun.rejected, (state, action) => {
         state.busy = false;
@@ -796,7 +887,7 @@ const appSlice = createSlice({
         activeProfileId: action.payload.profile.id,
         run: action.payload.run,
         status: action.payload.run ? 'playing' : 'menu',
-        presentationEvents: [],
+        presentationSequence: null,
       }))
       .addCase(importLocalProfile.rejected, (state, action) => {
         state.busy = false;
@@ -813,7 +904,7 @@ const appSlice = createSlice({
         activeProfileId: action.payload.profile.id,
         run: action.payload.run,
         status: action.payload.run ? 'playing' : 'menu',
-        presentationEvents: [],
+        presentationSequence: null,
       }))
       .addCase(importLocalProfileToSlot.rejected, (state, action) => {
         state.busy = false;
@@ -825,7 +916,7 @@ const appSlice = createSlice({
         profiles: action.payload.profiles,
         run: null,
         status: 'menu',
-        presentationEvents: [],
+        presentationSequence: null,
       }))
       .addCase(abandonActiveRun.pending, (state) => {
         state.busy = true;
@@ -841,7 +932,7 @@ const appSlice = createSlice({
         profiles: action.payload.profiles,
         run: null,
         status: 'menu',
-        presentationEvents: [],
+        presentationSequence: null,
       }))
       .addCase(skipActiveTutorial.pending, (state) => {
         state.busy = true;
@@ -857,7 +948,7 @@ const appSlice = createSlice({
         profiles: action.payload.profiles,
         run: null,
         status: 'menu',
-        presentationEvents: [],
+        presentationSequence: null,
       }))
       .addCase(resetActiveProfile.pending, (state) => {
         state.busy = true;
@@ -873,7 +964,7 @@ const appSlice = createSlice({
         profiles: action.payload.profiles,
         run: action.payload.run,
         status: action.payload.run ? 'playing' : 'menu',
-        presentationEvents: [],
+        presentationSequence: null,
       }))
       .addCase(restoreActiveProfile.pending, (state) => {
         state.busy = true;
@@ -900,9 +991,11 @@ const appSlice = createSlice({
 });
 
 export const {
+  advancePresentationSequence,
+  closeSoundStageDrawer,
   clearError,
-  clearPresentationEvents,
-  consumePresentationEvent,
+  finishPresentationSequence,
+  openSoundStageDrawer,
   resumeRun,
   showAchievements,
   showCollection,
@@ -913,5 +1006,6 @@ export const {
   showNotices,
   showProfiles,
   showStatistics,
+  skipPresentationSequence,
 } = appSlice.actions;
 export const appReducer = appSlice.reducer;

@@ -1,7 +1,9 @@
+@import '../theme/tokens.css';
+
 :root {
   color: #f5ecd7;
   background: #080a1d;
-  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: var(--bx-body-font);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }

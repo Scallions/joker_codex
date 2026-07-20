@@ -18,6 +18,7 @@ import {
   selectAvailableDecks,
   selectAvailableStakesForDeck,
 } from '../../progression/selectors';
+import { PaperLedger } from '../components/StagePrimitives';
 import styles from './ProgressionScreens.module.css';
 
 const MODE_TITLES = {
@@ -133,7 +134,7 @@ export function ModeSetupScreen() {
   const selectedChallenge = challenges.find((challenge) => challenge.id === challengeId);
 
   return (
-    <section className={styles.screen}>
+    <PaperLedger className={styles.screen}>
       <header className={styles.header}>
         <div>
           <p>{profile.displayName} · 仅显示本档已开放内容</p>
@@ -283,6 +284,6 @@ export function ModeSetupScreen() {
           </button>
         </div>
       </div>
-    </section>
+    </PaperLedger>
   );
 }

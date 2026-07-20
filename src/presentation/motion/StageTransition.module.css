@@ -1,0 +1,210 @@
+.transition {
+  position: absolute;
+  z-index: var(--bx-layer-transition);
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.transition i,
+.transition span {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.transition[data-transition-kind='curtain'] i {
+  top: -5%;
+  bottom: -5%;
+  width: 54%;
+  background:
+    linear-gradient(90deg, rgb(21 2 12 / 94%), transparent 14% 86%, rgb(21 2 12 / 88%)),
+    repeating-linear-gradient(90deg, #50131d 0 9%, #8a222a 10% 18%, #44101a 19% 28%);
+  box-shadow: 0 0 3rem rgb(0 0 0 / 78%);
+  animation: curtain-release var(--bx-duration-curtain) var(--bx-ease-curtain) both;
+}
+
+.transition[data-transition-kind='curtain'] i:first-child {
+  left: -4%;
+}
+
+.transition[data-transition-kind='curtain'] i:nth-child(2) {
+  right: -4%;
+  transform: scaleX(-1);
+  animation-name: curtain-release-right;
+}
+
+.transition[data-transition-kind='ledger'] span,
+.transition[data-transition-kind='receipt'] span {
+  top: 11%;
+  right: 16%;
+  bottom: 9%;
+  left: 16%;
+  border: 2px solid rgb(117 48 37 / 64%);
+  background:
+    repeating-linear-gradient(0deg, transparent 0 2.2rem, rgb(89 51 36 / 12%) 2.25rem),
+    linear-gradient(145deg, #f3e3bd, #cdb98c);
+  box-shadow: var(--bx-shadow-raised);
+  transform-origin: 50% 0;
+  animation: ledger-lift 560ms var(--bx-ease-stage) both;
+}
+
+.transition[data-transition-kind='receipt'] span {
+  right: 29%;
+  left: 29%;
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    98% 95%,
+    94% 100%,
+    88% 96%,
+    81% 100%,
+    74% 96%,
+    67% 100%,
+    60% 96%,
+    53% 100%,
+    46% 96%,
+    39% 100%,
+    32% 96%,
+    25% 100%,
+    18% 96%,
+    11% 100%,
+    5% 96%,
+    1% 100%
+  );
+  animation-name: receipt-stamp-away;
+}
+
+.transition[data-transition-kind='placard'] span {
+  top: 42%;
+  left: 50%;
+  width: 26rem;
+  height: 5rem;
+  border: 1px solid rgb(226 184 100 / 62%);
+  background: linear-gradient(145deg, #801f29, #3a111b);
+  box-shadow: var(--bx-shadow-raised);
+  transform: translate(-50%, -50%);
+  animation: placard-rise 520ms var(--bx-ease-stage) both;
+}
+
+.transition[data-transition-kind='placard'] span::before,
+.transition[data-transition-kind='placard'] span::after {
+  position: absolute;
+  bottom: 100%;
+  width: 1px;
+  height: 5rem;
+  background: var(--bx-brass-500);
+  content: '';
+}
+
+.transition[data-transition-kind='placard'] span::before {
+  left: 18%;
+}
+
+.transition[data-transition-kind='placard'] span::after {
+  right: 18%;
+}
+
+.transition[data-transition-kind='folding-screen'] i {
+  top: 5%;
+  bottom: 5%;
+  width: 34%;
+  border: 1px solid rgb(216 174 91 / 48%);
+  background: linear-gradient(145deg, rgb(123 31 40 / 96%), rgb(21 42 40 / 98%));
+  box-shadow: var(--bx-shadow-raised);
+  transform-origin: 0 50%;
+  animation: screen-fold-left 620ms var(--bx-ease-stage) both;
+}
+
+.transition[data-transition-kind='folding-screen'] i:first-child {
+  left: 16%;
+}
+
+.transition[data-transition-kind='folding-screen'] i:nth-child(2) {
+  right: 16%;
+  transform-origin: 100% 50%;
+  animation-name: screen-fold-right;
+}
+
+@keyframes curtain-release {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-108%) rotate(-3deg);
+  }
+}
+
+@keyframes curtain-release-right {
+  from {
+    transform: translateX(0) scaleX(-1);
+  }
+
+  to {
+    transform: translateX(108%) rotate(3deg) scaleX(-1);
+  }
+}
+
+@keyframes ledger-lift {
+  0%,
+  20% {
+    opacity: 1;
+    transform: rotateX(0deg) translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: rotateX(12deg) translateY(-16%);
+  }
+}
+
+@keyframes receipt-stamp-away {
+  0%,
+  24% {
+    opacity: 1;
+    transform: scale(1) rotate(-1deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(0.9) rotate(2deg) translateY(18%);
+  }
+}
+
+@keyframes placard-rise {
+  0%,
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -145%);
+  }
+}
+
+@keyframes screen-fold-left {
+  from {
+    opacity: 1;
+    transform: perspective(48rem) rotateY(0deg);
+  }
+
+  to {
+    opacity: 0;
+    transform: perspective(48rem) rotateY(-82deg);
+  }
+}
+
+@keyframes screen-fold-right {
+  from {
+    opacity: 1;
+    transform: perspective(48rem) rotateY(0deg);
+  }
+
+  to {
+    opacity: 0;
+    transform: perspective(48rem) rotateY(82deg);
+  }
+}

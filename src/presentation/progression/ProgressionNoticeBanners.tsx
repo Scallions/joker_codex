@@ -4,12 +4,12 @@ import styles from './ProgressionScreens.module.css';
 
 export function ProgressionNoticeBanners() {
   const dispatch = useAppDispatch();
-  const { profiles, activeProfileId, presentationEvents, busy } = useAppSelector(
+  const { profiles, activeProfileId, presentationSequence, busy } = useAppSelector(
     (state) => state.app,
   );
   const profile = profiles.find((item) => item.id === activeProfileId);
-  if (!profile || presentationEvents.length > 0) return null;
-  const notices = profile.unreadNotices.slice(-3).reverse();
+  if (!profile || presentationSequence) return null;
+  const notices = profile.unreadNotices.slice(-1);
   if (notices.length === 0) return null;
 
   return (

@@ -2,6 +2,7 @@ import { showMenu } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import { ACHIEVEMENT_DEFINITIONS } from '../../progression/definitions';
 import { CatalogGlyph } from '../catalog/CatalogGlyph';
+import { PaperLedger } from '../components/StagePrimitives';
 import { formatTimestamp } from './formatTimestamp';
 import styles from './ProgressionScreens.module.css';
 
@@ -18,7 +19,7 @@ export function AchievementBookScreen() {
   ).length;
 
   return (
-    <section className={styles.screen}>
+    <PaperLedger className={styles.screen}>
       <header className={styles.header}>
         <div>
           <p>公开成就 · 已完成 {completed} / 31</p>
@@ -86,6 +87,6 @@ export function AchievementBookScreen() {
           })}
         </div>
       </div>
-    </section>
+    </PaperLedger>
   );
 }

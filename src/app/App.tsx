@@ -2,6 +2,8 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Provider } from 'react-redux';
 
 import { IndexedDbGameRepository } from '../persistence/indexedDbRepository';
+import { SealButton } from '../presentation/components/StagePrimitives';
+import { StageShell } from '../presentation/components/StageShell';
 import { AchievementBookScreen } from '../presentation/progression/AchievementBookScreen';
 import { CollectionScreen } from '../presentation/progression/CollectionScreen';
 import { HelpReferenceScreen } from '../presentation/progression/HelpReferenceScreen';
@@ -15,6 +17,7 @@ import { TutorialCoach } from '../presentation/progression/TutorialCoach';
 import { isRunStateV7 } from '../game-core/model/runV7';
 import { ApplicationErrorBoundary } from './ApplicationErrorBoundary';
 import { readBrowserRoute, replaceBrowserRoute } from './routeState';
+import { selectStageScene } from './selectStageScene';
 import { createGameStore, type GameStore } from './store';
 import {
   initializeApplication,
@@ -57,25 +60,12 @@ const ShopScreen = lazy(async () => ({
 const PresentationQueue = lazy(async () => ({
   default: (await import('../presentation/PresentationQueue')).PresentationQueue,
 }));
+const AudioDirector = lazy(async () => ({
+  default: (await import('../presentation/audio/AudioDirector')).AudioDirector,
+}));
 
 export interface AppProps {
   readonly store?: GameStore;
-}
-
-function StageDecor() {
-  return (
-    <>
-      <div className={styles.curtainLeft} aria-hidden="true" />
-      <div className={styles.curtainRight} aria-hidden="true" />
-      <div className={styles.lanterns} aria-hidden="true">
-        <i />
-        <i />
-        <i />
-        <i />
-        <i />
-      </div>
-    </>
-  );
 }
 
 function WelcomeStage() {
@@ -107,6 +97,9 @@ function GameApplication() {
       ? null
       : new URLSearchParams(window.location.search).get('catalog-audit');
   const catalogAudit = catalogAuditMode === '1' || catalogAuditMode === 'jokers';
+  const sceneId = catalogAudit
+    ? 'archive-ledger'
+    : selectStageScene(status, run?.phase.kind);
 
   useEffect(() => {
     if (initialized.current) return;
@@ -124,99 +117,95 @@ function GameApplication() {
   }, [catalogAudit, setupMode, status]);
 
   return (
-    <main className={styles.viewport}>
-      <section className={styles.stage}>
-        <StageDecor />
-        {status === 'loading' ? <WelcomeStage /> : null}
-        <Suspense fallback={<WelcomeStage />}>
-          {catalogAudit ? (
-            <CatalogAuditScreen
-              ledger={catalogAuditMode === 'jokers' ? 'joker' : 'non-joker'}
-            />
-          ) : null}
-          {!catalogAudit && status === 'profiles' ? <ProfileScreen /> : null}
-          {!catalogAudit && status === 'menu' ? <MainMenuScreen /> : null}
-          {!catalogAudit && status === 'setup' ? <ModeSetupScreen /> : null}
-          {!catalogAudit && status === 'collection' ? <CollectionScreen /> : null}
-          {!catalogAudit && status === 'achievements' ? <AchievementBookScreen /> : null}
-          {!catalogAudit && status === 'statistics' ? <StatisticsScreen /> : null}
-          {!catalogAudit && status === 'help' ? <HelpReferenceScreen /> : null}
-          {!catalogAudit && status === 'notices' ? <NoticesScreen /> : null}
-          {!catalogAudit && status === 'maintenance' ? (
-            <ProfileMaintenanceScreen />
-          ) : null}
-          {!catalogAudit && status === 'playing' && run?.phase.kind === 'blind-select' ? (
-            <BlindSelectScreen />
-          ) : null}
-          {!catalogAudit && status === 'playing' && run?.phase.kind === 'round' ? (
-            <GameTableScreen />
-          ) : null}
-          {!catalogAudit && status === 'playing' && run?.phase.kind === 'round-reward' ? (
-            <RewardScreen />
-          ) : null}
-          {!catalogAudit && status === 'playing' && run?.phase.kind === 'shop' ? (
-            <ShopScreen />
-          ) : null}
-          {!catalogAudit && status === 'playing' && run?.phase.kind === 'choice' ? (
-            <ChoiceScreen />
-          ) : null}
-          {!catalogAudit && status === 'playing' && run?.phase.kind === 'run-won' ? (
-            <RunWonScreen />
-          ) : null}
-          {!catalogAudit &&
-          status === 'playing' &&
-          run &&
-          (run.phase.kind === 'run-lost' || run.phase.kind === 'finished') ? (
-            <ResultScreen />
-          ) : null}
-        </Suspense>
-        {!catalogAudit && status === 'playing' ? (
-          <>
-            <button
-              type="button"
-              className={styles.menuNav}
-              onClick={() => dispatch(showMenu())}
-            >
-              主菜单
-            </button>
-            <button
-              type="button"
-              className={styles.helpNav}
-              onClick={() => dispatch(showHelp())}
-            >
-              牌型帮助
-            </button>
-            <button
-              type="button"
-              className={styles.maintenanceNav}
-              onClick={() => dispatch(showMaintenance())}
-            >
-              档案维护
-            </button>
-            <button
-              type="button"
-              className={styles.profileNav}
-              aria-label="返回戏主名簿"
-              onClick={() => dispatch(showProfiles())}
-            >
-              戏主名簿
-            </button>
-          </>
+    <StageShell sceneId={sceneId} showGlobalControls={!catalogAudit}>
+      <Suspense fallback={null}>{!catalogAudit ? <AudioDirector /> : null}</Suspense>
+      {status === 'loading' ? <WelcomeStage /> : null}
+      <Suspense fallback={<WelcomeStage />}>
+        {catalogAudit ? (
+          <CatalogAuditScreen
+            ledger={catalogAuditMode === 'jokers' ? 'joker' : 'non-joker'}
+          />
+        ) : null}
+        {!catalogAudit && status === 'profiles' ? <ProfileScreen /> : null}
+        {!catalogAudit && status === 'menu' ? <MainMenuScreen /> : null}
+        {!catalogAudit && status === 'setup' ? <ModeSetupScreen /> : null}
+        {!catalogAudit && status === 'collection' ? <CollectionScreen /> : null}
+        {!catalogAudit && status === 'achievements' ? <AchievementBookScreen /> : null}
+        {!catalogAudit && status === 'statistics' ? <StatisticsScreen /> : null}
+        {!catalogAudit && status === 'help' ? <HelpReferenceScreen /> : null}
+        {!catalogAudit && status === 'notices' ? <NoticesScreen /> : null}
+        {!catalogAudit && status === 'maintenance' ? <ProfileMaintenanceScreen /> : null}
+        {!catalogAudit && status === 'playing' && run?.phase.kind === 'blind-select' ? (
+          <BlindSelectScreen />
+        ) : null}
+        {!catalogAudit && status === 'playing' && run?.phase.kind === 'round' ? (
+          <GameTableScreen />
+        ) : null}
+        {!catalogAudit && status === 'playing' && run?.phase.kind === 'round-reward' ? (
+          <RewardScreen />
+        ) : null}
+        {!catalogAudit && status === 'playing' && run?.phase.kind === 'shop' ? (
+          <ShopScreen />
+        ) : null}
+        {!catalogAudit && status === 'playing' && run?.phase.kind === 'choice' ? (
+          <ChoiceScreen />
+        ) : null}
+        {!catalogAudit && status === 'playing' && run?.phase.kind === 'run-won' ? (
+          <RunWonScreen />
         ) : null}
         {!catalogAudit &&
         status === 'playing' &&
         run &&
-        isRunStateV7(run) &&
-        run.sessionV7.runClass === 'tutorial' ? (
-          <TutorialCoach />
+        (run.phase.kind === 'run-lost' || run.phase.kind === 'finished') ? (
+          <ResultScreen />
         ) : null}
-        {!catalogAudit && status === 'playing' ? <ProgressionNoticeBanners /> : null}
-        <Suspense fallback={null}>
-          <PresentationQueue />
-        </Suspense>
-        {error ? <p className={styles.errorBanner}>{error}</p> : null}
-      </section>
-    </main>
+      </Suspense>
+      {!catalogAudit && status === 'playing' ? (
+        <>
+          <SealButton
+            className={styles.menuNav}
+            tone="jade"
+            onClick={() => dispatch(showMenu())}
+          >
+            主菜单
+          </SealButton>
+          <SealButton
+            className={styles.helpNav}
+            tone="jade"
+            onClick={() => dispatch(showHelp())}
+          >
+            牌型帮助
+          </SealButton>
+          <SealButton
+            className={styles.maintenanceNav}
+            tone="jade"
+            onClick={() => dispatch(showMaintenance())}
+          >
+            档案维护
+          </SealButton>
+          <SealButton
+            className={styles.profileNav}
+            tone="jade"
+            aria-label="返回戏主名簿"
+            onClick={() => dispatch(showProfiles())}
+          >
+            戏主名簿
+          </SealButton>
+        </>
+      ) : null}
+      {!catalogAudit &&
+      status === 'playing' &&
+      run &&
+      isRunStateV7(run) &&
+      run.sessionV7.runClass === 'tutorial' ? (
+        <TutorialCoach />
+      ) : null}
+      {!catalogAudit && status === 'playing' ? <ProgressionNoticeBanners /> : null}
+      <Suspense fallback={null}>
+        <PresentationQueue />
+      </Suspense>
+      {error ? <p className={styles.errorBanner}>{error}</p> : null}
+    </StageShell>
   );
 }
 

@@ -1,5 +1,6 @@
 import { acknowledgeProgressionNotices, showMenu } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
+import { PaperLedger } from '../components/StagePrimitives';
 import styles from './ProgressionScreens.module.css';
 
 export function NoticesScreen() {
@@ -12,7 +13,7 @@ export function NoticesScreen() {
     dispatch(acknowledgeProgressionNotices({ noticeIds }));
 
   return (
-    <section className={styles.screen}>
+    <PaperLedger className={styles.screen}>
       <header className={styles.header}>
         <div>
           <p>最多保留 50 条未读进度摘要</p>
@@ -60,6 +61,6 @@ export function NoticesScreen() {
           </div>
         )}
       </div>
-    </section>
+    </PaperLedger>
   );
 }

@@ -28,14 +28,13 @@ export function buildAssetManifest(
       id: row.ownershipId,
       contentId: row.id,
       assetId: row.assetId,
-      assetPath: '/assets/catalog-stage.svg',
-      focalKey: `${row.family}-${row.ordinal.toString().padStart(2, '0')}`,
+      assetPath: `/assets/catalog/${row.family}/${row.referenceIndex.toLowerCase()}.svg`,
+      focalKey: `catalog-${row.family}-${row.referenceIndex.toLowerCase()}`,
       source: 'project-svg',
-      sourceFileOrPrompt:
-        'public/assets/catalog-stage.svg + CatalogGlyph deterministic geometry',
+      sourceFileOrPrompt: `scripts/generate-catalog-emblems.mjs#${row.family}`,
       author: '百戏奇牌项目',
       reviewed: true,
-      notes: '午夜百戏公共纸纹与按内容编号生成的独立几何焦点构图。',
+      notes: '午夜百戏家族语法生成的逐条独立徽记；无文字、无外链、可确定性复验。',
     };
   });
 }

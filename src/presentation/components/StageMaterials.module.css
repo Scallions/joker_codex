@@ -1,0 +1,148 @@
+.viewport {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  overflow: clip;
+  background:
+    radial-gradient(circle at 50% 42%, rgb(183 43 50 / 20%), transparent 32%),
+    linear-gradient(135deg, var(--bx-ink-950) 0%, #11183c 48%, #090b21 100%);
+}
+
+.stage {
+  position: relative;
+  width: min(100vw, 177.78vh);
+  aspect-ratio: 16 / 9;
+  overflow: clip;
+  border: 1px solid rgb(215 171 88 / 32%);
+  background:
+    linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 1.5%) 1px, transparent 1px),
+    radial-gradient(circle at 50% 45%, #202a59 0%, #101637 36%, #090c24 78%);
+  background-size:
+    22px 22px,
+    22px 22px,
+    auto;
+  box-shadow: var(--bx-stage-shadow);
+  isolation: isolate;
+}
+
+.stage::before {
+  position: absolute;
+  right: 8%;
+  bottom: -19%;
+  left: 8%;
+  height: 42%;
+  border-top: 3px solid rgb(197 147 64 / 55%);
+  border-radius: 50% 50% 0 0;
+  background:
+    repeating-linear-gradient(92deg, rgb(255 255 255 / 2.5%) 0 2px, transparent 2px 38px),
+    #291018;
+  box-shadow: 0 -22px 70px rgb(178 34 42 / 14%);
+  content: '';
+  pointer-events: none;
+  transform: perspective(320px) rotateX(16deg);
+  z-index: 1;
+}
+
+.stage::after {
+  position: absolute;
+  width: 24rem;
+  height: 24rem;
+  border: 1px solid rgb(220 169 78 / 16%);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 18px rgb(179 41 49 / 4.5%),
+    0 0 0 20px rgb(220 169 78 / 11%),
+    0 0 90px rgb(206 42 51 / 16%);
+  content: '';
+  pointer-events: none;
+  z-index: 1;
+}
+
+.sceneLayer {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.sceneImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.72;
+  filter: saturate(0.82) contrast(1.04) brightness(0.72);
+  animation: scene-arrive 460ms var(--bx-ease-stage) both;
+}
+
+.sceneVeil {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 46%, transparent 10%, rgb(5 8 25 / 12%) 58%),
+    linear-gradient(180deg, rgb(4 6 20 / 15%), rgb(4 6 20 / 30%));
+}
+
+@keyframes scene-arrive {
+  from {
+    opacity: 0;
+    transform: scale(1.018);
+  }
+
+  to {
+    opacity: 0.72;
+    transform: scale(1);
+  }
+}
+
+.curtainLeft,
+.curtainRight {
+  position: absolute;
+  top: -8%;
+  bottom: 0;
+  width: 26%;
+  background:
+    linear-gradient(90deg, rgb(10 2 12 / 74%), transparent 18% 82%, rgb(10 2 12 / 50%)),
+    repeating-linear-gradient(90deg, #59151f 0 9%, #8b202a 10% 18%, #45101a 20% 28%);
+  filter: drop-shadow(0 0 28px rgb(0 0 0 / 70%));
+  opacity: 0.82;
+  transform-origin: top;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.curtainLeft {
+  left: -13%;
+  transform: rotate(5deg);
+}
+
+.curtainRight {
+  right: -13%;
+  transform: rotate(-5deg) scaleX(-1);
+}
+
+.lanterns {
+  position: absolute;
+  top: 4%;
+  right: 21%;
+  left: 21%;
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid rgb(222 181 96 / 35%);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.lanterns i {
+  width: 9px;
+  height: 9px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #efc77a;
+  box-shadow:
+    0 0 12px #d94c39,
+    0 0 28px rgb(255 200 105 / 60%);
+}

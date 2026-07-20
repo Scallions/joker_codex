@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
+import { useState } from 'react';
 
 import { finishLocalRun, submitRunCommand } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
@@ -49,6 +50,7 @@ interface CardButtonProps {
   readonly forced: boolean;
   readonly faceDown: boolean;
   readonly disabled: boolean;
+  readonly exitKind: 'play' | 'discard';
   readonly onSelect: () => void;
 }
 
@@ -60,6 +62,7 @@ function CardButton({
   forced,
   faceDown,
   disabled,
+  exitKind,
   onSelect,
 }: CardButtonProps) {
   const red = card.suit === 'hearts' || card.suit === 'diamonds';
@@ -77,11 +80,25 @@ function CardButton({
       }
       disabled={disabled || forced}
       onClick={onSelect}
-      initial={false}
+      layout="position"
+      initial={{ opacity: 0, y: 34, scale: 0.94, rotate: -3 }}
       animate={{
+        opacity: 1,
+        scale: 1,
         y: selected ? -24 : Math.abs(index - center) * 2.2,
         rotate: (index - center) * 2.2,
       }}
+      exit={
+        exitKind === 'play'
+          ? { opacity: 0, y: -150, scale: 0.86, rotate: (index - center) * 5 }
+          : {
+              opacity: 0,
+              x: index <= center ? -140 : 140,
+              y: 48,
+              scale: 0.82,
+              rotate: index <= center ? -16 : 16,
+            }
+      }
       whileHover={{ y: selected ? -28 : -10, scale: 1.025 }}
       whileTap={{ scale: 0.97 }}
       transition={{ type: 'spring', stiffness: 430, damping: 28 }}
@@ -106,6 +123,7 @@ function CardButton({
 
 export function GameTableScreen() {
   const dispatch = useAppDispatch();
+  const [exitKind, setExitKind] = useState<'play' | 'discard'>('play');
   const { run, busy, activeProfileId, profiles } = useAppSelector((state) => state.app);
   if (!run || run.phase.kind !== 'round' || !run.round) return null;
 
@@ -355,28 +373,31 @@ export function GameTableScreen() {
           </p>
           <span>牌堆余 {round.drawPileIds.length}</span>
         </div>
-        <div className={styles.handFan}>
-          {hand.map((card, index) => (
-            <CardButton
-              card={card}
-              index={index}
-              count={hand.length}
-              selected={round.selectedCardIds.includes(card.id)}
-              forced={round.forcedSelectedCardIds.includes(card.id)}
-              faceDown={round.faceDownCardIds.includes(card.id)}
-              disabled={busy}
-              onSelect={() =>
-                void dispatch(
-                  submitRunCommand({
-                    type: 'toggle-card',
-                    checkpointId: run.checkpointId,
-                    cardId: card.id,
-                  }),
-                )
-              }
-              key={card.id}
-            />
-          ))}
+        <div className={styles.handFan} data-card-exit-kind={exitKind}>
+          <AnimatePresence initial={false}>
+            {hand.map((card, index) => (
+              <CardButton
+                card={card}
+                index={index}
+                count={hand.length}
+                selected={round.selectedCardIds.includes(card.id)}
+                forced={round.forcedSelectedCardIds.includes(card.id)}
+                faceDown={round.faceDownCardIds.includes(card.id)}
+                disabled={busy}
+                exitKind={exitKind}
+                onSelect={() =>
+                  void dispatch(
+                    submitRunCommand({
+                      type: 'toggle-card',
+                      checkpointId: run.checkpointId,
+                      cardId: card.id,
+                    }),
+                  )
+                }
+                key={card.id}
+              />
+            ))}
+          </AnimatePresence>
         </div>
       </section>
 
@@ -386,11 +407,12 @@ export function GameTableScreen() {
           aria-label="出牌"
           className={styles.playButton}
           disabled={busy || selectedCount === 0}
-          onClick={() =>
+          onClick={() => {
+            setExitKind('play');
             void dispatch(
               submitRunCommand({ type: 'play-selected', checkpointId: run.checkpointId }),
-            )
-          }
+            );
+          }}
         >
           <span>落牌成章</span>
           <strong>出牌</strong>
@@ -408,14 +430,15 @@ export function GameTableScreen() {
                 round.selectedCardIds.includes(id),
               ))
           }
-          onClick={() =>
+          onClick={() => {
+            setExitKind('discard');
             void dispatch(
               submitRunCommand({
                 type: 'discard-selected',
                 checkpointId: run.checkpointId,
               }),
-            )
-          }
+            );
+          }}
         >
           <span>另起一手</span>
           <strong>弃牌</strong>

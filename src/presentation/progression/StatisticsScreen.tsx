@@ -3,6 +3,7 @@ import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import { PRODUCTION_CATALOG } from '../../content/productionCatalog';
 import { formatScore } from '../../game-core/score/score';
 import { selectHandReference } from '../../tutorial/reference';
+import { PaperLedger } from '../components/StagePrimitives';
 import { formatTimestamp } from './formatTimestamp';
 import styles from './ProgressionScreens.module.css';
 
@@ -54,7 +55,7 @@ export function StatisticsScreen() {
   );
 
   return (
-    <section className={styles.screen}>
+    <PaperLedger className={styles.screen}>
       <header className={styles.header}>
         <div>
           <p>只统计符合模式政策的已提交牌局</p>
@@ -116,6 +117,6 @@ export function StatisticsScreen() {
           ))}
         </div>
       </div>
-    </section>
+    </PaperLedger>
   );
 }
