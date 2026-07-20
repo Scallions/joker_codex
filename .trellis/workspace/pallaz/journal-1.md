@@ -269,3 +269,36 @@ Delivered the original Midnight Variety visual system, 230 catalog emblems, 15 s
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Full integration quality gate
+
+**Date**: 2026-07-20
+**Task**: Full integration quality gate
+**Branch**: `main`
+
+### Summary
+
+Closed the V7 release ledger, deterministic replay, persistence fault matrix, complete Chromium/WebKit flows, build budget, current README, installed-browser evidence, and parent AC handoff; archived only the integration child.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3822930` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
