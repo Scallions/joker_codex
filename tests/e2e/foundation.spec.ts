@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises';
 
 import { createRunEconomyFixtureRun } from '../../src/content/fixtures/runEconomy';
 import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
-import { createProductionRunV5 } from '../../src/content/runtime/runSetupV5';
+import { createProductionRunV6 } from '../../src/content/runtime/runSetupV6';
 import { executeCommandV2 } from '../../src/game-core/commands/executeCommandV2';
 import type { RunCommandV2 } from '../../src/game-core/commands/typesV2';
 import { resolveHandScoreV2 } from '../../src/game-core/effects/scoreHandV2';
@@ -37,7 +37,7 @@ function firstHandWinningProductionFixture(
 ) {
   for (let index = 0; index < 300; index += 1) {
     const seed = `${prefix}-${String(index)}`;
-    const initial = createProductionRunV5(PRODUCTION_CATALOG, { seed });
+    const initial = createProductionRunV6(PRODUCTION_CATALOG, { seed });
     const round = apply(initial, {
       type: 'select-blind',
       checkpointId: initial.checkpointId,
@@ -218,7 +218,7 @@ async function readActiveRun(page: Page): Promise<RunStateV2> {
 test('固定种子在选择、出牌与弃牌边界都恢复相同检查点', async ({ page }) => {
   const seed = 'browser-boundary-seed';
   await createProfileAndRun(page, seed, '边界戏主', false);
-  let expected: RunStateV2 = createProductionRunV5(PRODUCTION_CATALOG, { seed });
+  let expected: RunStateV2 = createProductionRunV6(PRODUCTION_CATALOG, { seed });
   expect(await readActiveRun(page)).toEqual(expected);
 
   await page.getByRole('button', { name: '登台应战' }).click();

@@ -46,6 +46,7 @@ export function projectEffectivePlayingCardV3(
   card: RunPlayingCard,
   options: {
     readonly allCardsFace?: boolean;
+    readonly suitColorEquivalence?: boolean;
     readonly debuffedCardIds?: ReadonlySet<CardId>;
   } = {},
 ): EffectivePlayingCardV3 {
@@ -65,13 +66,23 @@ export function projectEffectivePlayingCardV3(
     enhancementId,
     'playing-card-has-no-effective-rank-or-suit',
   );
+  const colorSuits: readonly Suit[] =
+    card.suit === 'hearts' || card.suit === 'diamonds'
+      ? ['hearts', 'diamonds']
+      : ['clubs', 'spades'];
   return {
     id: card.id,
     printedRank: card.rank,
     printedSuit: card.suit,
     rank: stone ? null : card.rank,
     rankValue: stone ? null : rankValueV3(card.rank),
-    suits: stone ? [] : wild && !debuffed ? SUITS : [card.suit],
+    suits: stone
+      ? []
+      : wild && !debuffed
+        ? SUITS
+        : options.suitColorEquivalence === true
+          ? colorSuits
+          : [card.suit],
     face: options.allCardsFace === true || FACE_RANKS.has(card.rank),
     wild,
     stone,

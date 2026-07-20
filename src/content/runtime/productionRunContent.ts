@@ -178,6 +178,13 @@ function operationParameters(
         value: JSON.stringify(operation.value),
         copyFacet: operation.copyFacet,
       };
+    case 'joker-runtime-action':
+      return {
+        action: operation.action,
+        predicate: JSON.stringify(operation.predicate),
+        parameters: JSON.stringify(operation.parameters),
+        copyFacet: operation.copyFacet,
+      };
     case 'joker-after-rarity':
       return {
         rarity: operation.rarity,
@@ -486,6 +493,7 @@ function joker(row: JokerCatalogRow, catalog: ProductionCatalog): JokerDefinitio
     rarity: row.rarity,
     slotContribution: 1,
     copyPolicy: row.copyPolicy,
+    copyTarget: row.copyTarget,
     stickerEligibility: row.stickerEligibility,
     initialAbilityState: row.initialAbilityState,
   };

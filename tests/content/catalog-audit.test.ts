@@ -10,18 +10,15 @@ import {
   EXPECTED_NON_JOKER_CATALOG_TOTAL,
   NON_JOKER_CATALOG_FAMILIES,
 } from '../../src/content/schema/catalog';
-import {
-  CatalogValidationError,
-  validateProductionCatalog,
-} from '../../src/content/schema/validateCatalog';
+import { validateProductionCatalog } from '../../src/content/schema/validateCatalog';
 
 describe('生产非奇牌目录审计', () => {
-  it('冻结 230 项非奇牌、100 项奇牌与 32 对 15 卡包映射', () => {
+  it('冻结 230 项非奇牌、150 项奇牌与 32 对 15 卡包映射', () => {
     const report = validateProductionCatalog(PRODUCTION_CATALOG);
 
     expect(report.totalRows).toBe(EXPECTED_CATALOG_TOTAL);
     expect(report.nonJokerRows).toBe(EXPECTED_NON_JOKER_CATALOG_TOTAL);
-    expect(report.jokerRows).toBe(100);
+    expect(report.jokerRows).toBe(150);
     expect(report.boosterRows).toBe(32);
     expect(report.boosterProfiles).toBe(15);
     expect(report.familyCounts).toEqual(EXPECTED_CATALOG_COUNTS);
@@ -34,9 +31,9 @@ describe('生产非奇牌目录审计', () => {
     const report = validateProductionCatalog(PRODUCTION_CATALOG);
     const assetPaths = new Set(PRODUCTION_CATALOG.assets.map((asset) => asset.assetPath));
 
-    expect(report.localizationEntries).toBe(760);
-    expect(report.assetRecords).toBe(330);
-    expect(report.contractRecords).toBe(330);
+    expect(report.localizationEntries).toBe(910);
+    expect(report.assetRecords).toBe(380);
+    expect(report.contractRecords).toBe(380);
     expect(report.reservedExternalIds).toBe(150);
     expect(
       [...assetPaths].every((path) =>
@@ -55,24 +52,16 @@ describe('生产非奇牌目录审计', () => {
     ).toBe(true);
   });
 
-  it('目录子任务模式诚实保留依赖，严格模式在真实奇牌缺失时失败', () => {
+  it('目录子任务与严格模式均闭合 150 张真实奇牌', () => {
     const child = validateProductionCatalog(PRODUCTION_CATALOG, {
       mode: 'catalog-child',
     });
-    expect(child.resolvedJokerIds).toHaveLength(100);
-    expect(child.unresolvedExternalIds).toHaveLength(50);
+    expect(child.resolvedJokerIds).toHaveLength(150);
+    expect(child.unresolvedExternalIds).toHaveLength(0);
 
-    expect(() =>
-      validateProductionCatalog(PRODUCTION_CATALOG, {
-        mode: 'integration-strict',
-      }),
-    ).toThrow(CatalogValidationError);
-
-    const resolved = new Set(child.unresolvedExternalIds);
     expect(
       validateProductionCatalog(PRODUCTION_CATALOG, {
         mode: 'integration-strict',
-        resolvedExternalIds: resolved,
       }).unresolvedExternalIds,
     ).toEqual([]);
 

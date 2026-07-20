@@ -8,8 +8,7 @@ import type {
   RunStateV2,
   ScoreBreakdownV2,
 } from '../model/runV2';
-import { isRunStateV5 } from '../model/runV5';
-import { nextInteger, type RandomState } from '../rng/random';
+import type { RandomState } from '../rng/random';
 import { multiplyScore } from '../score/score';
 import {
   effectiveCardForPokerV3,
@@ -18,6 +17,11 @@ import {
 import { buildHandFactsV3, type HandFactsV3 } from '../poker/handFactsV3';
 import type { JokerEventContextV5 } from '../rules/jokerEventFactsV5';
 import { resolveJokerPassiveCapabilities } from '../rules/jokerPassiveCapabilitiesV3';
+import { resolveListedChanceV6 } from '../rules/listedChanceV6';
+import {
+  usedConsumableSlotsForRun,
+  usedJokerSlotsForRun,
+} from '../rules/inventoryCapacityV6';
 import {
   evaluateJokerPredicateV3,
   evaluateJokerValueV3,
@@ -31,6 +35,7 @@ import {
   type EffectQueueFailureCode,
   type ResolvedEffectOperation,
 } from './registry';
+import { bossEffectsDisabledForRun } from '../rules/runtimeV3';
 
 const MAX_EFFECT_OPERATIONS = 10_000;
 
@@ -181,6 +186,8 @@ function resolveJokerWindow(
       position,
       effects: joker.effects,
       debuffed: joker.debuffed,
+      copyPolicy: joker.copyPolicy ?? 'none',
+      copyTarget: joker.copyTarget ?? 'none',
     })),
     window,
     { state, maximumOperations: MAX_EFFECT_OPERATIONS },
@@ -194,10 +201,7 @@ function resolveBeforeHandWindow(state: RunStateV2):
       readonly operationCount: number;
     }
   | ScoreResolutionFailure {
-  const bossRulesDisabled =
-    isRunStateV5(state) &&
-    state.jokerRuntimeV5.bossDisabledForRound &&
-    (state.round?.blind.kind === 'boss' || state.round?.blind.kind === 'finisher');
+  const bossRulesDisabled = bossEffectsDisabledForRun(state);
   return resolveEffectQueue(
     [
       ...(state.round && !bossRulesDisabled
@@ -228,6 +232,8 @@ function resolveBeforeHandWindow(state: RunStateV2):
         position: 1_000 + index,
         effects: joker.effects,
         debuffed: joker.debuffed,
+        copyPolicy: joker.copyPolicy ?? 'none',
+        copyTarget: joker.copyTarget ?? 'none',
       })),
       ...state.inventory.consumables.map((item, index) => ({
         instanceId: item.instanceId,
@@ -431,6 +437,12 @@ export function resolveHandScoreV2(
   const compatibleCards = cards.map((card) =>
     effectiveCardForPokerV3(card, facts.effectiveCards[card.id]!),
   );
+  const suitCandidates = Object.fromEntries(
+    facts.playedCardIds.flatMap((cardId) => {
+      const identity = facts.effectiveCards[cardId];
+      return identity ? [[cardId, identity.suits] as const] : [];
+    }),
+  );
   let rngState = state.rngState;
   let proposedState = state;
   const modifierRolls: { sourceId: string; value: number }[] = [];
@@ -439,6 +451,7 @@ export function resolveHandScoreV2(
     flushSize: passives.capabilities.flushSize,
     straightMaximumStep: passives.capabilities.straightMaximumStep,
     handLevels: state.rules.handLevels,
+    suitCandidates,
   });
   for (const source of beforeHand.operations) {
     const operation = source.operation;
@@ -477,6 +490,7 @@ export function resolveHandScoreV2(
     flushSize: passives.capabilities.flushSize,
     straightMaximumStep: passives.capabilities.straightMaximumStep,
     handLevels: proposedState.rules.handLevels,
+    suitCandidates,
   });
   const levelDecrease = beforeHandOperations.find(
     (operation) =>
@@ -499,6 +513,7 @@ export function resolveHandScoreV2(
           proposedState.rules.handLevels[evaluation.type] - levelDecrease.value,
         ),
       },
+      suitCandidates,
     });
   }
   const cardMap = new Map(cards.map((card) => [card.id, card]));
@@ -575,6 +590,7 @@ export function resolveHandScoreV2(
   const applyJokerStateChange = (
     source: ResolvedEffectOperation,
     window: EffectWindow,
+    cardId?: CardId,
   ): ScoreResolutionFailure | null => {
     const operation = source.operation;
     if (operation.type !== 'joker-state-change') return null;
@@ -584,6 +600,7 @@ export function resolveHandScoreV2(
       facts,
       sourceInstanceId: source.sourceInstanceId as JokerInstanceId,
       window,
+      ...(cardId ? { cardId } : {}),
       rngState,
       originalStencilCount,
       eventContext: playedEventContext,
@@ -711,14 +728,11 @@ export function resolveHandScoreV2(
     const lacksCapacity =
       operation.capacityRequired &&
       ((operation.family === 'joker' &&
-        proposedState.inventory.jokers.reduce(
-          (total, joker) => total + joker.slotContribution,
-          0,
-        ) >= proposedState.rules.jokerSlots) ||
+        usedJokerSlotsForRun(proposedState) >= proposedState.rules.jokerSlots) ||
         ((operation.family === 'tarot' ||
           operation.family === 'planet' ||
           operation.family === 'spectral') &&
-          proposedState.inventory.consumables.length >=
+          usedConsumableSlotsForRun(proposedState) >=
             proposedState.rules.consumableSlots));
     if (lacksCapacity) return null;
     const predicate = evaluateJokerPredicateV3(operation.predicate, {
@@ -954,6 +968,12 @@ export function resolveHandScoreV2(
     const passes = 1 + retriggerSources.length;
     for (let pass = 0; pass < passes; pass += 1) {
       operationCount += 1;
+      for (const source of scoredCardEffects.operations) {
+        if (source.operation.type !== 'joker-state-change') continue;
+        operationCount += 1;
+        const stateFailure = applyJokerStateChange(source, 'scored-card', card.id);
+        if (stateFailure) return stateFailure;
+      }
       const currentCard =
         proposedState.deck.cards.find(({ id }) => id === card.id) ?? card;
       const value =
@@ -974,10 +994,19 @@ export function resolveHandScoreV2(
           operation.numerator !== null &&
           operation.denominator !== null
         ) {
-          const draw = nextInteger(rngState, operation.denominator);
-          rngState = draw.state;
-          modifierRolls.push({ sourceId, value: draw.value });
-          applied = draw.value < operation.numerator;
+          const draw = resolveListedChanceV6(
+            {
+              numerator: operation.numerator,
+              denominator: operation.denominator,
+              sourceId,
+              reason: 'playing-card-modifier',
+            },
+            passives.capabilities.listedChancePower,
+            rngState,
+          );
+          rngState = draw.rngState;
+          if (draw.roll !== null) modifierRolls.push({ sourceId, value: draw.roll });
+          applied = draw.succeeded;
         }
         if (!applied) continue;
         if (
@@ -1012,10 +1041,19 @@ export function resolveHandScoreV2(
           operation.type === 'baseline' &&
           operation.key === 'post-score-independent-destroy-1-in-4'
         ) {
-          const draw = nextInteger(rngState, 4);
-          rngState = draw.state;
-          modifierRolls.push({ sourceId, value: draw.value });
-          if (draw.value === 0) destroyedCardIds.add(card.id);
+          const draw = resolveListedChanceV6(
+            {
+              numerator: 1,
+              denominator: 4,
+              sourceId,
+              reason: 'glass-break',
+            },
+            passives.capabilities.listedChancePower,
+            rngState,
+          );
+          rngState = draw.rngState;
+          if (draw.roll !== null) modifierRolls.push({ sourceId, value: draw.roll });
+          if (draw.succeeded) destroyedCardIds.add(card.id);
         }
       }
       if (successfulLuckyBranches > 0) {
@@ -1332,6 +1370,91 @@ export function resolveHandScoreV2(
         : {}),
     };
     trace.push(`playing-card-cloned:${commandEntryCloneCard.id}:${cloneId}`);
+  }
+  const bossAppliedRuleIds =
+    state.round &&
+    (state.round.blind.kind === 'boss' || state.round.blind.kind === 'finisher') &&
+    !bossEffectsDisabledForRun(state)
+      ? [
+          ...new Set(
+            beforeHand.operations.flatMap((source) => {
+              if (!source.sourceInstanceId.startsWith('blind:')) return [];
+              const operation = source.operation;
+              if (
+                operation.type === 'debuff-suit' &&
+                !cards.some((card) => card.suit === operation.suit)
+              ) {
+                return [];
+              }
+              if (
+                operation.type === 'debuff-card' &&
+                !facts.playedCardIds.includes(operation.cardId as CardId)
+              ) {
+                return [];
+              }
+              if (
+                operation.type === 'transform-card-field' &&
+                operation.field === 'debuff'
+              ) {
+                const applies = cards.some((card) => {
+                  if (
+                    operation.value === 'clubs' ||
+                    operation.value === 'diamonds' ||
+                    operation.value === 'hearts' ||
+                    operation.value === 'spades'
+                  ) {
+                    return card.suit === operation.value;
+                  }
+                  if (operation.value === 'face-card') {
+                    return (
+                      card.rank === 'jack' ||
+                      card.rank === 'queen' ||
+                      card.rank === 'king'
+                    );
+                  }
+                  return (
+                    operation.value === true &&
+                    operation.selection === 'played-this-ante' &&
+                    state.history.playedCardIdsThisAnte.includes(card.id)
+                  );
+                });
+                if (!applies) return [];
+              }
+              if (
+                operation.type === 'catalog-blind-rule' &&
+                (operation.key === 'hand-type-no-repeat' ||
+                  operation.key === 'first-hand-type-only')
+              ) {
+                return [];
+              }
+              return [source.effectId];
+            }),
+          ),
+        ]
+      : [];
+  if (bossAppliedRuleIds.length > 0 && state.round) {
+    const bossEventContext: JokerEventContextV5 = {
+      eventFacts: {
+        kind: 'boss-ability-triggered',
+        bossId: state.round.blind.definitionId,
+        ruleIds: bossAppliedRuleIds,
+        affectedCardIds: [...debuffed].filter((cardId) =>
+          facts.playedCardIds.includes(cardId),
+        ),
+      },
+      eventCardIdentities: Object.fromEntries(
+        facts.playedCardIds.flatMap((cardId) => {
+          const identity = facts.effectiveCards[cardId];
+          return identity ? [[cardId, identity] as const] : [];
+        }),
+      ),
+    };
+    const bossFailure = emitStateOnlyJokerWindow(
+      'boss-ability-triggered',
+      bossEventContext,
+    );
+    if (bossFailure) return bossFailure;
+    trace.push(`boss-ability:${bossAppliedRuleIds.join(',')}`);
   }
   if (operationCount > MAX_EFFECT_OPERATIONS) {
     return {

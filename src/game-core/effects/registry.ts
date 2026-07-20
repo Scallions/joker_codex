@@ -11,6 +11,8 @@ import {
   jokerValueSchema,
   validateJokerPredicateDepth,
   type JokerCopyFacet,
+  type JokerCopyPolicy,
+  type JokerCopyTarget,
   type JokerPredicate,
   type JokerValue,
 } from '../../content/schema/catalog';
@@ -236,10 +238,31 @@ export type EffectOperation =
         | 'all-played-cards-score'
         | 'straight-maximum-step'
         | 'hand-size-delta'
+        | 'hands-per-round-delta'
         | 'discards-per-round-delta'
-        | 'extra-interest';
+        | 'extra-interest'
+        | 'suit-color-equivalence'
+        | 'duplicate-shop-families'
+        | 'listed-chance-power'
+        | 'zero-price-planet'
+        | 'boss-disable';
       readonly value: JokerValue;
       readonly copyFacet: 'none';
+    }
+  | {
+      readonly type: 'joker-runtime-action';
+      readonly action:
+        | 'create-random-sealed-card'
+        | 'blind-survival'
+        | 'set-castle-target'
+        | 'set-idol-target'
+        | 'sale-clone-ready-joker'
+        | 'accumulate-discard-threshold'
+        | 'level-discarded-hand'
+        | 'clone-random-consumable-negative';
+      readonly predicate: JokerPredicate;
+      readonly parameters: Readonly<Record<string, string | number | boolean | null>>;
+      readonly copyFacet: JokerCopyFacet;
     }
   | {
       readonly type: 'joker-after-rarity';
@@ -817,12 +840,73 @@ const CATALOG_EFFECT_HANDLERS = {
     return (capability === 'all-played-cards-score' ||
       capability === 'straight-maximum-step' ||
       capability === 'hand-size-delta' ||
+      capability === 'hands-per-round-delta' ||
       capability === 'discards-per-round-delta' ||
-      capability === 'extra-interest') &&
+      capability === 'extra-interest' ||
+      capability === 'suit-color-equivalence' ||
+      capability === 'duplicate-shop-families' ||
+      capability === 'listed-chance-power' ||
+      capability === 'zero-price-planet' ||
+      capability === 'boss-disable') &&
       value !== null &&
       copyFacet === 'none'
       ? [{ type: 'joker-passive-capability', capability, value, copyFacet }]
       : [];
+  },
+  'bxqp:handler:joker-runtime-action': (effect) => {
+    const action = stringParameter(effect, 'action');
+    const copyFacet = stringParameter(effect, 'copyFacet');
+    const predicate = jsonParameter(effect, 'predicate', (value) =>
+      jokerPredicateSchema.safeParse(value),
+    );
+    const parameters = jsonParameter(effect, 'parameters', (value) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return { success: false as const };
+      }
+      const entries = Object.entries(value);
+      return entries.every(
+        ([key, item]) =>
+          key.length > 0 &&
+          (item === null ||
+            typeof item === 'string' ||
+            typeof item === 'number' ||
+            typeof item === 'boolean'),
+      )
+        ? {
+            success: true as const,
+            data: value as Readonly<Record<string, string | number | boolean | null>>,
+          }
+        : { success: false as const };
+    });
+    const actions = [
+      'create-random-sealed-card',
+      'blind-survival',
+      'set-castle-target',
+      'set-idol-target',
+      'sale-clone-ready-joker',
+      'accumulate-discard-threshold',
+      'level-discarded-hand',
+      'clone-random-consumable-negative',
+    ] as const;
+    if (
+      action === null ||
+      !actions.includes(action as (typeof actions)[number]) ||
+      predicate === null ||
+      !validateJokerPredicateDepth(predicate) ||
+      parameters === null ||
+      (copyFacet !== 'output' && copyFacet !== 'trigger' && copyFacet !== 'none')
+    ) {
+      return [];
+    }
+    return [
+      {
+        type: 'joker-runtime-action',
+        action: action as (typeof actions)[number],
+        predicate,
+        parameters,
+        copyFacet,
+      },
+    ];
   },
   'bxqp:handler:joker-after-rarity': (effect) => {
     const rarity = stringParameter(effect, 'rarity');
@@ -1384,6 +1468,50 @@ export interface EffectQueueSource {
   readonly position: number;
   readonly effects: readonly EffectReference[];
   readonly debuffed?: boolean;
+  /** Present for owned Jokers so event-entry layout routing can be frozen. */
+  readonly copyPolicy?: JokerCopyPolicy;
+  /** Literal layout target. Earlier snapshots omit this field. */
+  readonly copyTarget?: JokerCopyTarget;
+}
+
+export interface FrozenJokerSourceNodeV6 {
+  readonly instanceId: string;
+  readonly position: number;
+  readonly active: boolean;
+  readonly effects: readonly EffectReference[];
+  readonly copyPolicy: JokerCopyPolicy;
+  readonly copyTarget: JokerCopyTarget;
+}
+
+export interface FrozenJokerSourceGraphV6 {
+  readonly eventId: string;
+  readonly nodes: readonly FrozenJokerSourceNodeV6[];
+}
+
+export function buildFrozenJokerSourceGraphV6(
+  sources: readonly EffectQueueSource[],
+  eventId = 'effect-event',
+): FrozenJokerSourceGraphV6 {
+  return {
+    eventId,
+    nodes: [...sources]
+      .filter(
+        (source) => source.copyPolicy !== undefined || source.copyTarget !== undefined,
+      )
+      .sort(
+        (left, right) =>
+          left.position - right.position ||
+          left.instanceId.localeCompare(right.instanceId),
+      )
+      .map((source) => ({
+        instanceId: source.instanceId,
+        position: source.position,
+        active: source.debuffed !== true,
+        effects: source.effects,
+        copyPolicy: source.copyPolicy ?? 'none',
+        copyTarget: source.copyTarget ?? 'none',
+      })),
+  };
 }
 
 export interface ResolvedEffectOperation {
@@ -1415,6 +1543,7 @@ export interface ResolveEffectQueueOptions {
   readonly state?: RunStateV2 | null;
   readonly maximumDepth?: number;
   readonly maximumOperations?: number;
+  readonly eventId?: string;
 }
 
 function targetSourceIndex(
@@ -1443,12 +1572,19 @@ export function resolveEffectQueue(
   const maximumDepth = options.maximumDepth ?? 32;
   const maximumOperations = options.maximumOperations ?? 10_000;
   const state = options.state ?? null;
-  const sources = [...inputSources]
-    .filter((source) => !source.debuffed)
-    .sort(
-      (left, right) =>
-        left.position - right.position || left.instanceId.localeCompare(right.instanceId),
-    );
+  // Keep inactive Joker nodes in the frozen list: adjacency is physical, so a
+  // debuffed immediate neighbour blocks a route instead of being skipped.
+  const sources = [...inputSources].sort(
+    (left, right) =>
+      left.position - right.position || left.instanceId.localeCompare(right.instanceId),
+  );
+  const graph = buildFrozenJokerSourceGraphV6(
+    sources,
+    options.eventId ?? `${window}:effect-event`,
+  );
+  const sourceIndexByInstanceId = new Map(
+    sources.map((source, index) => [source.instanceId, index]),
+  );
   const output: ResolvedEffectOperation[] = [];
   let operationCount = 0;
   let failure: Extract<EffectQueueResolution, { readonly ok: false }> | null = null;
@@ -1469,6 +1605,32 @@ export function resolveEffectQueue(
     }
     const source = sources[sourceIndex];
     if (!source) return;
+    if (source.debuffed) return;
+
+    const copyTarget = source.copyTarget ?? 'none';
+    if (copyTarget !== 'none') {
+      const graphIndex = graph.nodes.findIndex(
+        (node) => node.instanceId === source.instanceId,
+      );
+      const targetNode =
+        copyTarget === 'leftmost' ? graph.nodes[0] : graph.nodes[graphIndex + 1];
+      if (!targetNode || !targetNode.active) return;
+      const targetIndex = sourceIndexByInstanceId.get(targetNode.instanceId);
+      if (
+        targetIndex === undefined ||
+        targetIndex === sourceIndex ||
+        ancestry.includes(targetIndex)
+      ) {
+        // Dynamic layout cycles and self routes are valid no-op branches.
+        return;
+      }
+      resolveSource(
+        targetIndex,
+        [...ancestry, targetIndex],
+        [...copiedBy, source.instanceId],
+      );
+      return;
+    }
     const effects = [...source.effects]
       .filter((effect) => effect.windows.includes(window))
       .sort(
@@ -1500,14 +1662,20 @@ export function resolveEffectQueue(
           };
           return;
         }
-        output.push({
-          effectId: effect.id,
-          handlerId: effect.handlerId,
-          sourceInstanceId: source.instanceId,
-          sourcePosition: source.position,
-          copiedBy,
-          operation,
-        });
+        const copiedFacetCompatible =
+          copiedBy.length === 0 ||
+          !('copyFacet' in operation) ||
+          ((source.copyPolicy === 'output' || source.copyPolicy === 'trigger') &&
+            operation.copyFacet === source.copyPolicy);
+        if (copiedFacetCompatible)
+          output.push({
+            effectId: effect.id,
+            handlerId: effect.handlerId,
+            sourceInstanceId: source.instanceId,
+            sourcePosition: source.position,
+            copiedBy,
+            operation,
+          });
         if (operation.type !== 'copy-source' && operation.type !== 'retrigger-source') {
           continue;
         }

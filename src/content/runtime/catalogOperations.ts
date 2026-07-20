@@ -163,6 +163,8 @@ function materializedValue(
       return true;
     case 'joker-passive-capability':
       return operation.capability;
+    case 'joker-runtime-action':
+      return operation.action;
     case 'joker-after-rarity':
       return operation.factor;
     case 'joker-record-observation':

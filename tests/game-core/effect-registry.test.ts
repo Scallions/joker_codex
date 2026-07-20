@@ -356,6 +356,16 @@ describe('类型化效果注册表', () => {
           copyFacet: 'none',
         },
       ],
+      [
+        'bxqp:joker-runtime-action',
+        'joker-runtime-action',
+        {
+          action: 'set-castle-target',
+          predicate: JSON.stringify({ kind: 'always' }),
+          parameters: JSON.stringify({}),
+          copyFacet: 'none',
+        },
+      ],
       ['bxqp:shop-rule', 'catalog-shop-rule', { key: 'family-weight', value: 'tarot:2' }],
       [
         'bxqp:blind-rule',

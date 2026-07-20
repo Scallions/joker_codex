@@ -7,7 +7,7 @@ import {
 import { materializeItemV2 } from '../economy/shopV2';
 import { stableId } from '../model/ids';
 import { materializeJokerStickersV3 } from '../model/runV3';
-import { isRunStateV5 } from '../model/runV5';
+import { isRunStateV6 } from '../model/runV6';
 import type { EffectReference, EffectWindow, RunStateV2 } from '../model/runV2';
 import {
   applyStateOperationV3,
@@ -16,6 +16,12 @@ import {
 } from './applyStateOperationV3';
 import { canAffordRunStateV3 } from '../rules/jokerPassiveCapabilitiesV3';
 import type { JokerEventContextV5 } from '../rules/jokerEventFactsV5';
+import { usedConsumableSlotsForRun } from '../rules/inventoryCapacityV6';
+import { bossEffectsDisabledForRun } from '../rules/runtimeV3';
+import {
+  preparePlayingCardDestructionV6,
+  removePlayingCardReferencesV6,
+} from './playingCardDestructionProposalV6';
 
 export interface AdditionalEffectSourceV2 {
   readonly instanceId: string;
@@ -61,10 +67,7 @@ function collectSources(
   options: RunWindowOptionsV2,
 ): readonly EffectQueueSource[] {
   const sources: EffectQueueSource[] = [];
-  const bossRulesDisabled =
-    isRunStateV5(state) &&
-    state.jokerRuntimeV5.bossDisabledForRound &&
-    (state.round?.blind.kind === 'boss' || state.round?.blind.kind === 'finisher');
+  const bossRulesDisabled = bossEffectsDisabledForRun(state);
   if (options.includeBlind !== false && state.round && !bossRulesDisabled) {
     sources.push({
       instanceId: `blind:${state.round.blind.definitionId}`,
@@ -106,6 +109,8 @@ function collectSources(
         position: 1_000 + index,
         effects: joker.effects,
         debuffed: joker.debuffed,
+        copyPolicy: joker.copyPolicy ?? 'none',
+        copyTarget: joker.copyTarget ?? 'none',
       })),
     );
   }
@@ -199,11 +204,22 @@ function applyOperation(
         message: '效果会使奇牌栏位少于已用容量',
       };
     }
-    next = { ...next, rules: { ...next.rules, jokerSlots } };
+    next = {
+      ...next,
+      rules: { ...next.rules, jokerSlots },
+      ...(isRunStateV6(next)
+        ? {
+            jokerRuntimeV6: {
+              ...next.jokerRuntimeV6,
+              jokerCapacityDebt: Math.max(0, usedJokerSlots(next) - jokerSlots),
+            },
+          }
+        : {}),
+    };
   }
   if (operation.type === 'add-consumable-slots') {
     const consumableSlots = Math.max(0, next.rules.consumableSlots + operation.amount);
-    if (consumableSlots < next.inventory.consumables.length) {
+    if (consumableSlots < usedConsumableSlotsForRun(next)) {
       return {
         ok: false,
         code: 'inventory-full',
@@ -266,13 +282,14 @@ function applyOperation(
     }
     if (
       definition.kind === 'joker' &&
-      usedJokerSlots(next) + definition.slotContribution > next.rules.jokerSlots
+      ((isRunStateV6(next) && next.jokerRuntimeV6.jokerCapacityDebt > 0) ||
+        usedJokerSlots(next) + definition.slotContribution > next.rules.jokerSlots)
     ) {
       return { ok: false, code: 'inventory-full', message: '奇牌栏位已满' };
     }
     if (
       definition.kind === 'consumable' &&
-      next.inventory.consumables.length >= next.rules.consumableSlots
+      usedConsumableSlotsForRun(next) >= next.rules.consumableSlots
     ) {
       return { ok: false, code: 'inventory-full', message: '消耗牌栏位已满' };
     }
@@ -300,6 +317,8 @@ function applyOperation(
               slotContribution: item.slotContribution,
               sellValueOverride: null,
               debuffed: false,
+              copyPolicy: item.copyPolicy ?? 'none',
+              copyTarget: item.copyTarget ?? 'none',
             },
           ],
         },
@@ -382,6 +401,7 @@ function applyOperation(
       },
     };
   }
+  const beforeCatalogOperation = next;
   const catalogApplied = applyStateOperationV3(next, operation, {
     window,
     sourceInstanceId: entry.sourceInstanceId,
@@ -393,7 +413,27 @@ function applyOperation(
     ...(eventContext ? { eventContext } : {}),
   });
   if (!catalogApplied.ok) return catalogApplied;
-  if (catalogApplied.handled) next = catalogApplied.state;
+  if (catalogApplied.handled) {
+    next = catalogApplied.state;
+    const remainingCardIds = new Set(next.deck.cards.map(({ id }) => id));
+    const removedCardIds = beforeCatalogOperation.deck.cards
+      .filter(({ id }) => !remainingCardIds.has(id))
+      .map(({ id }) => id);
+    if (removedCardIds.length > 0) {
+      const destruction = preparePlayingCardDestructionV6(
+        beforeCatalogOperation,
+        removedCardIds,
+        `effect:${entry.effectId}`,
+      );
+      if (!destruction.ok) return destruction;
+      next = removePlayingCardReferencesV6(next, new Set(removedCardIds));
+      const emitted = applyRunWindowEffectsV2(next, 'playing-card-destroyed', {
+        eventContext: destruction.eventContext,
+      });
+      if (!emitted.ok) return emitted;
+      next = emitted.state;
+    }
+  }
   return { ok: true, state: next, operations: [entry] };
 }
 

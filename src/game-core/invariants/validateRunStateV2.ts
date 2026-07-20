@@ -8,7 +8,9 @@ import {
   type TargetKind,
 } from '../model/runV2';
 import { isRunStateV3 } from '../model/runV3';
+import { isRunStateV6 } from '../model/runV6';
 import { POKER_HAND_TYPES } from '../poker/evaluate';
+import { usedConsumableSlotsForRun } from '../rules/inventoryCapacityV6';
 
 export type RunValidationResultV2 =
   { readonly ok: true } | { readonly ok: false; readonly violations: readonly string[] };
@@ -351,7 +353,15 @@ export function validateRunStateV2(state: RunStateV2): RunValidationResultV2 {
     state.rulesV3.excludedRuleKeys.includes('capacity-after-ante-four') &&
     state.progress.ante >= 4 &&
     state.rules.jokerSlots === 0;
-  if (usedJokerSlots > state.rules.jokerSlots && !closedBalconyCapacity) {
+  const trackedV6CapacityDebt =
+    isRunStateV6(state) &&
+    state.jokerRuntimeV6.jokerCapacityDebt ===
+      Math.max(0, usedJokerSlots - state.rules.jokerSlots);
+  if (
+    usedJokerSlots > state.rules.jokerSlots &&
+    !closedBalconyCapacity &&
+    !trackedV6CapacityDebt
+  ) {
     violations.push('持有奇牌超过当前栏位容量');
   }
   if (
@@ -367,7 +377,7 @@ export function validateRunStateV2(state: RunStateV2): RunValidationResultV2 {
   ) {
     violations.push('持有消耗牌必须引用合法定义并具有有效数值');
   }
-  if (state.inventory.consumables.length > state.rules.consumableSlots) {
+  if (usedConsumableSlotsForRun(state) > state.rules.consumableSlots) {
     violations.push('持有消耗牌超过当前栏位容量');
   }
   if (hasDuplicates(state.inventory.jokers.map((joker) => joker.instanceId))) {

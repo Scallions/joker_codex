@@ -15,6 +15,7 @@ export interface HandFactsV3 {
   readonly contains: {
     readonly pair: boolean;
     readonly threeOfAKind: boolean;
+    readonly fourOfAKind: boolean;
     readonly twoPair: boolean;
     readonly straight: boolean;
     readonly flush: boolean;
@@ -50,6 +51,7 @@ export function buildHandFactsV3(
       card.id,
       projectEffectivePlayingCardV3(state, card, {
         allCardsFace: passives.capabilities.allCardsFace,
+        suitColorEquivalence: passives.capabilities.suitColorEquivalence,
         ...(options.debuffedCardIds ? { debuffedCardIds: options.debuffedCardIds } : {}),
       }),
     ]),
@@ -62,6 +64,12 @@ export function buildHandFactsV3(
     flushSize: passives.capabilities.flushSize,
     straightMaximumStep: passives.capabilities.straightMaximumStep,
     handLevels: state.rules.handLevels,
+    suitCandidates: Object.fromEntries(
+      Object.entries(effectiveCards).map(([cardId, identity]) => [
+        cardId,
+        identity.suits,
+      ]),
+    ),
   };
   const candidates = detectPokerCandidates(pokerCards, context);
   const evaluation = evaluatePokerHand(pokerCards, context);
@@ -87,6 +95,7 @@ export function buildHandFactsV3(
       contains: {
         pair: candidateTypes.has('pair'),
         threeOfAKind: candidateTypes.has('three-of-a-kind'),
+        fourOfAKind: candidateTypes.has('four-of-a-kind'),
         twoPair: candidateTypes.has('two-pair'),
         straight: candidateTypes.has('straight'),
         flush: candidateTypes.has('flush'),

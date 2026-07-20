@@ -41,6 +41,11 @@ const ENSEMBLE_NAMES: Readonly<Record<JokerEnsemble, string>> = {
   'cloud-traveler': '云路贵客',
   'night-market-ledger': '夜市账房',
   'strange-beast-finale': '异兽散场',
+  'brass-dispatch': '铜线急报',
+  'four-color-procession': '四色巡游',
+  'mirror-stage': '镜局重台',
+  'grand-formation': '百相压轴',
+  'starfire-legend': '星火终章',
 };
 const ENSEMBLES = Object.keys(ENSEMBLE_NAMES) as readonly JokerEnsemble[];
 const RARITY_NAMES: Readonly<Record<JokerRarity, string>> = {
@@ -108,7 +113,7 @@ export function CatalogAuditScreen({
           </strong>
           <span>
             {ledger === 'joker'
-              ? '张原创奇牌 · 10 班目 · 零远程素材'
+              ? '张原创奇牌 · 15 班目 · 零远程素材'
               : '项本地内容 · 13 家族 · 零远程素材'}
           </span>
         </div>

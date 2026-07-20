@@ -44,7 +44,13 @@ describe('奇牌通用被动能力', () => {
       allPlayedCardsScore: false,
       straightMaximumStep: 1,
       handSizeDelta: 0,
+      handsPerRoundDelta: 0,
       discardsPerRoundDelta: 0,
+      suitColorEquivalence: false,
+      duplicateShopFamilies: false,
+      listedChancePower: 0,
+      zeroPricePlanet: false,
+      bossDisabled: false,
       extraInterestSources: [],
     });
     expect(

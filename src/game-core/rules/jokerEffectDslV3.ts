@@ -1,4 +1,5 @@
 import type { JokerPredicate, JokerValue } from '../../content/schema/catalog';
+import { saleValue } from '../economy/pricing';
 import type { CardId, JokerInstanceId } from '../model/ids';
 import {
   isAbilityStateRun,
@@ -6,11 +7,18 @@ import {
   type PlayingCardModifierStateV3,
 } from '../model/runV3';
 import { isRunStateV5 } from '../model/runV5';
+import { isRunStateV6 } from '../model/runV6';
 import type { EffectWindow, RunStateV2 } from '../model/runV2';
 import { projectEffectivePlayingCardV3 } from '../poker/effectiveCardV3';
 import type { HandFactsV3 } from '../poker/handFactsV3';
 import { nextInteger, type RandomState } from '../rng/random';
 import type { JokerEventContextV5 } from './jokerEventFactsV5';
+import { resolveJokerPassiveCapabilities } from './jokerPassiveCapabilitiesV3';
+import { resolveListedChanceV6 } from './listedChanceV6';
+import {
+  hasDistinctClubAndOtherAssignment,
+  hasFourDistinctSuitAssignment,
+} from './suitAssignmentV6';
 
 export interface JokerDslRollV3 {
   readonly minimum: number;
@@ -27,6 +35,7 @@ export interface JokerDslContextV3 {
   readonly rngState: RandomState;
   readonly originalStencilCount: number;
   readonly eventContext?: JokerEventContextV5;
+  readonly listedChancePower?: number;
 }
 
 export type JokerDslFailureCode =
@@ -69,6 +78,8 @@ function handContains(
       return facts.contains.pair;
     case 'three-of-a-kind':
       return facts.contains.threeOfAKind;
+    case 'four-of-a-kind':
+      return facts.contains.fourOfAKind;
     case 'two-pair':
       return facts.contains.twoPair;
     case 'straight':
@@ -119,12 +130,14 @@ function eventCardIds(context: JokerDslContextV3): readonly CardId[] {
   if (facts.kind === 'discard') return facts.discardedCardIds;
   if (facts.kind === 'playing-card-added') return facts.cardIds;
   if (facts.kind === 'modifier-success') return [facts.cardId];
+  if (facts.kind === 'playing-card-destroyed') return facts.cardIds;
+  if (facts.kind === 'boss-ability-triggered') return facts.affectedCardIds;
   return [];
 }
 
 function eventCardCount(
   context: JokerDslContextV3,
-  selector: 'all' | 'face' | 'target-rank',
+  selector: Extract<JokerValue, { kind: 'event-card-count' }>['selector'],
 ): number {
   const ids = eventCardIds(context);
   if (selector === 'all') return ids.length;
@@ -135,11 +148,49 @@ function eventCardCount(
       return identity !== undefined && !identity.debuffed && identity.face;
     }).length;
   }
-  const target = isRunStateV5(context.state)
-    ? context.state.jokerRuntimeV5.sharedRoundTargetRank
+  if (selector === 'glass') {
+    return ids.filter((id) => {
+      const frozen = context.eventContext?.eventCardEnhancementIds?.[id];
+      if (frozen !== undefined) return frozen === 'bxqp:enhancement:glass-ribbon';
+      const card = context.state.deck.cards.find((candidate) => candidate.id === id);
+      const mirror = isRunStateV3(context.state)
+        ? context.state.modifiersV3.playingCards.find(
+            (candidate) => candidate.cardId === id,
+          )
+        : undefined;
+      return (
+        (mirror?.enhancementId ?? card?.enhancementId ?? null) ===
+        'bxqp:enhancement:glass-ribbon'
+      );
+    }).length;
+  }
+  if (selector === 'effective-face') {
+    return ids.filter((id) => {
+      const identity = identities[id] ?? context.facts.effectiveCards[id];
+      return identity !== undefined && !identity.debuffed && identity.face;
+    }).length;
+  }
+  const target =
+    isRunStateV5(context.state) || isRunStateV6(context.state)
+      ? context.state.jokerRuntimeV5.sharedRoundTargetRank
+      : null;
+  const castleTarget = isRunStateV6(context.state)
+    ? context.state.jokerRuntimeV6.castleTargetSuit
     : null;
   return ids.filter((id) => {
     const identity = identities[id] ?? context.facts.effectiveCards[id];
+    if (selector === 'castle-target-suit') {
+      return (
+        castleTarget !== null &&
+        identity !== undefined &&
+        !identity.debuffed &&
+        !identity.stone &&
+        identity.suits.includes(castleTarget)
+      );
+    }
+    if (selector === 'jack') {
+      return identity !== undefined && !identity.debuffed && identity.rank === 'jack';
+    }
     return (
       target !== null &&
       identity !== undefined &&
@@ -246,7 +297,11 @@ export function evaluateJokerPredicateV3(
         (event?.kind === 'consumable-use' && event.family === predicate.family) ||
         (event?.kind === 'modifier-success' &&
           (event.modifierId === predicate.family ||
-            event.modifierId.endsWith(`:${predicate.family}`)));
+            event.modifierId.endsWith(`:${predicate.family}`))) ||
+        (event?.kind === 'blind-result' &&
+          event.defeated &&
+          (predicate.family === 'blind-defeated' ||
+            (predicate.family === 'boss-defeated' && event.position === 'boss')));
       break;
     }
     case 'event-card-count-at-least':
@@ -268,15 +323,44 @@ export function evaluateJokerPredicateV3(
       break;
     }
     case 'scored-card-target-suit': {
-      const target = isRunStateV5(context.state)
-        ? context.state.jokerRuntimeV5.sharedRoundTargetSuit
-        : null;
+      const target =
+        isRunStateV5(context.state) || isRunStateV6(context.state)
+          ? context.state.jokerRuntimeV5.sharedRoundTargetSuit
+          : null;
       const identity = cardIdentity(context);
       matched =
         target !== null &&
         identity !== undefined &&
         !identity.debuffed &&
         identity.suits.includes(target);
+      break;
+    }
+    case 'scored-card-idol-target': {
+      const identity = cardIdentity(context);
+      matched =
+        isRunStateV6(context.state) &&
+        context.state.jokerRuntimeV6.idolTargetRank !== null &&
+        context.state.jokerRuntimeV6.idolTargetSuit !== null &&
+        identity !== undefined &&
+        !identity.debuffed &&
+        !identity.stone &&
+        identity.rank === context.state.jokerRuntimeV6.idolTargetRank &&
+        identity.suits.includes(context.state.jokerRuntimeV6.idolTargetSuit);
+      break;
+    }
+    case 'scored-card-enhancement': {
+      const card = context.cardId
+        ? context.state.deck.cards.find(({ id }) => id === context.cardId)
+        : undefined;
+      const mirror =
+        context.cardId && isRunStateV3(context.state)
+          ? context.state.modifiersV3.playingCards.find(
+              ({ cardId }) => cardId === context.cardId,
+            )
+          : undefined;
+      matched =
+        cardIdentity(context)?.debuffed === false &&
+        (mirror?.enhancementId ?? card?.enhancementId ?? null) === predicate.modifierId;
       break;
     }
     case 'scored-card-enhanced': {
@@ -302,6 +386,9 @@ export function evaluateJokerPredicateV3(
       matched = first !== undefined && context.cardId === first;
       break;
     }
+    case 'first-scoring-card':
+      matched = context.cardId === context.facts.scoringCardIds[0];
+      break;
     case 'displayed-hand-is-global-maximum': {
       const counts = new Map<string, number>();
       for (const hand of context.state.history.playedHandTypes) {
@@ -316,17 +403,28 @@ export function evaluateJokerPredicateV3(
         context.eventContext?.eventFacts.kind === 'other-joker' &&
         context.eventContext.eventFacts.rarity === predicate.rarity;
       break;
-    case 'scored-card-suit':
-      matched = cardIdentity(context)?.suits.includes(predicate.suit) ?? false;
-      break;
-    case 'scored-card-rank-in':
+    case 'scored-card-suit': {
+      const identity = cardIdentity(context);
       matched =
-        cardIdentity(context)?.rank !== null &&
-        predicate.ranks.includes(cardIdentity(context)!.rank!) === true;
+        identity !== undefined &&
+        !identity.debuffed &&
+        identity.suits.includes(predicate.suit);
       break;
-    case 'scored-card-face':
-      matched = cardIdentity(context)?.face === true;
+    }
+    case 'scored-card-rank-in': {
+      const identity = cardIdentity(context);
+      matched =
+        identity !== undefined &&
+        !identity.debuffed &&
+        identity.rank !== null &&
+        predicate.ranks.includes(identity.rank);
       break;
+    }
+    case 'scored-card-face': {
+      const identity = cardIdentity(context);
+      matched = identity !== undefined && !identity.debuffed && identity.face;
+      break;
+    }
     case 'scoring-cards-face': {
       const anyFace = context.facts.scoringCardIds.some((cardId) => {
         const identity = context.facts.effectiveCards[cardId];
@@ -356,6 +454,29 @@ export function evaluateJokerPredicateV3(
     case 'final-hand':
       matched = context.state.round?.handsRemaining === 1;
       break;
+    case 'scoring-suit-assignment':
+      matched =
+        predicate.assignment === 'four-suits'
+          ? hasFourDistinctSuitAssignment(
+              context.facts.scoringCardIds,
+              context.facts.effectiveCards,
+            )
+          : hasDistinctClubAndOtherAssignment(
+              context.facts.scoringCardIds,
+              context.facts.effectiveCards,
+            );
+      break;
+    case 'full-deck-enhanced-count-at-least':
+      matched =
+        context.state.deck.cards.filter((card) => {
+          const mirror = isRunStateV3(context.state)
+            ? context.state.modifiersV3.playingCards.find(
+                ({ cardId }) => cardId === card.id,
+              )
+            : undefined;
+          return (mirror?.enhancementId ?? card.enhancementId) !== null;
+        }).length >= predicate.count;
+      break;
     case 'no-discards-used':
       matched = context.state.round?.discardsUsed === 0;
       break;
@@ -373,12 +494,42 @@ export function evaluateJokerPredicateV3(
       break;
     }
     case 'chance': {
-      const draw = nextInteger(context.rngState, predicate.denominator);
+      const passiveResolution =
+        context.listedChancePower === undefined
+          ? resolveJokerPassiveCapabilities(context.state)
+          : null;
+      if (passiveResolution && !passiveResolution.ok) {
+        return {
+          ok: false,
+          code: 'joker-context',
+          message: passiveResolution.message,
+        };
+      }
+      const draw = resolveListedChanceV6(
+        {
+          numerator: predicate.numerator,
+          denominator: predicate.denominator,
+          sourceId: context.sourceInstanceId,
+          reason: `${context.window}:joker-predicate`,
+        },
+        context.listedChancePower ??
+          (passiveResolution?.ok ? passiveResolution.capabilities.listedChancePower : 0),
+        context.rngState,
+      );
       return {
         ok: true,
-        matched: draw.value < predicate.numerator,
-        rngState: draw.state,
-        rolls: [{ minimum: 0, maximum: predicate.denominator - 1, value: draw.value }],
+        matched: draw.succeeded,
+        rngState: draw.rngState,
+        rolls:
+          draw.roll === null
+            ? []
+            : [
+                {
+                  minimum: 0,
+                  maximum: predicate.denominator - 1,
+                  value: draw.roll,
+                },
+              ],
       };
     }
   }
@@ -447,31 +598,73 @@ export function evaluateJokerValueV3(
         }).length * value.scale;
       break;
     case 'initial-deck-size-delta': {
-      const initial = isRunStateV5(context.state)
-        ? context.state.jokerRuntimeV5.initialDeckSize
-        : context.state.deck.cards.length;
+      const initial =
+        isRunStateV5(context.state) || isRunStateV6(context.state)
+          ? context.state.jokerRuntimeV5.initialDeckSize
+          : context.state.deck.cards.length;
       resolved =
         Math.max(value.floor, initial - context.state.deck.cards.length) * value.scale;
       break;
     }
-    case 'history-event-count':
-      resolved =
-        context.state.history.effectObservations.filter((observation) => {
-          if (value.event !== 'tarot-used') return false;
-          if (observation.key === 'tarot-used') return true;
-          if (
-            observation.key !== 'consumable-used' ||
-            typeof observation.value !== 'string'
-          ) {
-            return false;
-          }
-          return context.state.content.items.some(
+    case 'history-event-count': {
+      const count =
+        value.event === 'blind-skipped'
+          ? context.state.history.skippedBlindIds.length
+          : context.state.history.effectObservations.filter((observation) => {
+              if (observation.key === 'tarot-used') return true;
+              if (
+                observation.key !== 'consumable-used' ||
+                typeof observation.value !== 'string'
+              ) {
+                return false;
+              }
+              return context.state.content.items.some(
+                (item) =>
+                  item.kind === 'consumable' &&
+                  item.family === 'tarot' &&
+                  item.contentId === observation.value,
+              );
+            }).length;
+      resolved = (value.base ?? 0) + count * value.scale;
+      break;
+    }
+    case 'distinct-history-content-count': {
+      const contentIds = new Set(
+        context.state.history.effectObservations.flatMap((observation) =>
+          observation.key === 'consumable-used' &&
+          typeof observation.value === 'string' &&
+          context.state.content.items.some(
             (item) =>
               item.kind === 'consumable' &&
-              item.family === 'tarot' &&
+              item.family === value.family &&
               item.contentId === observation.value,
-          );
-        }).length * value.scale;
+          )
+            ? [observation.value]
+            : [],
+        ),
+      );
+      resolved = contentIds.size * value.scale;
+      break;
+    }
+    case 'other-joker-sale-value-sum':
+      resolved = context.state.inventory.jokers
+        .filter((joker) => joker.instanceId !== context.sourceInstanceId)
+        .reduce(
+          (total, joker) =>
+            total +
+            saleValue(
+              joker.baseCost,
+              joker.editionCost,
+              context.state.rules.priceDiscountBasisPoints,
+              joker.sellValueOverride,
+            ),
+          0,
+        );
+      break;
+    case 'money-complete-groups':
+      resolved =
+        Math.floor(Math.max(value.floor, context.state.economy.money) / value.groupSize) *
+        value.scale;
       break;
     case 'money':
       resolved = Math.max(value.floor, context.state.economy.money) * value.scale;

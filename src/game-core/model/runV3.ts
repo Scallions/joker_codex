@@ -2,6 +2,7 @@ import type { BoosterProfile, CatalogRow } from '../../content/schema/catalog';
 import type { CardId, JokerInstanceId } from './ids';
 import type { RunStateV2 } from './runV2';
 import type { RunStateV5 } from './runV5';
+import type { RunStateV6 } from './runV6';
 import { nextInteger } from '../rng/random';
 
 export const RUN_SCHEMA_VERSION_V3 = 3 as const;
@@ -133,21 +134,25 @@ export type RunStateV4 = Omit<
   readonly migrationV4: MigrationMetadataV4;
 };
 
-export type AbilityStateRun = RunStateV4 | RunStateV5;
+export type AbilityStateRun = RunStateV4 | RunStateV5 | RunStateV6;
 export type CatalogRunState = Omit<
   RunStateV3,
   'schemaVersion' | 'contentVersion' | 'modifiersV3'
 > & {
-  readonly schemaVersion: typeof RUN_SCHEMA_VERSION_V3 | typeof RUN_SCHEMA_VERSION_V4 | 5;
+  readonly schemaVersion:
+    typeof RUN_SCHEMA_VERSION_V3 | typeof RUN_SCHEMA_VERSION_V4 | 5 | 6;
   readonly contentVersion:
     | 'run-economy-2'
     | typeof CONTENT_VERSION_V3
     | typeof CONTENT_VERSION_V4
-    | 'joker-catalog-2';
+    | 'joker-catalog-2'
+    | 'joker-catalog-3';
   readonly modifiersV3: RunModifiersV3;
   readonly migrationV4?: MigrationMetadataV4;
   readonly jokerRuntimeV5?: RunStateV5['jokerRuntimeV5'];
   readonly migrationV5?: RunStateV5['migrationV5'];
+  readonly jokerRuntimeV6?: RunStateV6['jokerRuntimeV6'];
+  readonly migrationV6?: RunStateV6['migrationV6'];
 };
 
 export function isLegacyRunStateV3(run: RunStateV2): run is RunStateV3 {
@@ -180,7 +185,7 @@ export function isRunStateV4(run: RunStateV2): run is RunStateV4 {
 export function isAbilityStateRun(run: RunStateV2): run is AbilityStateRun {
   return (
     isRunStateV4(run) ||
-    (run.schemaVersion === 5 &&
+    ((run.schemaVersion === 5 || run.schemaVersion === 6) &&
       'setupV3' in run &&
       'productionContentV3' in run &&
       'rulesV3' in run &&
@@ -190,7 +195,8 @@ export function isAbilityStateRun(run: RunStateV2): run is AbilityStateRun {
       'migrationV3' in run &&
       'migrationV4' in run &&
       'jokerRuntimeV5' in run &&
-      'migrationV5' in run)
+      'migrationV5' in run &&
+      (run.schemaVersion !== 6 || ('jokerRuntimeV6' in run && 'migrationV6' in run)))
   );
 }
 

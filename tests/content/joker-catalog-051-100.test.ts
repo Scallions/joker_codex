@@ -9,7 +9,7 @@ function isJoker(row: (typeof PRODUCTION_CATALOG.rows)[number]): row is JokerCat
 function isNewJoker(
   row: (typeof PRODUCTION_CATALOG.rows)[number],
 ): row is JokerCatalogRow {
-  return isJoker(row) && row.ordinal >= 51;
+  return isJoker(row) && row.ordinal >= 51 && row.ordinal <= 100;
 }
 
 const EXPECTED = [
@@ -150,24 +150,19 @@ describe('生产奇牌目录 051-100', () => {
     expect(rows.filter((row) => row.rarity === 'rare')).toHaveLength(6);
   });
 
-  it('把 100 张真实奇牌编译进 330 项生产快照并只留下后 50 个依赖', () => {
+  it('在最新生产目录中保留 051-100 批次身份并闭合全部奇牌依赖', () => {
     const jokers = PRODUCTION_CATALOG.rows.filter(isJoker);
     const content = createProductionRunContent(PRODUCTION_CATALOG);
     const runtimeJokers = content.items.filter((item) => item.kind === 'joker');
 
-    expect(PRODUCTION_CATALOG.rows).toHaveLength(330);
-    expect(jokers).toHaveLength(100);
-    expect(runtimeJokers).toHaveLength(100);
-    expect(runtimeJokers.at(-1)?.contentId).toBe('bxqp:joker:100');
+    expect(PRODUCTION_CATALOG.rows).toHaveLength(380);
+    expect(jokers).toHaveLength(150);
+    expect(runtimeJokers).toHaveLength(150);
+    expect(runtimeJokers.at(-1)?.contentId).toBe('bxqp:joker:150');
     expect(
       PRODUCTION_CATALOG.dependencies
         .filter((dependency) => !jokers.some((row) => row.id === dependency.id))
         .map((dependency) => dependency.id),
-    ).toEqual(
-      Array.from(
-        { length: 50 },
-        (_, index) => `bxqp:joker:${(index + 101).toString().padStart(3, '0')}`,
-      ),
-    );
+    ).toEqual([]);
   });
 });

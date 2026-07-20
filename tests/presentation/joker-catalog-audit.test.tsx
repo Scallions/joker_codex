@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { CatalogAuditScreen } from '../../src/presentation/catalog/CatalogAuditScreen';
 
 describe('奇牌图鉴总账', () => {
-  it('分页可达 100 张本地插画并保留独立焦点、规则和风味', async () => {
+  it('分页可达 150 张本地插画并保留独立焦点、规则和风味', async () => {
     const user = userEvent.setup();
     render(<CatalogAuditScreen ledger="joker" />);
     const ids = new Set<string>();
@@ -28,8 +28,8 @@ describe('奇牌图鉴总账', () => {
       await user.click(next);
     }
 
-    expect(ids.size).toBe(100);
-    expect(focalKeys.size).toBe(100);
+    expect(ids.size).toBe(150);
+    expect(focalKeys.size).toBe(150);
   });
 
   it('可分别按班目与稀有度筛选，不改变非玩法分组语义', async () => {
@@ -46,7 +46,7 @@ describe('奇牌图鉴总账', () => {
 
     await user.click(screen.getByRole('button', { name: '全部班目' }));
     await user.click(screen.getByRole('button', { name: '少见' }));
-    expect(screen.getByText('全部班目 · 少见 · 39 项')).toBeInTheDocument();
+    expect(screen.getByText('全部班目 · 少见 · 64 项')).toBeInTheDocument();
     expect(
       screen
         .getAllByTestId('catalog-card')

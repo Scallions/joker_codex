@@ -1,10 +1,10 @@
 import { isRunStateV3, type CatalogRunState as RunStateV3 } from '../model/runV3';
-import { isRunStateV5 } from '../model/runV5';
+import { isRunStateV5OrV6 } from '../model/runV6';
 import type { CardId } from '../model/ids';
 import type { BlindKind, MaterializedBlind, RunStateV2 } from '../model/runV2';
-import { nextInteger } from '../rng/random';
 import { getBlindTarget } from '../score/score';
 import { resolveJokerPassiveCapabilities } from './jokerPassiveCapabilitiesV3';
+import { resolveListedChanceV6 } from './listedChanceV6';
 
 function setupRowsForRun(state: RunStateV3) {
   const ids = new Set([
@@ -45,10 +45,20 @@ export function applySetupDrawRulesV3(
     const rolls: number[] = [];
     const faceDownIds: CardId[] = [];
     for (const cardId of drawnCardIds) {
-      const roll = nextInteger(rngState, operation.count);
-      rngState = roll.state;
-      rolls.push(roll.value);
-      if (roll.value === 0) faceDownIds.push(cardId);
+      const passives = resolveJokerPassiveCapabilities(state);
+      const roll = resolveListedChanceV6(
+        {
+          numerator: 1,
+          denominator: operation.count,
+          sourceId: effectId,
+          reason: 'setup-draw-face-down',
+        },
+        passives.ok ? passives.capabilities.listedChancePower : 0,
+        rngState,
+      );
+      rngState = roll.rngState;
+      if (roll.roll !== null) rolls.push(roll.roll);
+      if (roll.succeeded) faceDownIds.push(cardId);
     }
     const materialized: RunStateV3 = {
       ...next,
@@ -184,10 +194,7 @@ export function effectiveHandSizeForRun(
   ) {
     handSize -= Math.floor(Math.max(0, state.economy.money) / 5);
   }
-  const blindEffectsDisabled =
-    isRunStateV5(state) &&
-    state.jokerRuntimeV5.bossDisabledForRound &&
-    (blind?.kind === 'boss' || blind?.kind === 'finisher');
+  const blindEffectsDisabled = bossEffectsDisabledForRun(state, blind);
   for (const effect of blindEffectsDisabled ? [] : (blind?.effects ?? [])) {
     const key = effect.parameters.key;
     const value = effect.parameters.value;
@@ -213,6 +220,27 @@ export function effectiveHandSizeForRun(
   return Math.max(1, Math.floor(handSize));
 }
 
+export function effectiveHandsPerRoundForRun(state: RunStateV2): number {
+  const passives = resolveJokerPassiveCapabilities(state);
+  return Math.max(
+    0,
+    state.rules.handsPerRound +
+      (passives.ok ? passives.capabilities.handsPerRoundDelta : 0),
+  );
+}
+
+export function bossEffectsDisabledForRun(
+  state: RunStateV2,
+  blind: MaterializedBlind | null = state.round?.blind ?? null,
+): boolean {
+  if (blind?.kind !== 'boss' && blind?.kind !== 'finisher') return false;
+  if (isRunStateV5OrV6(state) && state.jokerRuntimeV5.bossDisabledForRound) {
+    return true;
+  }
+  const passives = resolveJokerPassiveCapabilities(state);
+  return passives.ok && passives.capabilities.bossDisabled;
+}
+
 export function effectiveDiscardsPerRoundForRun(state: RunStateV2): number {
   const passives = resolveJokerPassiveCapabilities(state);
   return Math.max(
@@ -226,11 +254,7 @@ export function activeBlindRuleValue(
   state: RunStateV2,
   key: string,
 ): string | number | boolean | null {
-  if (
-    isRunStateV5(state) &&
-    state.jokerRuntimeV5.bossDisabledForRound &&
-    (state.round?.blind.kind === 'boss' || state.round?.blind.kind === 'finisher')
-  ) {
+  if (bossEffectsDisabledForRun(state)) {
     return null;
   }
   for (const effect of state.round?.blind.effects ?? []) {
@@ -257,12 +281,9 @@ export function replacementDrawCountForRun(
 ): number {
   const exact = activeBlindRuleValue(state, 'draw-exactly');
   if (typeof exact === 'number') {
-    return Math.min(Math.max(0, Math.floor(exact)), state.round?.drawPileIds.length ?? 0);
+    return Math.max(0, Math.floor(exact));
   }
-  return Math.min(
-    Math.max(0, effectiveHandSizeForRun(state) - keptCardCount),
-    state.round?.drawPileIds.length ?? 0,
-  );
+  return Math.max(0, effectiveHandSizeForRun(state) - keptCardCount);
 }
 
 export function blindRewardForRun(

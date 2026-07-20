@@ -49,6 +49,7 @@ describe('奇牌共享手牌事实', () => {
     expect(result.facts.contains).toEqual({
       pair: true,
       threeOfAKind: true,
+      fourOfAKind: false,
       twoPair: true,
       straight: false,
       flush: false,

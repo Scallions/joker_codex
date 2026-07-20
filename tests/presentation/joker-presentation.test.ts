@@ -1,10 +1,12 @@
 import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
 import { createProductionRunV4 } from '../../src/content/runtime/runSetupV4';
 import { createProductionRunV5 } from '../../src/content/runtime/runSetupV5';
+import { createProductionRunV6 } from '../../src/content/runtime/runSetupV6';
 import { executeCommandV2 } from '../../src/game-core/commands/executeCommandV2';
 import { acquireContentByIdV3 } from '../../src/game-core/effects/applyStateOperationV3';
 import { isRunStateV4 } from '../../src/game-core/model/runV4';
 import { isRunStateV5, type RunStateV5 } from '../../src/game-core/model/runV5';
+import { isRunStateV6, type RunStateV6 } from '../../src/game-core/model/runV6';
 import {
   selectJokerPresentation,
   selectOwnedJokerPresentation,
@@ -20,6 +22,24 @@ function acquireV5(state: RunStateV5, ordinal: number): RunStateV5 {
 }
 
 function ownedPresentation(state: RunStateV5, ordinal: number) {
+  const contentId = `bxqp:joker:${ordinal.toString().padStart(3, '0')}`;
+  const joker = state.inventory.jokers.find(
+    (candidate) => candidate.contentId === contentId,
+  );
+  if (!joker) throw new Error(`没有持有 ${contentId}`);
+  return selectOwnedJokerPresentation(state, joker);
+}
+
+function acquireV6(state: RunStateV6, ordinal: number): RunStateV6 {
+  const contentId = `bxqp:joker:${ordinal.toString().padStart(3, '0')}`;
+  const acquired = acquireContentByIdV3(state, contentId, `presentation-v6:${ordinal}`);
+  if (!acquired.ok || !isRunStateV6(acquired.state)) {
+    throw new Error(acquired.ok ? '没有保持 V6' : acquired.message);
+  }
+  return acquired.state;
+}
+
+function ownedPresentationV6(state: RunStateV6, ordinal: number) {
   const contentId = `bxqp:joker:${ordinal.toString().padStart(3, '0')}`;
   const joker = state.inventory.jokers.find(
     (candidate) => candidate.contentId === contentId,
@@ -195,5 +215,50 @@ describe('奇牌展示选择器', () => {
       },
     };
     expect(ownedPresentation(target, 99)?.currentValue).toBe('当前：黑桃');
+  });
+
+  it('投影 V6 次数、独立目标、进度、概率、路由、定价、禁令与容量债务', () => {
+    expect(selectJokerPresentation('bxqp:joker:102')?.currentValue).toBe(
+      '剩余 10 次出牌',
+    );
+    expect(selectJokerPresentation('bxqp:joker:126')?.currentValue).toBe('明确概率 ×2');
+    expect(selectJokerPresentation('bxqp:joker:138')?.currentValue).toBe('路由：最左侧');
+    expect(selectJokerPresentation('bxqp:joker:143')?.currentValue).toBe('星谱价格 0');
+    expect(selectJokerPresentation('bxqp:joker:149')?.currentValue).toBe('班主能力失效');
+
+    let target = createProductionRunV6(PRODUCTION_CATALOG, {
+      seed: 'presentation-v6-target',
+    });
+    target = { ...target, rules: { ...target.rules, jokerSlots: 10 } };
+    target = acquireV6(target, 103);
+    expect(target.jokerRuntimeV6.castleTargetSuit).not.toBeNull();
+    expect(ownedPresentationV6(target, 103)?.currentValue).toMatch(/^目标花色：/);
+
+    let progress = acquireV6(target, 148);
+    const progressJoker = progress.inventory.jokers.find(
+      ({ contentId }) => contentId === 'bxqp:joker:148',
+    )!;
+    progress = {
+      ...progress,
+      modifiersV3: {
+        ...progress.modifiersV3,
+        jokers: progress.modifiersV3.jokers.map((modifier) =>
+          modifier.instanceId === progressJoker.instanceId
+            ? {
+                ...modifier,
+                abilityState: {
+                  ...modifier.abilityState,
+                  multFactorHundredths: 300,
+                  discardRemainder: 5,
+                },
+              }
+            : modifier,
+        ),
+      },
+      jokerRuntimeV6: { ...progress.jokerRuntimeV6, jokerCapacityDebt: 1 },
+    };
+    expect(ownedPresentationV6(progress, 148)?.currentValue).toBe(
+      '当前 ×3 · 进度 5/23 · 容量债务 1',
+    );
   });
 });

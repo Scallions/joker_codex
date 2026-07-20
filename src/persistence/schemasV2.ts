@@ -111,7 +111,8 @@ const jokerDefinitionSchema = z
     kind: z.literal('joker'),
     rarity: z.enum(['common', 'uncommon', 'rare', 'legendary']),
     slotContribution: safeIntegerSchema,
-    copyPolicy: z.enum(['output', 'trigger', 'none']).optional(),
+    copyPolicy: z.enum(['output', 'trigger', 'route', 'none']).optional(),
+    copyTarget: z.enum(['none', 'right-adjacent', 'leftmost']).optional(),
     stickerEligibility: z
       .object({
         permanent: z.boolean(),
@@ -184,6 +185,8 @@ const ownedJokerSchema = z
     slotContribution: safeIntegerSchema,
     sellValueOverride: nonnegativeIntegerSchema.nullable(),
     debuffed: z.boolean(),
+    copyPolicy: z.enum(['output', 'trigger', 'route', 'none']).optional(),
+    copyTarget: z.enum(['none', 'right-adjacent', 'leftmost']).optional(),
   })
   .strict();
 const ownedConsumableSchema = z
@@ -260,6 +263,8 @@ const materializedItemSchema = z
     minimumTargets: nonnegativeIntegerSchema.max(20),
     maximumTargets: nonnegativeIntegerSchema.max(20),
     slotContribution: safeIntegerSchema,
+    copyPolicy: z.enum(['output', 'trigger', 'route', 'none']).optional(),
+    copyTarget: z.enum(['none', 'right-adjacent', 'leftmost']).optional(),
     generatedCard: cardSchema.nullable(),
   })
   .strict();

@@ -490,6 +490,8 @@ function describeOperation(operation: CatalogOperation): string {
       return '满足声明条件时，使当前班主规则在本回合失效。';
     case 'joker-passive-capability':
       return `启用${term(operation.capability)}奇牌被动能力。`;
+    case 'joker-runtime-action':
+      return `满足声明条件时执行${term(operation.action)}原子动作。`;
     case 'joker-after-rarity':
       return `满足声明条件时，在另一张${term(operation.rarity)}奇牌结算后追加倍率因子${operation.factor}。`;
     case 'joker-record-observation':

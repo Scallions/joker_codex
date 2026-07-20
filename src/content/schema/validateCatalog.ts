@@ -86,7 +86,7 @@ export function validateProductionCatalog(
   if (catalog.contentVersion !== 'catalog-baseline-3') {
     violations.push('内容版本错误');
   }
-  if (catalog.productionVersion !== 'joker-catalog-2') {
+  if (catalog.productionVersion !== 'joker-catalog-3') {
     violations.push('生产目录版本错误');
   }
 
@@ -172,25 +172,40 @@ export function validateProductionCatalog(
       violations.push(`${family} 非奇牌账本数量漂移`);
     }
   }
-  if (jokerRows.filter((row) => row.rarity === 'common').length !== 55) {
-    violations.push('常见奇牌数量应为 55');
+  if (jokerRows.filter((row) => row.rarity === 'common').length !== 61) {
+    violations.push('常见奇牌数量应为 61');
   }
-  if (jokerRows.filter((row) => row.rarity === 'uncommon').length !== 39) {
-    violations.push('少见奇牌数量应为 39');
+  if (jokerRows.filter((row) => row.rarity === 'uncommon').length !== 64) {
+    violations.push('少见奇牌数量应为 64');
   }
-  if (jokerRows.filter((row) => row.rarity === 'rare').length !== 6) {
-    violations.push('稀有奇牌数量应为 6');
+  if (jokerRows.filter((row) => row.rarity === 'rare').length !== 20) {
+    violations.push('稀有奇牌数量应为 20');
   }
-  if (jokerRows.some((row) => row.rarity === 'legendary')) {
-    violations.push('001-100 不应包含传奇奇牌');
+  if (jokerRows.filter((row) => row.rarity === 'legendary').length !== 5) {
+    violations.push('传奇奇牌数量应为 5');
   }
-  const secondBatch = jokerRows.filter((row) => row.ordinal >= 51);
+  const secondBatch = jokerRows.filter((row) => row.ordinal >= 51 && row.ordinal <= 100);
   if (
     secondBatch.filter((row) => row.rarity === 'common').length !== 19 ||
     secondBatch.filter((row) => row.rarity === 'uncommon').length !== 25 ||
     secondBatch.filter((row) => row.rarity === 'rare').length !== 6
   ) {
     violations.push('051-100 稀有度应为 19/25/6');
+  }
+  const finalBatch = jokerRows.filter((row) => row.ordinal >= 101);
+  if (
+    finalBatch.filter((row) => row.rarity === 'common').length !== 6 ||
+    finalBatch.filter((row) => row.rarity === 'uncommon').length !== 25 ||
+    finalBatch.filter((row) => row.rarity === 'rare').length !== 14 ||
+    finalBatch.filter((row) => row.rarity === 'legendary').length !== 5
+  ) {
+    violations.push('101-150 稀有度应为 6/25/14/5');
+  }
+  for (const row of jokerRows) {
+    const routeTarget = row.copyPolicy === 'route';
+    if (routeTarget !== (row.copyTarget !== 'none')) {
+      violations.push(`${row.id} 复制路由策略与目标不一致`);
+    }
   }
 
   pushDuplicates(

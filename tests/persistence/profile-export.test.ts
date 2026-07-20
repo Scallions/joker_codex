@@ -1,7 +1,7 @@
 import { createRunEconomyFixtureRun } from '../../src/content/fixtures/runEconomy';
 import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
 import { createProductionRunV3 } from '../../src/content/runtime/runSetupV3';
-import { isRunStateV5 } from '../../src/game-core/model/runV5';
+import { isRunStateV6 } from '../../src/game-core/model/runV6';
 import { createProfile } from '../../src/persistence/profiles';
 import {
   exportProfileToJson,
@@ -18,11 +18,11 @@ describe('档案导入导出', () => {
     const json = exportProfileToJson(profile, run);
 
     expect(JSON.parse(json)).toMatchObject({
-      schemaVersion: 5,
-      envelopeVersion: 'profile-transfer-5',
+      schemaVersion: 6,
+      envelopeVersion: 'profile-transfer-6',
       runContentVersion: 'run-economy-2',
     });
-    expect(isRunStateV5(importProfileFromJson(json).run!)).toBe(true);
+    expect(isRunStateV6(importProfileFromJson(json).run!)).toBe(true);
     expect(() => importProfileFromJson(json.replace('掌灯人', '偷梁人'))).toThrow(
       '档案校验失败',
     );
@@ -42,14 +42,14 @@ describe('档案导入导出', () => {
     const imported = importProfileFromJson(json);
 
     expect(JSON.parse(json)).toMatchObject({
-      schemaVersion: 5,
-      envelopeVersion: 'profile-transfer-5',
+      schemaVersion: 6,
+      envelopeVersion: 'profile-transfer-6',
       runContentVersion: 'catalog-baseline-3',
     });
     expect(imported.profile).toEqual(profile);
-    expect(imported.run?.schemaVersion).toBe(5);
-    expect(imported.run && isRunStateV5(imported.run)).toBe(true);
-    if (!imported.run || !isRunStateV5(imported.run)) return;
+    expect(imported.run?.schemaVersion).toBe(6);
+    expect(imported.run && isRunStateV6(imported.run)).toBe(true);
+    if (!imported.run || !isRunStateV6(imported.run)) return;
     expect(imported.run.productionContentV3.rows).toHaveLength(230);
   });
 });

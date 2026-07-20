@@ -14,7 +14,13 @@ export interface JokerPassiveCapabilitiesV3 {
   readonly allPlayedCardsScore: boolean;
   readonly straightMaximumStep: 1 | 2;
   readonly handSizeDelta: number;
+  readonly handsPerRoundDelta: number;
   readonly discardsPerRoundDelta: number;
+  readonly suitColorEquivalence: boolean;
+  readonly duplicateShopFamilies: boolean;
+  readonly listedChancePower: number;
+  readonly zeroPricePlanet: boolean;
+  readonly bossDisabled: boolean;
   readonly extraInterestSources: readonly {
     readonly sourceInstanceId: string;
     readonly rate: number;
@@ -42,6 +48,8 @@ export function resolveJokerPassiveCapabilities(
       position,
       effects: joker.effects,
       debuffed: joker.debuffed,
+      copyPolicy: joker.copyPolicy ?? 'none',
+      copyTarget: joker.copyTarget ?? 'none',
     })),
     'passive',
     { state, maximumOperations: MAX_PASSIVE_OPERATIONS },
@@ -56,7 +64,13 @@ export function resolveJokerPassiveCapabilities(
   let allPlayedCardsScore = false;
   let straightMaximumStep: 1 | 2 = 1;
   let handSizeDelta = 0;
+  let handsPerRoundDelta = 0;
   let discardsPerRoundDelta = 0;
+  let suitColorEquivalence = false;
+  let duplicateShopFamilies = false;
+  let listedChancePower = 0;
+  let zeroPricePlanet = false;
+  let bossDisabled = false;
   const extraInterestSources: { sourceInstanceId: string; rate: number }[] = [];
   const resolveValue = (value: JokerValue, sourceInstanceId: string): number | null => {
     if (value.kind === 'fixed') return value.value;
@@ -79,11 +93,29 @@ export function resolveJokerPassiveCapabilities(
         straightMaximumStep = 2;
       }
       if (operation.capability === 'hand-size-delta') handSizeDelta += value;
+      if (operation.capability === 'hands-per-round-delta') {
+        handsPerRoundDelta += value;
+      }
       if (operation.capability === 'discards-per-round-delta') {
         discardsPerRoundDelta += value;
       }
       if (operation.capability === 'extra-interest' && value > 0) {
         extraInterestSources.push({ sourceInstanceId, rate: value });
+      }
+      if (operation.capability === 'suit-color-equivalence' && value > 0) {
+        suitColorEquivalence = true;
+      }
+      if (operation.capability === 'duplicate-shop-families' && value > 0) {
+        duplicateShopFamilies = true;
+      }
+      if (operation.capability === 'listed-chance-power' && value > 0) {
+        listedChancePower += value;
+      }
+      if (operation.capability === 'zero-price-planet' && value > 0) {
+        zeroPricePlanet = true;
+      }
+      if (operation.capability === 'boss-disable' && value > 0) {
+        bossDisabled = true;
       }
       continue;
     }
@@ -116,7 +148,13 @@ export function resolveJokerPassiveCapabilities(
       allPlayedCardsScore,
       straightMaximumStep,
       handSizeDelta,
+      handsPerRoundDelta,
       discardsPerRoundDelta,
+      suitColorEquivalence,
+      duplicateShopFamilies,
+      listedChancePower,
+      zeroPricePlanet,
+      bossDisabled,
       extraInterestSources,
     },
     operationCount: resolved.operationCount,

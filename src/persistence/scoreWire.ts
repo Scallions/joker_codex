@@ -2,10 +2,12 @@ import type { RunStateV2 } from '../game-core/model/runV2';
 import type { RunStateV3 } from '../game-core/model/runV3';
 import type { RunStateV4 } from '../game-core/model/runV4';
 import type { RunStateV5 } from '../game-core/model/runV5';
+import type { RunStateV6 } from '../game-core/model/runV6';
 import { runStateV2Schema } from './schemasV2';
 import { runStateV3Schema } from './schemasV3';
 import { runStateV4Schema } from './schemasV4';
 import { runStateV5Schema } from './schemasV5';
+import { runStateV6Schema } from './schemasV6';
 
 const SCORE_KEYS = new Set([
   'targetScore',
@@ -73,6 +75,10 @@ export function encodeRunStateV5ForTransfer(run: RunStateV5): unknown {
   return encode(run, null);
 }
 
+export function encodeRunStateV6ForTransfer(run: RunStateV6): unknown {
+  return encode(run, null);
+}
+
 export function decodeRunStateV2FromTransfer(value: unknown): RunStateV2 {
   const decoded = decode(value, null);
   const parsed = runStateV2Schema.safeParse(decoded);
@@ -98,5 +104,12 @@ export function decodeRunStateV5FromTransfer(value: unknown): RunStateV5 {
   const decoded = decode(value, null);
   const parsed = runStateV5Schema.safeParse(decoded);
   if (!parsed.success) throw new Error('V5 牌局传输格式无效');
+  return parsed.data;
+}
+
+export function decodeRunStateV6FromTransfer(value: unknown): RunStateV6 {
+  const decoded = decode(value, null);
+  const parsed = runStateV6Schema.safeParse(decoded);
+  if (!parsed.success) throw new Error('V6 牌局传输格式无效');
   return parsed.data;
 }

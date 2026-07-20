@@ -10,7 +10,7 @@ import {
   type AbilityStateRun,
   type CatalogRunState as RunStateV3,
 } from '../model/runV3';
-import { isRunStateV5, type RunStateV5 } from '../model/runV5';
+import { isRunStateV5OrV6, isRunStateV6, type RunStateV6 } from '../model/runV6';
 import { RANKS, SUITS } from '../model/cards';
 import type {
   EffectParameterValue,
@@ -35,6 +35,12 @@ import {
   evaluateJokerValueV3,
   type JokerDslFailureCode,
 } from '../rules/jokerEffectDslV3';
+import { resolveJokerPassiveCapabilities } from '../rules/jokerPassiveCapabilitiesV3';
+import { resolveListedChanceV6 } from '../rules/listedChanceV6';
+import {
+  usedConsumableSlotsForRun,
+  usedJokerSlotsForRun,
+} from '../rules/inventoryCapacityV6';
 import { resolveEffectOperations, type EffectOperation } from './registry';
 import { recordFirstAcquisitionDiscoveryV3 } from '../rules/discoveryV3';
 
@@ -165,6 +171,7 @@ function lifecycleFacts(state: RunStateV2): HandFactsV3 {
     contains: {
       pair: displayedHand === 'pair',
       threeOfAKind: displayedHand === 'three-of-a-kind',
+      fourOfAKind: displayedHand === 'four-of-a-kind',
       twoPair: displayedHand === 'two-pair',
       straight: displayedHand === 'straight' || displayedHand === 'straight-flush',
       flush:
@@ -587,13 +594,13 @@ function applyJokerSetTarget(
   operation: Extract<EffectOperation, { readonly type: 'joker-set-target' }>,
   context: StateOperationContextV3,
 ): StateOperationResultV3 {
-  if (!isRunStateV5(state)) return result(state);
+  if (!isRunStateV5OrV6(state)) return result(state);
   const predicate = evaluateJokerPredicateV3(
     operation.predicate,
     lifecycleDslContext(state, context),
   );
   if (!predicate.ok) return predicate;
-  let next: RunStateV5 = { ...state, rngState: predicate.rngState };
+  let next = { ...state, rngState: predicate.rngState };
   if (!predicate.matched) return result(next);
   let values: readonly string[];
   let deterministicFallback = false;
@@ -657,10 +664,16 @@ export function initializeAcquiredJokerTargetsV5(
   sourceInstanceId: JokerInstanceId,
   effects: readonly EffectReference[],
 ): StateOperationResultV3 {
-  if (!isRunStateV5(state)) return result(state);
+  if (!isRunStateV5OrV6(state)) return result(state);
   let next: RunStateV2 = state;
   for (const effect of effects) {
-    if (effect.handlerId !== 'bxqp:handler:joker-set-target') continue;
+    const isLegacyTarget = effect.handlerId === 'bxqp:handler:joker-set-target';
+    const isV6Target =
+      isRunStateV6(next) &&
+      effect.handlerId === 'bxqp:handler:joker-runtime-action' &&
+      (effect.parameters.action === 'set-castle-target' ||
+        effect.parameters.action === 'set-idol-target');
+    if (!isLegacyTarget && !isV6Target) continue;
     const effectWindow = effect.windows[0];
     if (!effectWindow) continue;
     const resolved = resolveEffectOperations(effect, effectWindow, next);
@@ -672,10 +685,25 @@ export function initializeAcquiredJokerTargetsV5(
       };
     }
     for (const operation of resolved.operations) {
+      if (
+        isRunStateV6(next) &&
+        operation.type === 'joker-runtime-action' &&
+        (operation.action === 'set-castle-target' ||
+          operation.action === 'set-idol-target')
+      ) {
+        const initialized = applyJokerRuntimeActionV6(next, operation, {
+          window: 'item-acquired',
+          sourceInstanceId,
+          effectId: `${effect.id}:acquired-target`,
+        });
+        if (!initialized.ok) return initialized;
+        next = initialized.state;
+        continue;
+      }
       if (operation.type !== 'joker-set-target') continue;
       if (
         operation.scope === 'shared' &&
-        isRunStateV5(next) &&
+        isRunStateV5OrV6(next) &&
         ((operation.target === 'rank' &&
           next.jokerRuntimeV5.sharedRoundTargetRank !== null) ||
           (operation.target === 'suit' &&
@@ -780,7 +808,7 @@ function applyJokerDisableCurrentBoss(
   operation: Extract<EffectOperation, { readonly type: 'joker-disable-current-boss' }>,
   context: StateOperationContextV3,
 ): StateOperationResultV3 {
-  if (!isRunStateV5(state)) return result(state);
+  if (!isRunStateV5OrV6(state)) return result(state);
   const event = context.eventContext?.eventFacts;
   const triggerInstanceId = context.copiedBy?.[0] ?? context.sourceInstanceId;
   if (event?.kind === 'item-sale' && event.instanceId !== triggerInstanceId) {
@@ -791,13 +819,13 @@ function applyJokerDisableCurrentBoss(
     lifecycleDslContext(state, context),
   );
   if (!predicate.ok) return predicate;
-  const next: RunStateV5 = { ...state, rngState: predicate.rngState };
+  const next = { ...state, rngState: predicate.rngState };
   if (!predicate.matched) return result(next);
-  const activeBoss =
-    next.round &&
-    (next.round.blind.kind === 'boss' || next.round.blind.kind === 'finisher');
-  if (!activeBoss) return result(next);
-  const disabled: RunStateV5 = {
+  const round = next.round;
+  if (!round || (round.blind.kind !== 'boss' && round.blind.kind !== 'finisher')) {
+    return result(next);
+  }
+  const disabled = {
     ...next,
     jokerRuntimeV5: { ...next.jokerRuntimeV5, bossDisabledForRound: true },
     inventory: {
@@ -819,7 +847,7 @@ function applyJokerDisableCurrentBoss(
       })),
     },
     round: {
-      ...next.round,
+      ...round,
       targetScore: getBlindTargetForRun(next, 2),
       forcedSelectedCardIds: [],
       faceDownCardIds: [],
@@ -909,6 +937,409 @@ function applyJokerCardMutation(
         }
       : {}),
   });
+}
+
+const V6_SEAL_IDS = [
+  'bxqp:seal:gold-stamp',
+  'bxqp:seal:red-stamp',
+  'bxqp:seal:blue-stamp',
+  'bxqp:seal:purple-stamp',
+] as const;
+
+function updateJokerAbilityNumberV6(
+  state: RunStateV6,
+  instanceId: string,
+  updates: Readonly<Record<string, number>>,
+): RunStateV6 {
+  return {
+    ...state,
+    modifiersV3: {
+      ...state.modifiersV3,
+      jokers: state.modifiersV3.jokers.map((modifier) =>
+        modifier.instanceId === instanceId
+          ? {
+              ...modifier,
+              abilityState: { ...modifier.abilityState, ...updates },
+            }
+          : modifier,
+      ),
+    },
+  };
+}
+
+function applyV6SharedCardTarget(
+  state: RunStateV6,
+  action: 'set-castle-target' | 'set-idol-target',
+  context: StateOperationContextV3,
+): RunStateV6 {
+  if (
+    (action === 'set-castle-target' && state.jokerRuntimeV6.castleTargetSuit !== null) ||
+    (action === 'set-idol-target' &&
+      state.jokerRuntimeV6.idolTargetRank !== null &&
+      state.jokerRuntimeV6.idolTargetSuit !== null)
+  ) {
+    return state;
+  }
+  const candidates = [...state.deck.cards]
+    .filter((card) => !projectEffectivePlayingCardV3(state, card).stone)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const fallback = candidates.length === 0;
+  const draw = fallback
+    ? { value: 0, state: state.rngState }
+    : nextInteger(state.rngState, candidates.length);
+  const card = candidates[draw.value];
+  const suit = card?.suit ?? 'spades';
+  const rank = card?.rank ?? 'ace';
+  const targeted: RunStateV6 = {
+    ...state,
+    rngState: draw.state,
+    jokerRuntimeV6: {
+      ...state.jokerRuntimeV6,
+      ...(action === 'set-castle-target'
+        ? { castleTargetSuit: suit }
+        : { idolTargetRank: rank, idolTargetSuit: suit }),
+    },
+  };
+  return materializeChoice(
+    targeted,
+    context,
+    action,
+    [card?.id ?? 'fallback', rank, suit, ...candidates.map(({ id }) => `pool:${id}`)],
+    fallback ? [] : [draw.value, candidates.length],
+  ) as RunStateV6;
+}
+
+function createRandomSealedCardV6(
+  state: RunStateV6,
+  context: StateOperationContextV3,
+): RunStateV6 {
+  if (!state.round) return state;
+  const suitDraw = nextInteger(state.rngState, SUITS.length);
+  const rankDraw = nextInteger(suitDraw.state, RANKS.length);
+  const availableSeals = state.productionContentV3.rows
+    .filter(({ definition }) => definition.family === 'seal')
+    .sort((left, right) => left.definition.ordinal - right.definition.ordinal)
+    .map(({ definition }) => definition.id);
+  const sealPool = availableSeals.length > 0 ? availableSeals : V6_SEAL_IDS;
+  const sealDraw = nextInteger(rankDraw.state, sealPool.length);
+  const card: RunPlayingCard = {
+    id: stableId<'playing-card'>(
+      `playing:sealed:${state.runId}:${state.checkpointId + 1}:${context.sourceInstanceId}:${context.effectId}:${context.copiedBy?.join('>') ?? ''}:${state.deck.cards.length}`,
+    ),
+    suit: SUITS[suitDraw.value]!,
+    rank: RANKS[rankDraw.value]!,
+    enhancementId: null,
+    sealId: sealPool[sealDraw.value]!,
+    editionId: null,
+    bonusChips: 0,
+  };
+  const created: RunStateV6 = {
+    ...state,
+    rngState: sealDraw.state,
+    deck: { cards: [...state.deck.cards, card] },
+    round: { ...state.round, handIds: [...state.round.handIds, card.id] },
+    modifiersV3: {
+      ...state.modifiersV3,
+      playingCards: [
+        ...state.modifiersV3.playingCards,
+        {
+          cardId: card.id,
+          enhancementId: null,
+          sealId: card.sealId,
+          editionId: null,
+          debuffed: false,
+        },
+      ],
+    },
+  };
+  return materializeChoice(
+    created,
+    context,
+    'joker-random-sealed-card',
+    [card.id, card.sealId ?? ''],
+    [suitDraw.value, rankDraw.value, sealDraw.value],
+  ) as RunStateV6;
+}
+
+function accumulateDiscardThresholdV6(
+  state: RunStateV6,
+  operation: Extract<EffectOperation, { readonly type: 'joker-runtime-action' }>,
+  context: StateOperationContextV3,
+): RunStateV6 {
+  const event = context.eventContext?.eventFacts;
+  if (event?.kind !== 'discard') return state;
+  const threshold = operation.parameters.threshold;
+  const step = operation.parameters.factorStepHundredths;
+  const remainderKey = operation.parameters.remainderKey;
+  const factorKey = operation.parameters.factorKey;
+  if (
+    typeof threshold !== 'number' ||
+    !Number.isSafeInteger(threshold) ||
+    threshold <= 0 ||
+    typeof step !== 'number' ||
+    !Number.isSafeInteger(step) ||
+    typeof remainderKey !== 'string' ||
+    typeof factorKey !== 'string'
+  ) {
+    return state;
+  }
+  const modifier = state.modifiersV3.jokers.find(
+    ({ instanceId }) => instanceId === context.sourceInstanceId,
+  );
+  const remainder = modifier?.abilityState[remainderKey];
+  const factor = modifier?.abilityState[factorKey];
+  if (
+    typeof remainder !== 'number' ||
+    !Number.isSafeInteger(remainder) ||
+    typeof factor !== 'number' ||
+    !Number.isSafeInteger(factor)
+  ) {
+    return state;
+  }
+  const total = remainder + event.discardedCardIds.length;
+  return updateJokerAbilityNumberV6(state, context.sourceInstanceId, {
+    [remainderKey]: total % threshold,
+    [factorKey]: factor + Math.floor(total / threshold) * step,
+  });
+}
+
+function levelDiscardedHandV6(
+  state: RunStateV6,
+  operation: Extract<EffectOperation, { readonly type: 'joker-runtime-action' }>,
+  context: StateOperationContextV3,
+): RunStateV6 {
+  const event = context.eventContext?.eventFacts;
+  const levels = operation.parameters.levels;
+  if (
+    event?.kind !== 'discard' ||
+    !event.discardedHandType ||
+    typeof levels !== 'number' ||
+    !Number.isSafeInteger(levels)
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    rules: {
+      ...state.rules,
+      handLevels: {
+        ...state.rules.handLevels,
+        [event.discardedHandType]: Math.max(
+          1,
+          state.rules.handLevels[event.discardedHandType] + levels,
+        ),
+      },
+    },
+  };
+}
+
+function cloneOwnedJokerOnSaleV6(
+  state: RunStateV6,
+  operation: Extract<EffectOperation, { readonly type: 'joker-runtime-action' }>,
+  context: StateOperationContextV3,
+): RunStateV6 {
+  const event = context.eventContext?.eventFacts;
+  if (
+    event?.kind !== 'item-sale' ||
+    event.family !== 'joker' ||
+    event.instanceId !== context.sourceInstanceId
+  ) {
+    return state;
+  }
+  const candidates = state.inventory.jokers.filter(
+    ({ instanceId }) => instanceId !== context.sourceInstanceId,
+  );
+  if (candidates.length === 0) return state;
+  const draw = nextInteger(state.rngState, candidates.length);
+  const target = candidates[draw.value]!;
+  const targetModifier = state.modifiersV3.jokers.find(
+    ({ instanceId }) => instanceId === target.instanceId,
+  );
+  if (!targetModifier) return state;
+  const definition = state.content.items.find(
+    (item) => item.kind === 'joker' && item.contentId === target.contentId,
+  );
+  const stripsNegative = target.editionId === 'bxqp:edition:shadow-cutout';
+  const slotContribution = stripsNegative
+    ? definition?.kind === 'joker'
+      ? definition.slotContribution
+      : 1
+    : target.slotContribution;
+  const instanceId = stableId<'joker-instance'>(
+    `joker:sale-clone:${state.runId}:${state.checkpointId + 1}:${context.sourceInstanceId}:${target.instanceId}`,
+  );
+  const readinessKey = operation.parameters.readinessKey;
+  const abilityState =
+    typeof readinessKey === 'string' &&
+    typeof targetModifier.abilityState[readinessKey] === 'number'
+      ? { ...targetModifier.abilityState, [readinessKey]: 0 }
+      : targetModifier.abilityState;
+  const cloned: OwnedJokerV2 = {
+    ...target,
+    instanceId,
+    editionId: stripsNegative ? null : target.editionId,
+    editionCost: stripsNegative ? 0 : target.editionCost,
+    slotContribution,
+    debuffed: targetModifier.perishableRoundsRemaining === 0,
+  };
+  const source = state.inventory.jokers.find(
+    ({ instanceId: candidateId }) => candidateId === context.sourceInstanceId,
+  );
+  const projectedUsed =
+    usedJokerSlotsForRun(state) - (source?.slotContribution ?? 0) + slotContribution;
+  const clonedState: RunStateV6 = {
+    ...state,
+    rngState: draw.state,
+    inventory: {
+      ...state.inventory,
+      jokers: [...state.inventory.jokers, cloned],
+    },
+    modifiersV3: {
+      ...state.modifiersV3,
+      jokers: [
+        ...state.modifiersV3.jokers,
+        { ...targetModifier, instanceId, abilityState },
+      ],
+    },
+    jokerRuntimeV6: {
+      ...state.jokerRuntimeV6,
+      jokerCapacityDebt: Math.max(0, projectedUsed - state.rules.jokerSlots),
+    },
+  };
+  return materializeChoice(
+    clonedState,
+    context,
+    'joker-sale-clone',
+    [target.instanceId, instanceId],
+    [draw.value],
+  ) as RunStateV6;
+}
+
+function cloneRandomConsumableNegativeV6(
+  state: RunStateV6,
+  operation: Extract<EffectOperation, { readonly type: 'joker-runtime-action' }>,
+  context: StateOperationContextV3,
+): RunStateV6 {
+  const event = context.eventContext?.eventFacts;
+  if (event?.kind !== 'shop-left') return state;
+  const frozen = new Set(event.consumableInstanceIds);
+  const candidates = state.inventory.consumables.filter(({ instanceId }) =>
+    frozen.has(instanceId),
+  );
+  if (candidates.length === 0) return state;
+  const draw = nextInteger(state.rngState, candidates.length);
+  const target = candidates[draw.value]!;
+  const editionId = operation.parameters.editionId;
+  if (typeof editionId !== 'string') return state;
+  const editionCost =
+    state.productionContentV3.rows.find(({ definition }) => definition.id === editionId)
+      ?.definition.cost ?? 0;
+  const instanceId = stableId<'consumable-instance'>(
+    `consumable:shop-left-clone:${state.runId}:${state.checkpointId + 1}:${context.sourceInstanceId}:${context.copiedBy?.join('>') ?? ''}:${state.inventory.consumables.length}`,
+  );
+  const cloned: OwnedConsumableV2 = {
+    ...target,
+    instanceId,
+    editionId,
+    editionCost,
+  };
+  const next: RunStateV6 = {
+    ...state,
+    rngState: draw.state,
+    inventory: {
+      ...state.inventory,
+      consumables: [...state.inventory.consumables, cloned],
+    },
+  };
+  return materializeChoice(
+    next,
+    context,
+    'joker-shop-left-consumable-clone',
+    [target.instanceId, instanceId],
+    [draw.value],
+  ) as RunStateV6;
+}
+
+function rescueBlindV6(state: RunStateV6, context: StateOperationContextV3): RunStateV6 {
+  const event = context.eventContext?.eventFacts;
+  if (
+    event?.kind !== 'blind-survival' ||
+    event.deckExhausted ||
+    event.score * 4 < event.targetScore
+  ) {
+    return state;
+  }
+  const modifier = state.modifiersV3.jokers.find(
+    ({ instanceId }) => instanceId === context.sourceInstanceId,
+  );
+  if (modifier?.stickerIds.includes('bxqp:sticker:permanent')) return state;
+  const rescued: RunStateV6 = {
+    ...state,
+    inventory: {
+      ...state.inventory,
+      jokers: state.inventory.jokers.filter(
+        ({ instanceId }) => instanceId !== context.sourceInstanceId,
+      ),
+    },
+    modifiersV3: {
+      ...state.modifiersV3,
+      jokers: state.modifiersV3.jokers.filter(
+        ({ instanceId }) => instanceId !== context.sourceInstanceId,
+      ),
+    },
+    jokerRuntimeV6: {
+      ...state.jokerRuntimeV6,
+      jokerCapacityDebt: Math.max(
+        0,
+        usedJokerSlotsForRun(state) -
+          (state.inventory.jokers.find(
+            ({ instanceId }) => instanceId === context.sourceInstanceId,
+          )?.slotContribution ?? 0) -
+          state.rules.jokerSlots,
+      ),
+    },
+  };
+  return observe(rescued, context, 'blind-survival-base-reward-zero', true) as RunStateV6;
+}
+
+function applyJokerRuntimeActionV6(
+  state: RunStateV2,
+  operation: Extract<EffectOperation, { readonly type: 'joker-runtime-action' }>,
+  context: StateOperationContextV3,
+): StateOperationResultV3 {
+  if (!isRunStateV6(state)) return result(state);
+  const predicate = evaluateJokerPredicateV3(
+    operation.predicate,
+    lifecycleDslContext(state, context),
+  );
+  if (!predicate.ok) return predicate;
+  let next: RunStateV6 = { ...state, rngState: predicate.rngState };
+  if (!predicate.matched) return result(next);
+  switch (operation.action) {
+    case 'create-random-sealed-card':
+      next = createRandomSealedCardV6(next, context);
+      break;
+    case 'set-castle-target':
+    case 'set-idol-target':
+      next = applyV6SharedCardTarget(next, operation.action, context);
+      break;
+    case 'accumulate-discard-threshold':
+      next = accumulateDiscardThresholdV6(next, operation, context);
+      break;
+    case 'level-discarded-hand':
+      next = levelDiscardedHandV6(next, operation, context);
+      break;
+    case 'sale-clone-ready-joker':
+      next = cloneOwnedJokerOnSaleV6(next, operation, context);
+      break;
+    case 'clone-random-consumable-negative':
+      next = cloneRandomConsumableNegativeV6(next, operation, context);
+      break;
+    case 'blind-survival':
+      next = rescueBlindV6(next, context);
+      break;
+  }
+  return result(next);
 }
 
 function destroySourceJoker(
@@ -1213,10 +1644,20 @@ function setCardModifier(
     operation.denominator !== null &&
     operation.denominator > 0
   ) {
-    const draw = nextInteger(state.rngState, operation.denominator);
-    chanceRolls.push(draw.value);
-    chanceState = { ...state, rngState: draw.state };
-    if (draw.value >= operation.numerator) {
+    const passives = resolveJokerPassiveCapabilities(state);
+    const draw = resolveListedChanceV6(
+      {
+        numerator: operation.numerator,
+        denominator: operation.denominator,
+        sourceId: context.sourceInstanceId,
+        reason: 'card-modifier-activation',
+      },
+      passives.ok ? passives.capabilities.listedChancePower : 0,
+      state.rngState,
+    );
+    if (draw.roll !== null) chanceRolls.push(draw.roll);
+    chanceState = { ...state, rngState: draw.rngState };
+    if (!draw.succeeded) {
       return materializeChoice(
         chanceState,
         context,
@@ -1583,11 +2024,11 @@ function acquireMaterialized(
   const item = materialized.item;
   let next: RunStateV2 = { ...state, rngState: materialized.rngState };
   if (item.kind === 'joker') {
-    const used = next.inventory.jokers.reduce(
-      (total, joker) => total + joker.slotContribution,
-      0,
-    );
-    if (used + item.slotContribution > next.rules.jokerSlots) {
+    const used = usedJokerSlotsForRun(next);
+    if (
+      (isRunStateV6(next) && next.jokerRuntimeV6.jokerCapacityDebt > 0) ||
+      used + item.slotContribution > next.rules.jokerSlots
+    ) {
       return { ok: false, code: 'inventory-full', message: '奇牌栏位已满' };
     }
     const instanceId = stableId<'joker-instance'>(`joker:${identity}`);
@@ -1603,6 +2044,8 @@ function acquireMaterialized(
       slotContribution: item.slotContribution,
       sellValueOverride: null,
       debuffed: false,
+      copyPolicy: item.copyPolicy ?? 'none',
+      copyTarget: item.copyTarget ?? 'none',
     };
     next = {
       ...next,
@@ -1621,7 +2064,7 @@ function acquireMaterialized(
     return initializeAcquiredJokerTargetsV5(discovered, instanceId, item.effects);
   }
   if (item.kind === 'consumable') {
-    if (next.inventory.consumables.length >= next.rules.consumableSlots) {
+    if (usedConsumableSlotsForRun(next) >= next.rules.consumableSlots) {
       return { ok: false, code: 'inventory-full', message: '消耗牌栏位已满' };
     }
     const owned: OwnedConsumableV2 = {
@@ -1682,13 +2125,23 @@ function createContentFamily(
 ): StateOperationResultV3 {
   let next = state;
   const selected = new Set<string>();
+  const legendarySource =
+    operation.family === 'joker' && operation.rarity === 'legendary';
   for (let index = 0; index < operation.count; index += 1) {
     const pool = next.content.items.filter(
       (definition) =>
         definition.weightUnits > 0 &&
         !selected.has(definition.contentId) &&
         contentFamilyMatches(definition, operation.family, operation.rarity) &&
-        definitionIsEligibleV3(next, definition, 'generated') &&
+        (definitionIsEligibleV3(next, definition, 'generated') ||
+          (legendarySource &&
+            isRunStateV3(next) &&
+            next.productionContentV3.rows.some(
+              ({ definition: row }) =>
+                row.id === definition.contentId &&
+                row.availability.kind === 'prerequisite' &&
+                row.availability.value === 'bxqp:source:legend-call',
+            ))) &&
         (!isRunStateV3(next) ||
           !next.rulesV3.bannedContentIds.includes(definition.contentId)),
     );
@@ -1764,13 +2217,12 @@ function hasJokerCreateCapacity(
 ): boolean {
   if (!operation.capacityRequired || operation.family === 'playing-card') return true;
   if (operation.family === 'joker') {
-    const used = state.inventory.jokers.reduce(
-      (total, joker) => total + joker.slotContribution,
-      0,
+    return (
+      (!isRunStateV6(state) || state.jokerRuntimeV6.jokerCapacityDebt === 0) &&
+      usedJokerSlotsForRun(state) < state.rules.jokerSlots
     );
-    return used < state.rules.jokerSlots;
   }
-  return state.inventory.consumables.length < state.rules.consumableSlots;
+  return usedConsumableSlotsForRun(state) < state.rules.consumableSlots;
 }
 
 function applyLifecycleJokerCreateContent(
@@ -2047,11 +2499,21 @@ function applyCatalogBlindRule(
     let rngState = state.rngState;
     const rolls: number[] = [];
     const faceDownIds: CardId[] = [];
+    const passives = resolveJokerPassiveCapabilities(state);
     for (const cardId of candidates) {
-      const roll = nextInteger(rngState, operation.value);
-      rolls.push(roll.value);
-      rngState = roll.state;
-      if (roll.value === 0) faceDownIds.push(cardId);
+      const roll = resolveListedChanceV6(
+        {
+          numerator: 1,
+          denominator: operation.value,
+          sourceId: context.sourceInstanceId,
+          reason: 'blind-random-face-down',
+        },
+        passives.ok ? passives.capabilities.listedChancePower : 0,
+        rngState,
+      );
+      if (roll.roll !== null) rolls.push(roll.roll);
+      rngState = roll.rngState;
+      if (roll.succeeded) faceDownIds.push(cardId);
     }
     const rolled = {
       ...state,
@@ -2234,6 +2696,8 @@ export function applyStateOperationV3(
       return applyJokerInventorySellValueAdd(state, operation, context);
     case 'joker-create-fixed-tag':
       return applyJokerCreateFixedTag(state, operation, context);
+    case 'joker-runtime-action':
+      return applyJokerRuntimeActionV6(state, operation, context);
     case 'joker-disable-current-boss':
       return applyJokerDisableCurrentBoss(state, operation, context);
     case 'joker-add-card-bonus':

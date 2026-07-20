@@ -35,6 +35,8 @@ function ownedJoker(
     slotContribution: definition.slotContribution,
     sellValueOverride: null,
     debuffed: false,
+    copyPolicy: definition.copyPolicy ?? 'none',
+    copyTarget: definition.copyTarget ?? 'none',
   };
 }
 
@@ -44,7 +46,20 @@ export function createProductionRunV5(
 ): RunStateV5 {
   const base = createProductionRunV4(catalog, options);
   const setup = compileRunSetupV3(catalog, options);
-  const productionContent = createProductionRunContent(catalog);
+  const v5Rows = catalog.rows.filter(
+    (row) => row.family !== 'joker' || row.ordinal <= 100,
+  );
+  const v5Catalog: ProductionCatalog = {
+    ...catalog,
+    rows: v5Rows,
+    assets: catalog.assets.filter((asset) =>
+      v5Rows.some((row) => row.id === asset.contentId),
+    ),
+    contracts: catalog.contracts.filter((record) =>
+      v5Rows.some((row) => row.id === record.contentId),
+    ),
+  };
+  const productionContent = createProductionRunContent(v5Catalog);
   const jokerDefinitions = new Map(
     productionContent.items
       .filter((item): item is JokerDefinitionV2 => item.kind === 'joker')
@@ -103,7 +118,7 @@ export function createProductionRunV5(
     inventory: { ...base.inventory, jokers: allJokers },
     productionContentV3: {
       contentVersion: CONTENT_VERSION_V5,
-      rows: catalog.rows.map((definition) => ({
+      rows: v5Rows.map((definition) => ({
         definition,
         name: catalog.localization[definition.nameKey] as string,
         description: catalog.localization[definition.descriptionKey] as string,

@@ -559,7 +559,6 @@ const spectralSeeds: readonly ConsumableSeed[] = [
         stickerPolicy: 'normal',
       },
     ],
-    externalDependencyIds: [reservedJokerId(23)],
     availability: { kind: 'prerequisite', value: 'bxqp:pool:spectral-rare-replacement' },
   },
   {

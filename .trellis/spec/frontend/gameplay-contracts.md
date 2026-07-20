@@ -50,7 +50,9 @@ type EffectWindow =
   | "discard" | "round-end" | "blind-skipped" | "shop-entered"
   | "shop-rerolled" | "item-acquired" | "pack-opened" | "pack-skipped"
   | "item-sold" | "playing-card-added" | "playing-card-modifier-succeeded"
-  | "other-joker-resolved" | "ante-ended" | "consumable-used" | "passive";
+  | "other-joker-resolved" | "ante-ended" | "consumable-used"
+  | "playing-card-destroyed" | "boss-ability-triggered"
+  | "blind-survival" | "shop-left" | "passive";
 
 interface EffectReference {
   readonly id: string;
@@ -178,7 +180,93 @@ function validateRunStateV5(state: RunStateV5):
   | { readonly ok: false; readonly violations: readonly string[] };
 ```
 
-V5 command windows receive an immutable discriminated event fact for the accepted
+The third production Joker batch advances new campaigns and normalized saves to
+V6 while keeping every V2-V5 content snapshot as a supported migration input.
+
+```ts
+interface JokerRuntimeStateV6 {
+  readonly castleTargetSuit: Suit | null;
+  readonly idolTargetRank: Rank | null;
+  readonly idolTargetSuit: Suit | null;
+  readonly jokerCapacityDebt: number;
+}
+
+type RunStateV6 = Omit<RunStateV5, "schemaVersion" | "contentVersion"> & {
+  readonly schemaVersion: 6;
+  readonly contentVersion:
+    | "run-economy-2"
+    | "catalog-baseline-3"
+    | "joker-catalog-1"
+    | "joker-catalog-2"
+    | "joker-catalog-3";
+  readonly jokerRuntimeV6: JokerRuntimeStateV6;
+  readonly migrationV6: MigrationMetadataV6;
+};
+
+function createProductionRunV6(
+  catalog: ProductionCatalog,
+  options: CreateProductionRunOptionsV6,
+): RunStateV6;
+
+function migrateRunV5ToV6(run: RunStateV5): RunStateV6;
+
+function validateRunStateV6(state: RunStateV6):
+  | { readonly ok: true }
+  | { readonly ok: false; readonly violations: readonly string[] };
+
+interface ListedChanceRequestV6 {
+  readonly numerator: number;
+  readonly denominator: number;
+  readonly sourceId: string;
+  readonly reason: string;
+}
+
+interface ListedChanceResultV6 {
+  readonly succeeded: boolean;
+  readonly effectiveNumerator: number;
+  readonly denominator: number;
+  readonly roll: number | null;
+  readonly rngState: RandomState;
+}
+
+function resolveListedChanceV6(
+  request: ListedChanceRequestV6,
+  listedChancePower: number,
+  rngState: RandomState,
+): ListedChanceResultV6;
+
+function buildFrozenJokerSourceGraphV6(
+  sources: readonly EffectQueueSource[],
+  eventId?: string,
+): FrozenJokerSourceGraphV6;
+
+function destroyPlayingCardsV6(
+  state: RunStateV2,
+  cardIds: readonly CardId[],
+  reason: string,
+): RunWindowResolutionV2;
+
+function hasFourDistinctSuitAssignment(
+  scoringCardIds: readonly CardId[],
+  identities: Readonly<Record<CardId, EffectivePlayingCardV3>>,
+): boolean;
+
+function usedJokerSlotsForRun(run: RunStateV2): number;
+function usedConsumableSlotsForRun(run: RunStateV2): number;
+function effectiveHandsPerRoundForRun(run: RunStateV2): number;
+function bossEffectsDisabledForRun(
+  run: RunStateV2,
+  blind?: MaterializedBlind | null,
+): boolean;
+```
+
+V6 owns the J103/J127 shared targets independently from V5's J083/J099 targets.
+Target draws use a stable non-Stone full-deck pool, materialize pool/index evidence,
+and use a no-RNG Ace-of-Spades fallback. Capacity debt is always exactly
+`max(0, usedJokerSlots - jokerSlots)`; only the validated sale-clone transaction
+may create it.
+
+V5/V6 command windows receive an immutable discriminated event fact for the accepted
 played hand, discard, consumable use, pack action, item sale, playing-card addition,
 modifier success, other-Joker resolution, or blind result. Card identities are
 captured at event entry; later mutation, destruction, zone movement, or draw cannot
@@ -215,10 +303,10 @@ interface GameRepository {
 ```
 
 Physical IndexedDB version 1 owns `meta`, `settings`, `profiles`, `runs`, and
-`recovery`; the current logical run/content schema inside those stores is V5
-(`joker-catalog-2` for new campaigns). Loads chain V1 -> V2 -> V3 -> V4 -> V5 while
+`recovery`; the current logical run/content schema inside those stores is V6
+(`joker-catalog-3` for new campaigns). Loads chain V1 -> V2 -> V3 -> V4 -> V5 -> V6 while
 preserving the exact pre-migration recovery record. Profile export normalizes a
-valid older run to a V5 `profile-transfer-5` envelope containing `profile`, the
+valid older run to a V6 `profile-transfer-6` envelope containing `profile`, the
 optional run, run content version, and a checksum over the canonical payload.
 Import still accepts valid legacy envelopes and migrates them forward. Positive
 Infinity is encoded by the score wire codec and must never pass through raw
@@ -228,17 +316,17 @@ Infinity is encoded by the score wire codec and must never pass through raw
 
 - `src/game-core/**` is framework-free and may not import React, Redux, Motion,
   IndexedDB, `idb`, presentation, or application modules.
-- The V2-compatible command surface and `RunStateV5` are fully serializable.
+- The V2-compatible command surface and `RunStateV6` are fully serializable.
   Production runs use `bxqp:` identifiers and snapshot exactly 230 non-Joker rows
-  plus 100 real Joker rows. The aggregate is 330, IDs `bxqp:joker:001` through
-  `100` are locally resolved, and exactly 50 reserved future Joker IDs remain
-  unresolved in `catalog-child` mode. Migrated foundation runs retain their
-  embedded `fixture:` identities and original content version.
+  plus 150 real Joker rows. The aggregate is 380, IDs `bxqp:joker:001` through
+  `150` are locally resolved, and no reserved Joker dependency remains unresolved
+  in either catalog-child or integration-strict mode. Migrated foundation runs
+  retain their embedded `fixture:` identities and original content version.
 - Content IDs identify catalog entries; they never select engine behavior. Content
   points to registered handlers by `handlerId`; only handlers emit the exhaustive
   `EffectOperation` union. Do not route behavior with `contentId` or ad hoc
   `handlerId === ...` branches.
-- The 22 hook windows are command-routing contracts, not documentation-only tags.
+- The 26 hook windows are command-routing contracts, not documentation-only tags.
   Lifecycle commands call the shared bounded queue; scoring preserves the fixed
   before-hand -> scored-card -> held-card -> joker -> global -> after-hand order.
 - Copy/retrigger uses queue entries and ancestry tokens, never recursive handler
@@ -248,7 +336,7 @@ Infinity is encoded by the score wire codec and must never pass through raw
   reroll choices) are materialized into `RunStateV2` before commit. Empty/blocked
   pools do not consume RNG.
 - V3 materializes setup identity, card/Joker modifiers, external dependency
-  resolution, and random choice records. V4/V5 additionally require one modifier
+  resolution, and random choice records. V4/V5/V6 additionally require one modifier
   row per owned Joker and an exact `abilityState` key/type set derived from the
   frozen definition. Acquisition initializes it; sale or destruction removes it
   in the same proposed checkpoint. Unknown or missing keys, non-safe-integer
@@ -258,21 +346,37 @@ Infinity is encoded by the score wire codec and must never pass through raw
   command, shop, migration, and presentation code must not switch on Joker content
   IDs. `resolvePlayedHandV3` returns one complete score/RNG/state proposal; callers
   never commit intermediate ability-state or generated-content changes.
-- V5 played-hand, discard, sale, and reward paths are atomic proposals over frozen
+- V5/V6 played-hand, discard, sale, and reward paths are atomic proposals over frozen
   event facts. A played hand captures clone facts before card mutation, resolves
   immediate card/retrigger passes and left-to-right Joker hooks, then commits clone,
   destruction, addition events, zones, draw, history, score, and one checkpoint.
   Discard removes the chosen cards from zones, resolves card/Joker discard effects
   against the frozen entry set, then draws from the post-effect deck.
+- Every permanent playing-card removal uses one V6 destruction proposal. It rejects
+  duplicate/unknown IDs before mutation, freezes effective identity and modifiers,
+  removes every deck/round/modifier reference once, emits one
+  `playing-card-destroyed` event, and rejects the whole proposal on a late failure.
+- V6 freezes one event-entry Joker source graph. Dynamic leftmost/right-adjacent
+  route cycles are traced no-op branches; static copy/retrigger cycles fail the
+  proposal. Explicit gameplay chances use the bounded listed-chance service, while
+  selection, shuffle, rarity, edition, sticker, and target RNG remain unaffected.
 - Sale freezes the source/copy graph before removal, applies sale-trigger effects,
-  removes the item, and pays its pre-removal value. Boss suppression is a persisted
-  current-round V5 flag and resets on the next blind; non-sale destruction emits no
-  sale event.
+  removes the item, and pays its pre-removal value. Boss suppression is the single
+  `bossEffectsDisabledForRun` projection over the legacy round flag plus active
+  passive sources; the round flag resets on the next blind. Non-sale destruction
+  emits no sale event.
 - End-of-round processing applies source state/destruction and money lines before
   sticker settlement, base interest, separately capped extra-interest sources, and
   target rotation. J060 targets live per instance; J083 rank and J099 suit targets
   are shared persisted values. Relevant active sources alone rotate targets, and a
   deterministic empty fallback consumes no RNG.
+- J103 and J127 targets are V6 run-shared but independent of each other and of the
+  V5 target fields. Acquisition, round settlement, blind entry, last-source sale,
+  reload, and all-Stone fallback must preserve their target lifecycle and evidence.
+- Boss rules emit one `boss-ability-triggered` event only when an enabled rule
+  changes or restricts the played hand. J149 is an idempotent derived suppression;
+  it suppresses the Boss rule and therefore J129 payout. Draw/deck exhaustion skips
+  J107 survival and loses immediately.
 - Ordinary Joker sources perform a two-stage draw: choose among non-empty Common,
   Uncommon, and Rare pools with weights 70/25/5, then draw a stable ID within the
   chosen rarity. A forced rarity skips stage one. A blocked/empty forced pool
@@ -284,7 +388,7 @@ Infinity is encoded by the score wire codec and must never pass through raw
 - The first acquisition of a production Joker emits one durable discovery
   observation. Already materialized offers and pack choices remain unchanged
   across reload or a later catalog refresh.
-- New runs default to production D01/S01 and `joker-catalog-2`; fixtures remain
+- New runs default to production D01/S01 and `joker-catalog-3`; fixtures remain
   explicit test/migration inputs only.
 - Inventory capacity is the sum of instance `slotContribution`. A pack's temporary
   capacity is consumed once and materialized as an instance-level contribution
@@ -307,7 +411,7 @@ Infinity is encoded by the score wire codec and must never pass through raw
   money changes, draw order, and inventory rules do not live in components.
 - Shop, pack, table, and audit screens resolve Joker art, rarity, flavor, and
   committed current values through shared presentation selectors. They never
-  recompute a score effect or mutate ability state. The 100 raster assets must be
+  recompute a score effect or mutate ability state. The 150 raster assets must be
   local 768x1024 WebP files with unique focal keys and reviewed provenance
   sidecars; runtime content requests may not leave the local origin.
 - The 16:9 stage uses `overflow: clip`, not `overflow: hidden`. The latter creates a
@@ -326,6 +430,10 @@ Infinity is encoded by the score wire codec and must never pass through raw
 | Effect handler is missing | `effect-handler-missing`; reject the proposal |
 | Effect ancestry cycles or exceeds 32 | `effect-cycle`; no partial operations |
 | Effect resolution exceeds 10,000 operations | `effect-budget`; no truncation |
+| Dynamic left/right copy routing revisits an event-entry node | Trace a no-op branch; consume no RNG and continue other sources |
+| Listed chance numerator is zero or reaches certainty after power | Return `roll: null`; preserve RNG; fail or succeed respectively |
+| Permanent destruction repeats an ID or references an unknown card | `pool-empty`; preserve every zone, modifier, event, and RNG field |
+| V6 Joker debt differs from `max(0, usedJokerSlots - jokerSlots)` | Invariant failure; do not persist |
 | Item/pack/blind/tag/voucher reference is absent from frozen content | Invariant or `pool-empty`; do not commit |
 | Pending choice has foreign/duplicate targets or stale choice ID | `invalid-target`/`choice-mismatch`; preserve frame and RNG |
 | Reward ID is already consumed or receipt total does not equal its lines | Invariant failure; do not persist |
@@ -333,14 +441,14 @@ Infinity is encoded by the score wire codec and must never pass through raw
 | Proposed state violates card, ID, budget, or phase invariants | Do not persist or reveal it |
 | IndexedDB transaction rejects | Keep the exact prior React state; report Chinese error |
 | Import exceeds size, fails JSON/Zod/checksum, or mismatches IDs | Reject before confirmation; keep all slots intact |
-| Stored V1/V2/V3/V4 run is valid | Migrate through V5 atomically and keep the exact preimage in `recovery` |
-| V4/V5 owned Joker lacks exactly one matching modifier/ability-state record | Invariant failure; do not persist |
-| V4/V5 ability-state key/type differs from the frozen definition | Invariant/Zod failure; do not replace local data |
+| Stored V1/V2/V3/V4/V5 run is valid | Migrate through V6 atomically and keep the exact preimage in `recovery` |
+| V4/V5/V6 owned Joker lacks exactly one matching modifier/ability-state record | Invariant failure; do not persist |
+| V4/V5/V6 ability-state key/type differs from the frozen definition | Invariant/Zod failure; do not replace local data |
 | Forced Joker rarity has no eligible row | `pool-empty`; return the original RNG and offer state |
 | Joker acquisition, sale, or destruction leaves an orphan modifier | Reject the whole proposal |
 | Stored/exported schema or content version is newer/unsupported | Reject; never downgrade or replace current data |
 | `integration-strict` has unresolved reserved 奇牌 IDs | Catalog/run creation fails; test doubles are forbidden |
-| Production catalog is not exactly 230 non-Jokers + 100 Jokers, or localization/asset/ownership/contract closure drifts | Bootstrap/content audit fails before play |
+| Production catalog is not exactly 230 non-Jokers + 150 Jokers, or localization/asset/ownership/contract closure drifts | Bootstrap/content audit fails before play |
 | Joker raster is remote, missing, not 768x1024, shares a focal key, or lacks approved provenance | Content/browser audit fails before play |
 | Profile is deleted or replaced | Profile, run, recovery, and active-profile metadata remain consistent in one transaction |
 
@@ -351,15 +459,15 @@ Infinity is encoded by the score wire codec and must never pass through raw
 - Good: a new fixture adds a serializable `EffectReference` and registered pure
   handler; existing routing invokes it at the declared window without a command
   switch change.
-- Good: production D01/S01 created twice from the same seed has identical V5 setup,
-  330-row snapshot, lineup, RNG, ability state, targets, discovery observations, and
+- Good: production D01/S01 created twice from the same seed has identical V6 setup,
+  380-row snapshot, lineup, RNG, ability state, targets, discovery observations, and
   materialized choices, including after save/reload or export/import.
 - Good: a Joker catalog row declares predicates, values, copy facet, stickers,
   initial state, localization, and asset metadata; generic handlers execute it
   without an ID branch, and the shared selector renders its committed current value.
 - Base: a rejected command returns a Chinese domain error while the current run,
   random state, budgets, and save remain unchanged.
-- Base: a valid V2/V3/V4 fixture run loads as V5 while preserving its content version,
+- Base: a valid V2/V3/V4/V5 fixture run loads as V6 while preserving its content version,
   fixture IDs, RNG, offers, choices, and recovery preimage; owned Jokers receive
   only the initial ability-state keys declared by their embedded definitions.
 - Base: a forced empty rarity source or a false chance/capacity branch returns no
@@ -372,7 +480,7 @@ Infinity is encoded by the score wire codec and must never pass through raw
   `contentId`/`handlerId` conditional outside the registry.
 - Bad: React derives `storedMult`, sale growth, or silk count independently from
   engine rules, or an acquisition/destruction path updates inventory without the
-  matching V4/V5 modifier and discovery state.
+  matching V4/V5/V6 modifier and discovery state.
 
 ## 6. Tests Required
 
@@ -380,10 +488,10 @@ Infinity is encoded by the score wire codec and must never pass through raw
 - Table tests for all 12 poker classifications plus permutation properties.
 - Command tests for success, stale checkpoint, illegal phase, exhausted budgets,
   deterministic replay, win/loss, shop actions, and invariant preservation.
-- One registry matrix must cover every `EffectOperation` and all 22 windows. Command
+- One registry matrix must cover every `EffectOperation` and all 26 windows. Command
   integration must prove lifecycle windows produce durable observations; score
   goldens must freeze source/copy/retrigger ordering and cycle/budget rejection.
-- Accepted campaign/economy commands must pass the version-appropriate V2/V3/V4/V5
+- Accepted campaign/economy commands must pass the version-appropriate V2/V3/V4/V5/V6
   invariant validator and Zod structured-clone round trip after every checkpoint.
   Rejections compare the entire prior state, RNG, offers, inventory, ability
   state, observations, and checkpoint.
@@ -391,13 +499,16 @@ Infinity is encoded by the score wire codec and must never pass through raw
   include regression coverage for face-down/forced/selected IDs after zone moves.
 - Repository tests for checkpoint/recovery, injected write failure, three-profile
   isolation, atomic replacement, and invalid import non-mutation.
-- V1 -> V2 -> V3 -> V4 -> V5 migration must be deterministic and idempotent at its
+- V1 -> V2 -> V3 -> V4 -> V5 -> V6 migration must be deterministic and idempotent at its
   terminal version, retain the exact recovery preimage, reject future versions,
   and preserve production/migrated state through IndexedDB and
-  `profile-transfer-5` export/import round trips.
-- Joker catalog tests assert 100 contiguous IDs, 55 Common/39 Uncommon/6 Rare,
-  exact 230/100/330 counts, 50 unresolved future IDs, and complete localization,
-  contract, discovery, ownership, and asset closure.
+  `profile-transfer-6` export/import round trips.
+- Joker catalog tests assert 150 contiguous IDs, 61 Common/64 Uncommon/20 Rare/
+  5 Legendary rows, exact 230/150/380 counts, zero unresolved production IDs, and
+  complete localization, contract, discovery, ownership, and asset closure.
+- V6 primitive tests freeze graph adjacency/cycle traces, listed-chance zero and
+  certainty RNG preservation, distinct-card suit assignment, atomic multi-zone
+  destruction, exact Joker debt, and zero-slot Negative consumables.
 - Every production Joker needs positive, boundary/false, and debuffed coverage.
   Mutable/random rows additionally prove same-seed replay, false-branch RNG
   preservation, reload, recovery, export/import, and orphan-state cleanup.
@@ -410,8 +521,8 @@ Infinity is encoded by the score wire codec and must never pass through raw
 - The catalog audit must prove exactly 230 unique production rows, all-local
   assets, 13 family render paths, and zero remote content requests in Chromium
   and WebKit.
-- The separate Joker audit must prove exactly 100 unique rows and focal keys,
-  100/100 successful 768x1024 image decodes, ten 10-card ensemble views, and zero
+- The separate Joker audit must prove exactly 150 unique rows and focal keys,
+  150/150 successful 768x1024 image decodes, fifteen 10-card ensemble views, and zero
   remote requests in Chromium and WebKit. Representative shop, Buffoon-pack, and
   table tests must show the local art and committed current value after reload.
 - Visual snapshots cover profile, table, shop, and result at 1280x720. Move the mouse
@@ -446,7 +557,7 @@ await repository.commitCheckpoint(profile, result.state);
 return result; // reducer reveals this checkpoint only after persistence succeeds
 
 const presentation = selectOwnedJokerPresentation(run, joker);
-// React renders presentation.currentValue; the selector reads committed V4/V5 state.
+// React renders presentation.currentValue; the selector reads committed V4/V5/V6 state.
 ```
 
 Handlers stay pure and return primitives; the queue applies them after cycle/budget

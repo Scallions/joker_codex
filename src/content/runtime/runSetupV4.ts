@@ -39,6 +39,8 @@ function ownedJoker(
     slotContribution: definition.slotContribution,
     sellValueOverride: null,
     debuffed: false,
+    copyPolicy: definition.copyPolicy ?? 'none',
+    copyTarget: definition.copyTarget ?? 'none',
   };
 }
 

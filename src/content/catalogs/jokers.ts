@@ -1,6 +1,5 @@
 import {
   CATALOG_CONTENT_VERSION,
-  PRODUCTION_CATALOG_VERSION,
   type CatalogOperation,
   type JokerCatalogRow,
   type JokerCopyPolicy,
@@ -9,8 +8,12 @@ import {
   type JokerRarity,
   type JokerValue,
 } from '../schema/catalog';
+import { JOKER_SOURCES_101_150 } from './jokers101150';
 
-interface JokerSource {
+const JOKER_CATALOG_VERSION_V2 = 'joker-catalog-2' as const;
+const PRODUCTION_CATALOG_VERSION = JOKER_CATALOG_VERSION_V2;
+
+export interface JokerSource {
   readonly ordinal: number;
   readonly name: string;
   readonly description: string;
@@ -19,6 +22,7 @@ interface JokerSource {
   readonly cost: number;
   readonly ensemble: JokerEnsemble;
   readonly copyPolicy: JokerCopyPolicy;
+  readonly copyTarget?: JokerCatalogRow['copyTarget'];
   readonly permanentEligible?: boolean;
   readonly perishableEligible?: boolean;
   readonly initialAbilityState?: Readonly<Record<string, string | number | boolean>>;
@@ -26,7 +30,7 @@ interface JokerSource {
   readonly externalDependencyIds?: readonly string[];
   readonly trigger: JokerCatalogRow['effects'][number]['trigger'];
   readonly operations: readonly CatalogOperation[];
-  readonly introducedIn?: typeof PRODUCTION_CATALOG_VERSION;
+  readonly introducedIn?: JokerCatalogRow['introducedIn'];
   readonly additionalEffects?: readonly {
     readonly trigger: JokerCatalogRow['effects'][number]['trigger'];
     readonly operations: readonly CatalogOperation[];
@@ -77,6 +81,7 @@ function defineJoker(source: JokerSource): JokerCatalogRow {
     rarity: source.rarity,
     ensemble: source.ensemble,
     copyPolicy: source.copyPolicy,
+    copyTarget: source.copyTarget ?? 'none',
     stickerEligibility: {
       permanent: source.permanentEligible ?? true,
       perishable: source.perishableEligible ?? true,
@@ -1033,7 +1038,7 @@ const JOKER_SOURCES = [
     cost: 8,
     ensemble: 'creation-secret',
     copyPolicy: 'trigger',
-    introducedIn: PRODUCTION_CATALOG_VERSION,
+    introducedIn: 'joker-catalog-2',
     trigger: 'before-hand',
     operations: [
       {
@@ -1060,7 +1065,7 @@ const JOKER_SOURCES = [
     cost: 3,
     ensemble: 'creation-secret',
     copyPolicy: 'none',
-    introducedIn: PRODUCTION_CATALOG_VERSION,
+    introducedIn: JOKER_CATALOG_VERSION_V2,
     trigger: 'passive',
     operations: [
       {
@@ -2436,6 +2441,7 @@ const JOKER_SOURCES = [
       },
     ],
   },
+  ...JOKER_SOURCES_101_150,
 ] as const satisfies readonly JokerSource[];
 
 export const JOKER_ROWS = JOKER_SOURCES.map(defineJoker);

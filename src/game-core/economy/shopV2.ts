@@ -33,6 +33,39 @@ function definitionFamily(definition: ItemDefinitionV2): string {
   return definition.kind;
 }
 
+interface MaterializationPolicyV6 {
+  readonly allowDuplicateFamilies: ReadonlySet<string>;
+}
+
+function materializationPolicyV6(state: RunStateV2): MaterializationPolicyV6 {
+  const passives = resolveJokerPassiveCapabilities(state);
+  return {
+    allowDuplicateFamilies:
+      passives.ok && passives.capabilities.duplicateShopFamilies
+        ? new Set(['joker', 'tarot', 'planet', 'spectral'])
+        : new Set(),
+  };
+}
+
+function duplicateAllowedForDefinition(
+  policy: MaterializationPolicyV6,
+  definition: ItemDefinitionV2,
+): boolean {
+  return policy.allowDuplicateFamilies.has(definitionFamily(definition));
+}
+
+function ownedMaterializedContentIds(state: RunStateV2): Set<string> {
+  return new Set([
+    ...state.inventory.jokers.map(({ contentId }) => contentId),
+    ...state.inventory.consumables.map(({ contentId }) => contentId),
+  ]);
+}
+
+function planetIsFree(state: RunStateV2): boolean {
+  const passives = resolveJokerPassiveCapabilities(state);
+  return passives.ok && passives.capabilities.zeroPricePlanet;
+}
+
 export function definitionIsEligibleV3(
   state: RunStateV2,
   definition: ItemDefinitionV2,
@@ -310,6 +343,12 @@ export function materializeItemV2(
       minimumTargets: definition.minimumTargets,
       maximumTargets: definition.maximumTargets,
       slotContribution: definition.kind === 'joker' ? definition.slotContribution : 1,
+      ...(definition.kind === 'joker'
+        ? {
+            copyPolicy: definition.copyPolicy ?? 'none',
+            copyTarget: definition.copyTarget ?? 'none',
+          }
+        : {}),
       generatedCard: generated.card,
     },
     rngState: generated.rngState,
@@ -465,6 +504,7 @@ function drawItemDefinitions(
   uniqueByContent = true,
   predicate: (definition: ItemDefinitionV2) => boolean = () => true,
   source: 'shop' | 'pack' | 'generated' = 'shop',
+  policy: MaterializationPolicyV6 = materializationPolicyV6(state),
 ): { readonly definitions: readonly ItemDefinitionV2[]; readonly rngState: RandomState } {
   const pool = state.content.items.filter(
     (definition) =>
@@ -480,6 +520,7 @@ function drawItemDefinitions(
     const eligible = uniqueByContent
       ? pool.filter(
           (definition) =>
+            duplicateAllowedForDefinition(policy, definition) ||
             !definitions.some((selected) => selected.contentId === definition.contentId),
         )
       : pool;
@@ -558,7 +599,15 @@ export function materializePackOptionsV2(
   identity: string,
   rngState: RandomState,
 ): { readonly items: readonly MaterializedItem[]; readonly rngState: RandomState } {
+  const policy = materializationPolicyV6(state);
+  const excludedContentIds = ownedMaterializedContentIds(state);
   const familyPredicate = (definition: ItemDefinitionV2): boolean => {
+    if (
+      !duplicateAllowedForDefinition(policy, definition) &&
+      excludedContentIds.has(definition.contentId)
+    ) {
+      return false;
+    }
     if (definition.kind !== 'consumable') return true;
     if (pack.family === 'celestial') return definition.family === 'planet';
     if (pack.family === 'spectral') return definition.family === 'spectral';
@@ -575,6 +624,7 @@ export function materializePackOptionsV2(
     isRunStateV3(state) && pack.family !== 'standard',
     familyPredicate,
     'pack',
+    policy,
   );
   const definitions = [...drawn.definitions];
   let currentRng = drawn.rngState;
@@ -671,15 +721,20 @@ function materializeCardOffers(
   count: number,
   rngState: RandomState,
   startIndex = 0,
-  excludedContentIds: ReadonlySet<string> = new Set(),
+  excludedContentIds: ReadonlySet<string> = ownedMaterializedContentIds(state),
 ): { readonly offers: readonly ShopCardOfferV2[]; readonly rngState: RandomState } {
+  const policy = materializationPolicyV6(state);
   const drawn = drawItemDefinitions(
     state,
     count,
     rngState,
     ['joker', 'consumable', 'playing-card'],
     true,
-    (definition) => !excludedContentIds.has(definition.contentId),
+    (definition) =>
+      duplicateAllowedForDefinition(policy, definition) ||
+      !excludedContentIds.has(definition.contentId),
+    'shop',
+    policy,
   );
   const offers: ShopCardOfferV2[] = [];
   let currentRng = drawn.rngState;
@@ -703,11 +758,21 @@ function materializeCardOffers(
     offers.push({
       id: offerId,
       item: modified.item,
-      price: purchasePriceForState(
-        state,
-        modified.item.baseCost,
-        modified.item.editionCost,
-      ),
+      price:
+        modified.item.kind === 'consumable' &&
+        state.content.items.some(
+          (item) =>
+            item.contentId === modified.item.contentId &&
+            item.kind === 'consumable' &&
+            item.family === 'planet',
+        ) &&
+        planetIsFree(state)
+          ? 0
+          : purchasePriceForState(
+              state,
+              modified.item.baseCost,
+              modified.item.editionCost,
+            ),
     });
     currentRng = modified.rngState;
   }
@@ -728,7 +793,10 @@ export function fillShopCardOffersV2(state: RunStateV2): {
     missing,
     state.rngState,
     state.shop.cardOffers.length,
-    new Set(state.shop.cardOffers.map(({ item }) => item.contentId)),
+    new Set([
+      ...ownedMaterializedContentIds(state),
+      ...state.shop.cardOffers.map(({ item }) => item.contentId),
+    ]),
   );
 }
 
@@ -897,7 +965,11 @@ function materializeFreeJokerTags(
   const offers: ShopCardOfferV2[] = [];
   const consumedTagIds = new Set<string>();
   let rngState = initialRngState;
-  const usedContentIds = new Set(existingOffers.map(({ item }) => item.contentId));
+  const policy = materializationPolicyV6(state);
+  const usedContentIds = new Set([
+    ...ownedMaterializedContentIds(state),
+    ...existingOffers.map(({ item }) => item.contentId),
+  ]);
   for (const tag of tags) {
     const rarity = tagRuleValue(state, tag, 'free-joker');
     if (typeof rarity !== 'string') continue;
@@ -905,7 +977,8 @@ function materializeFreeJokerTags(
       (definition): definition is Extract<ItemDefinitionV2, { kind: 'joker' }> =>
         definition.kind === 'joker' &&
         definition.rarity === rarity &&
-        !usedContentIds.has(definition.contentId) &&
+        (duplicateAllowedForDefinition(policy, definition) ||
+          !usedContentIds.has(definition.contentId)) &&
         definitionIsEligibleV3(state, definition, 'shop'),
     );
     if (pool.length === 0) continue;
@@ -1040,7 +1113,9 @@ export function createShopV2(state: RunStateV2): ShopCreationV2 {
     name: pack.name,
     description: pack.description,
     price:
-      grantsFreeShop || (grantsFreePack && index === 0)
+      grantsFreeShop ||
+      (grantsFreePack && index === 0) ||
+      (pack.family === 'celestial' && planetIsFree(state))
         ? 0
         : purchasePriceForState(state, pack.cost, 0),
   }));
@@ -1107,11 +1182,20 @@ export function repriceShopV2(shop: ShopStateV2, state: RunStateV2): ShopStateV2
   const voucherCosts = new Map(
     state.content.vouchers.map((voucher) => [voucher.id, voucher.cost]),
   );
+  const freePlanets = planetIsFree(state);
   return {
     ...shop,
     cardOffers: shop.cardOffers.map((offer) => ({
       ...offer,
       price:
+        (offer.item.kind === 'consumable' &&
+          state.content.items.some(
+            (item) =>
+              item.contentId === offer.item.contentId &&
+              item.kind === 'consumable' &&
+              item.family === 'planet',
+          ) &&
+          freePlanets) ||
         offer.price === 0
           ? 0
           : purchasePriceForState(state, offer.item.baseCost, offer.item.editionCost),
@@ -1119,6 +1203,9 @@ export function repriceShopV2(shop: ShopStateV2, state: RunStateV2): ShopStateV2
     packOffers: shop.packOffers.map((offer) => ({
       ...offer,
       price:
+        (state.content.packs.find((pack) => pack.id === offer.packId)?.family ===
+          'celestial' &&
+          freePlanets) ||
         offer.price === 0
           ? 0
           : purchasePriceForState(state, packCosts.get(offer.packId) ?? offer.price, 0),

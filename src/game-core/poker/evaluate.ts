@@ -38,6 +38,7 @@ export interface PokerRuleContext {
   readonly straightMaximumStep?: 1 | 2;
   readonly rankOverrides?: Readonly<Partial<Record<CardId, Rank>>>;
   readonly suitOverrides?: Readonly<Partial<Record<CardId, Suit>>>;
+  readonly suitCandidates?: Readonly<Partial<Record<CardId, readonly Suit[]>>>;
   readonly wildSuitCardIds?: readonly CardId[];
   readonly ranklessCardIds?: readonly CardId[];
   readonly blockedHandTypes?: readonly PokerHandType[];
@@ -179,6 +180,7 @@ interface EffectiveCard {
   readonly rank: Rank;
   readonly suit: Suit;
   readonly wildSuit: boolean;
+  readonly suits: readonly Suit[];
 }
 
 interface Candidate {
@@ -225,10 +227,7 @@ function straightHigh(
 }
 
 function flushSuit(cards: readonly EffectiveCard[]): Suit | null {
-  return (
-    SUITS.find((suit) => cards.every((card) => card.wildSuit || card.suit === suit)) ??
-    null
-  );
+  return SUITS.find((suit) => cards.every((card) => card.suits.includes(suit))) ?? null;
 }
 
 function bestSubset(
@@ -264,12 +263,17 @@ function effectiveCards(
   );
   const rankCards = cards
     .filter((card) => !stoneCards.includes(card))
-    .map((card) => ({
-      original: card,
-      rank: context.rankOverrides?.[card.id] ?? card.rank,
-      suit: context.suitOverrides?.[card.id] ?? card.suit,
-      wildSuit: card.enhancement === 'wild' || wild.has(card.id),
-    }));
+    .map((card) => {
+      const suit = context.suitOverrides?.[card.id] ?? card.suit;
+      const wildSuit = card.enhancement === 'wild' || wild.has(card.id);
+      return {
+        original: card,
+        rank: context.rankOverrides?.[card.id] ?? card.rank,
+        suit,
+        wildSuit,
+        suits: context.suitCandidates?.[card.id] ?? (wildSuit ? SUITS : [suit]),
+      };
+    });
   return { rankCards, stoneCards };
 }
 

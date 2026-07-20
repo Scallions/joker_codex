@@ -9,7 +9,7 @@ import { validateRunStateV3 } from '../../src/game-core/invariants/validateRunSt
 import { runStateV3Schema } from '../../src/persistence/schemasV3';
 
 describe('生产 V3 牌局初始化', () => {
-  it('把 230 项非奇牌与 100 项奇牌投影为完整 V2 执行快照且不引用测试夹具', () => {
+  it('把 230 项非奇牌与 150 项奇牌投影为完整 V2 执行快照且不引用测试夹具', () => {
     const content = createProductionRunContent(PRODUCTION_CATALOG);
     const effects = [
       ...content.blinds.flatMap(({ effects: entries }) => entries),
@@ -22,7 +22,7 @@ describe('生产 V3 牌局初始化', () => {
     expect(content.blinds).toHaveLength(30);
     expect(content.tags).toHaveLength(24);
     expect(content.vouchers).toHaveLength(32);
-    expect(content.items).toHaveLength(153);
+    expect(content.items).toHaveLength(203);
     expect(content.packs).toHaveLength(32);
     expect(effects.length).toBeGreaterThan(170);
     expect(effects.every(({ handlerId }) => hasRegisteredEffectHandler(handlerId))).toBe(
@@ -141,11 +141,6 @@ describe('生产 V3 牌局初始化', () => {
   });
 
   it('严格依赖模式只接受完整解析集合', () => {
-    const futureIds = new Set(
-      PRODUCTION_CATALOG.dependencies
-        .map(({ id }) => id)
-        .filter((id) => Number(id.slice(-3)) > 100),
-    );
     const setup = compileRunSetupV3(PRODUCTION_CATALOG, {
       challengeId: 'bxqp:challenge:empty-house',
     });
@@ -153,7 +148,7 @@ describe('生产 V3 牌局初始化', () => {
       seed: 'strict-dependencies',
       challengeId: 'bxqp:challenge:empty-house',
       validationMode: 'integration-strict',
-      resolvedExternalIds: futureIds,
+      resolvedExternalIds: new Set(),
     });
 
     expect(setup.requiredExternalIds).toEqual([]);

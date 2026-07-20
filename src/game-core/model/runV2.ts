@@ -17,9 +17,13 @@ import type {
 export const RUN_SCHEMA_VERSION_V2 = 2 as const;
 export const CONTENT_VERSION_V2 = 'run-economy-2' as const;
 
-export type ExecutableRunSchemaVersion = 2 | 3 | 4 | 5;
+export type ExecutableRunSchemaVersion = 2 | 3 | 4 | 5 | 6;
 export type ExecutableRunContentVersion =
-  'run-economy-2' | 'catalog-baseline-3' | 'joker-catalog-1' | 'joker-catalog-2';
+  | 'run-economy-2'
+  | 'catalog-baseline-3'
+  | 'joker-catalog-1'
+  | 'joker-catalog-2'
+  | 'joker-catalog-3';
 export type RunModeV2 =
   | 'fixture-campaign'
   | 'migrated-foundation'
@@ -52,6 +56,10 @@ export const EFFECT_WINDOWS = [
   'other-joker-resolved',
   'ante-ended',
   'consumable-used',
+  'playing-card-destroyed',
+  'boss-ability-triggered',
+  'blind-survival',
+  'shop-left',
   'passive',
 ] as const;
 
@@ -123,7 +131,9 @@ export interface JokerDefinitionV2 extends ItemDefinitionBase {
   readonly rarity: 'common' | 'uncommon' | 'rare' | 'legendary';
   readonly slotContribution: number;
   /** Present on production catalog Jokers; omitted by legacy fixture snapshots. */
-  readonly copyPolicy?: 'output' | 'trigger' | 'none';
+  readonly copyPolicy?: 'output' | 'trigger' | 'route' | 'none';
+  /** Event-entry route used by production copy routers; absent in legacy snapshots. */
+  readonly copyTarget?: 'none' | 'right-adjacent' | 'leftmost';
   /** Present on production catalog Jokers; omitted by legacy fixture snapshots. */
   readonly stickerEligibility?: {
     readonly permanent: boolean;
@@ -185,6 +195,10 @@ export interface OwnedJokerV2 {
   readonly slotContribution: number;
   readonly sellValueOverride: number | null;
   readonly debuffed: boolean;
+  /** Frozen production copy metadata; optional for legacy fixture snapshots. */
+  readonly copyPolicy?: 'output' | 'trigger' | 'route' | 'none';
+  /** Frozen production route target; optional for legacy fixture snapshots. */
+  readonly copyTarget?: 'none' | 'right-adjacent' | 'leftmost';
 }
 
 export interface OwnedConsumableV2 {
@@ -337,6 +351,8 @@ export interface MaterializedItem {
   readonly minimumTargets: number;
   readonly maximumTargets: number;
   readonly slotContribution: number;
+  readonly copyPolicy?: 'output' | 'trigger' | 'route' | 'none';
+  readonly copyTarget?: 'none' | 'right-adjacent' | 'leftmost';
   readonly generatedCard: RunPlayingCard | null;
 }
 

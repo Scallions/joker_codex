@@ -11,7 +11,7 @@ import type {
 import { saleValue } from '../../game-core/economy/pricing';
 import type { OwnedJokerV2, RunStateV2 } from '../../game-core/model/runV2';
 import { isAbilityStateRun } from '../../game-core/model/runV4';
-import { isRunStateV5 } from '../../game-core/model/runV5';
+import { isRunStateV5OrV6, isRunStateV6 } from '../../game-core/model/runV6';
 import { projectEffectivePlayingCardV3 } from '../../game-core/poker/effectiveCardV3';
 import { POKER_HANDS, type PokerHandType } from '../../game-core/poker/evaluate';
 
@@ -74,6 +74,15 @@ function handLabel(value: string): string | null {
 function currentValueFromAbilityState(
   state: Readonly<Record<string, JokerAbilityStateValue>>,
 ): string | null {
+  const factorWithRemainder = state.multFactorHundredths;
+  const discardRemainder = state.discardRemainder;
+  if (typeof factorWithRemainder === 'number' && typeof discardRemainder === 'number') {
+    return `当前 ×${formatNumber(factorWithRemainder / 100)} · 进度 ${discardRemainder}/23`;
+  }
+  const remainingHands = state.remainingHands;
+  if (typeof remainingHands === 'number') return `剩余 ${remainingHands} 次出牌`;
+  const roundsReady = state.roundsReady;
+  if (typeof roundsReady === 'number') return `当前 ${roundsReady}/2`;
   const remainingChips = state.remainingChips;
   if (typeof remainingChips === 'number') return `当前 +${remainingChips} 筹码`;
   const storedChips = state.storedChips;
@@ -83,6 +92,10 @@ function currentValueFromAbilityState(
   const multFactorHundredths = state.multFactorHundredths;
   if (typeof multFactorHundredths === 'number') {
     return `当前 ×${formatNumber(multFactorHundredths / 100)}`;
+  }
+  const roundMultFactorHundredths = state.roundMultFactorHundredths;
+  if (typeof roundMultFactorHundredths === 'number') {
+    return `当前 ×${formatNumber(roundMultFactorHundredths / 100)}`;
   }
   const roundPayout = state.roundPayout;
   if (typeof roundPayout === 'number') return `当前 ${roundPayout} 戏票`;
@@ -112,26 +125,51 @@ function targetOperation(row: JokerCatalogRow) {
     .find((operation) => operation.type === 'joker-set-target');
 }
 
+function runtimeTargetAction(row: JokerCatalogRow) {
+  return row.effects
+    .flatMap((effect) => effect.operations)
+    .find(
+      (operation) =>
+        operation.type === 'joker-runtime-action' &&
+        (operation.action === 'set-castle-target' ||
+          operation.action === 'set-idol-target'),
+    );
+}
+
 function initialTargetValue(row: JokerCatalogRow): string | null {
   const operation = targetOperation(row);
-  if (!operation) return null;
-  if (operation.target === 'hand') return '当前：高牌';
-  if (operation.target === 'rank') return '当前：A';
-  return '当前：红桃';
+  if (operation) {
+    if (operation.target === 'hand') return '当前：高牌';
+    if (operation.target === 'rank') return '当前：A';
+    return '当前：红桃';
+  }
+  const action = runtimeTargetAction(row);
+  if (action?.type !== 'joker-runtime-action') return null;
+  return action.action === 'set-castle-target' ? '目标花色：待选' : '目标牌：待选';
 }
 
 function currentTargetValue(run: RunStateV2, row: JokerCatalogRow): string | null {
   const operation = targetOperation(row);
-  if (!operation || !isRunStateV5(run)) return null;
-  if (operation.target === 'rank') {
-    const rank = run.jokerRuntimeV5.sharedRoundTargetRank;
-    return rank ? `当前：${RANK_LABELS[rank]}` : null;
+  if (operation && isRunStateV5OrV6(run)) {
+    if (operation.target === 'rank') {
+      const rank = run.jokerRuntimeV5.sharedRoundTargetRank;
+      return rank ? `当前：${RANK_LABELS[rank]}` : null;
+    }
+    if (operation.target === 'suit') {
+      const suit = run.jokerRuntimeV5.sharedRoundTargetSuit;
+      return suit ? `当前：${SUIT_LABELS[suit]}` : null;
+    }
   }
-  if (operation.target === 'suit') {
-    const suit = run.jokerRuntimeV5.sharedRoundTargetSuit;
-    return suit ? `当前：${SUIT_LABELS[suit]}` : null;
+  const action = runtimeTargetAction(row);
+  if (action?.type !== 'joker-runtime-action' || !isRunStateV6(run)) return null;
+  if (action.action === 'set-castle-target') {
+    const suit = run.jokerRuntimeV6.castleTargetSuit;
+    return suit ? `目标花色：${SUIT_LABELS[suit]}` : '目标花色：待选';
   }
-  return null;
+  const { idolTargetRank: rank, idolTargetSuit: suit } = run.jokerRuntimeV6;
+  return rank && suit
+    ? `目标牌：${RANK_LABELS[rank]} · ${SUIT_LABELS[suit]}`
+    : '目标牌：待选';
 }
 
 function fullDeckModifierCount(run: RunStateV2, modifierId: string): number {
@@ -150,8 +188,9 @@ function fullDeckModifierCount(run: RunStateV2, modifierId: string): number {
 }
 
 function historyEventCount(run: RunStateV2, value: JokerValue): number | null {
-  if (value.kind !== 'history-event-count' || value.event !== 'tarot-used') {
-    return null;
+  if (value.kind !== 'history-event-count') return null;
+  if (value.event === 'blind-skipped') {
+    return (value.base ?? 0) + run.history.skippedBlindIds.length * value.scale;
   }
   return (
     run.history.effectObservations.filter((observation) => {
@@ -168,8 +207,27 @@ function historyEventCount(run: RunStateV2, value: JokerValue): number | null {
           item.family === 'tarot' &&
           item.contentId === observation.value,
       );
-    }).length * value.scale
+    }).length *
+      value.scale +
+    (value.base ?? 0)
   );
+}
+
+function distinctPlanetCount(run: RunStateV2): number {
+  return new Set(
+    run.history.effectObservations.flatMap((observation) =>
+      observation.key === 'consumable-used' &&
+      typeof observation.value === 'string' &&
+      run.content.items.some(
+        (item) =>
+          item.kind === 'consumable' &&
+          item.family === 'planet' &&
+          item.contentId === observation.value,
+      )
+        ? [observation.value]
+        : [],
+    ),
+  ).size;
 }
 
 function evaluatePresentableValue(run: RunStateV2, value: JokerValue): number | null {
@@ -191,13 +249,20 @@ function evaluatePresentableValue(run: RunStateV2, value: JokerValue): number | 
         }).length * value.scale
       );
     case 'initial-deck-size-delta': {
-      const initial = isRunStateV5(run)
+      const initial = isRunStateV5OrV6(run)
         ? run.jokerRuntimeV5.initialDeckSize
         : run.deck.cards.length;
       return Math.max(value.floor, initial - run.deck.cards.length) * value.scale;
     }
     case 'history-event-count':
       return historyEventCount(run, value);
+    case 'distinct-history-content-count':
+      return distinctPlanetCount(run) * value.scale;
+    case 'money-complete-groups':
+      return (
+        Math.floor(Math.max(value.floor, run.economy.money) / value.groupSize) *
+        value.scale
+      );
     case 'money':
       return Math.max(value.floor, run.economy.money) * value.scale;
     default:
@@ -227,6 +292,30 @@ function currentValueFromOperations(
       if (value !== null) return formatMetric(operation.metric, value);
     }
   }
+  for (const effect of row.effects) {
+    for (const operation of effect.operations) {
+      if (operation.type !== 'joker-passive-capability') continue;
+      if (operation.capability === 'listed-chance-power') return '明确概率 ×2';
+      if (operation.capability === 'zero-price-planet') return '星谱价格 0';
+      if (operation.capability === 'boss-disable') return '班主能力失效';
+    }
+  }
+  if (row.copyTarget === 'right-adjacent') return '路由：右侧相邻';
+  if (row.copyTarget === 'leftmost') return '路由：最左侧';
+  return null;
+}
+
+function initialCapabilityValue(row: JokerCatalogRow): string | null {
+  for (const effect of row.effects) {
+    for (const operation of effect.operations) {
+      if (operation.type !== 'joker-passive-capability') continue;
+      if (operation.capability === 'listed-chance-power') return '明确概率 ×2';
+      if (operation.capability === 'zero-price-planet') return '星谱价格 0';
+      if (operation.capability === 'boss-disable') return '班主能力失效';
+    }
+  }
+  if (row.copyTarget === 'right-adjacent') return '路由：右侧相邻';
+  if (row.copyTarget === 'leftmost') return '路由：最左侧';
   return null;
 }
 
@@ -250,7 +339,9 @@ export function selectJokerPresentation(
     assetPath: asset.assetPath,
     focalKey: asset.focalKey,
     currentValue:
-      currentValueFromAbilityState(row.initialAbilityState) ?? initialTargetValue(row),
+      currentValueFromAbilityState(row.initialAbilityState) ??
+      initialTargetValue(row) ??
+      initialCapabilityValue(row),
   };
 }
 
@@ -261,13 +352,17 @@ function dynamicCurrentValue(run: RunStateV2, joker: OwnedJokerV2): string | nul
   if (!row || row.family !== 'joker') return null;
 
   if (isAbilityStateRun(run)) {
+    const target = currentTargetValue(run, row);
+    if (target) return target;
     const modifier = run.modifiersV3.jokers.find(
       (candidate) => candidate.instanceId === joker.instanceId,
     );
     const stored = modifier ? currentValueFromAbilityState(modifier.abilityState) : null;
-    if (stored) return stored;
-    const target = currentTargetValue(run, row);
-    if (target) return target;
+    if (stored) {
+      return isRunStateV6(run) && run.jokerRuntimeV6.jokerCapacityDebt > 0
+        ? `${stored} · 容量债务 ${run.jokerRuntimeV6.jokerCapacityDebt}`
+        : stored;
+    }
     const computed = currentValueFromOperations(run, row);
     if (computed) return computed;
   }

@@ -18,6 +18,7 @@ export type JokerEventFactsV5 =
       readonly discardedCardIds: readonly CardId[];
       readonly firstDiscardOfRound: boolean;
       readonly forced: boolean;
+      readonly discardedHandType?: PokerHandType | null;
     }
   | {
       readonly kind: 'consumable-use';
@@ -57,11 +58,33 @@ export type JokerEventFactsV5 =
       readonly kind: 'blind-result';
       readonly position: BlindPosition;
       readonly defeated: boolean;
+    }
+  | {
+      readonly kind: 'playing-card-destroyed';
+      readonly cardIds: readonly CardId[];
+      readonly reason: string;
+    }
+  | {
+      readonly kind: 'boss-ability-triggered';
+      readonly bossId: string;
+      readonly ruleIds: readonly string[];
+      readonly affectedCardIds: readonly CardId[];
+    }
+  | {
+      readonly kind: 'shop-left';
+      readonly consumableInstanceIds: readonly string[];
+    }
+  | {
+      readonly kind: 'blind-survival';
+      readonly score: number;
+      readonly targetScore: number;
+      readonly deckExhausted: boolean;
     };
 
 export interface JokerEventContextV5 {
   readonly eventFacts: JokerEventFactsV5;
   readonly eventCardIdentities: Readonly<Record<CardId, EffectivePlayingCardV3>>;
+  readonly eventCardEnhancementIds?: Readonly<Record<CardId, string | null>>;
 }
 
 export const NO_JOKER_EVENT_FACTS_V5: JokerEventFactsV5 = Object.freeze({

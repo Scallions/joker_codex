@@ -8,6 +8,7 @@ import { isRunStateV3 } from '../model/runV3';
 import type { RunPlayingCard, RunStateV2 } from '../model/runV2';
 import { projectEffectivePlayingCardV3 } from '../poker/effectiveCardV3';
 import { resolveJokerPassiveCapabilities } from './jokerPassiveCapabilitiesV3';
+import { usedConsumableSlotsForRun } from './inventoryCapacityV6';
 
 function modifierOperations(
   state: RunStateV2,
@@ -96,7 +97,7 @@ export function applyDiscardModifierLifecycleV3(
       if (
         entry.operation.type !== 'content-create' ||
         entry.operation.family !== 'tarot' ||
-        next.inventory.consumables.length >= next.rules.consumableSlots
+        usedConsumableSlotsForRun(next) >= next.rules.consumableSlots
       ) {
         continue;
       }
@@ -142,7 +143,7 @@ export function applyRoundEndModifierLifecycleV3(state: RunStateV2): RunStateV2 
       if (
         entry.operation.type === 'baseline' &&
         entry.operation.key === 'create-planet-for-final-hand-if-capacity' &&
-        next.inventory.consumables.length < next.rules.consumableSlots
+        usedConsumableSlotsForRun(next) < next.rules.consumableSlots
       ) {
         const planetId = matchingPlanetId(next);
         if (!planetId) continue;

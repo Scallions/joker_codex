@@ -11,9 +11,14 @@ const ENSEMBLE_LABELS = [
   '云路贵客',
   '夜市账房',
   '异兽散场',
+  '铜线急报',
+  '四色巡游',
+  '镜局重台',
+  '百相压轴',
+  '星火终章',
 ] as const;
 
-test('100 张奇牌均由本地审定素材解码，并为十个班目留下画面证据', async ({
+test('150 张奇牌均由本地审定素材解码，并为十五个班目留下画面证据', async ({
   page,
 }, testInfo) => {
   const remoteRequests: string[] = [];
@@ -50,8 +55,8 @@ test('100 张奇牌均由本地审定素材解码，并为十个班目留下画�
     await next.click();
   }
 
-  expect(contentIds.size).toBe(100);
-  expect(focalKeys.size).toBe(100);
+  expect(contentIds.size).toBe(150);
+  expect(focalKeys.size).toBe(150);
   expect(remoteRequests).toEqual([]);
 
   for (const label of ENSEMBLE_LABELS) {

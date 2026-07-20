@@ -1,5 +1,6 @@
 import type { JokerDefinitionV2 } from '../model/runV2';
 import type { RunStateV5 } from '../model/runV5';
+import type { RunStateV6 } from '../model/runV6';
 import { RANKS, SUITS } from '../model/cards';
 import { validateRunStateV3, type RunValidationResultV3 } from './validateRunStateV3';
 
@@ -17,11 +18,13 @@ function abilityValueIsValid(value: unknown): boolean {
   );
 }
 
-export function validateRunStateV5(run: RunStateV5): RunValidationResultV3 {
+export function validateRunStateV5(run: RunStateV5 | RunStateV6): RunValidationResultV3 {
   const base = validateRunStateV3(run);
   const violations = base.ok ? [] : [...base.violations];
 
-  if (run.schemaVersion !== 5) violations.push('V5 牌局结构版本错误');
+  if (run.schemaVersion !== 5 && run.schemaVersion !== 6) {
+    violations.push('V5 基础牌局结构版本错误');
+  }
   if (!/^[a-f0-9]{8}$/.test(run.migrationV5.recoveryFingerprint)) {
     violations.push('V5 迁移指纹无效');
   }
