@@ -140,13 +140,14 @@ export type CatalogRunState = Omit<
   'schemaVersion' | 'contentVersion' | 'modifiersV3'
 > & {
   readonly schemaVersion:
-    typeof RUN_SCHEMA_VERSION_V3 | typeof RUN_SCHEMA_VERSION_V4 | 5 | 6;
+    typeof RUN_SCHEMA_VERSION_V3 | typeof RUN_SCHEMA_VERSION_V4 | 5 | 6 | 7;
   readonly contentVersion:
     | 'run-economy-2'
     | typeof CONTENT_VERSION_V3
     | typeof CONTENT_VERSION_V4
     | 'joker-catalog-2'
-    | 'joker-catalog-3';
+    | 'joker-catalog-3'
+    | 'progression-modes-1';
   readonly modifiersV3: RunModifiersV3;
   readonly migrationV4?: MigrationMetadataV4;
   readonly jokerRuntimeV5?: RunStateV5['jokerRuntimeV5'];
@@ -185,7 +186,7 @@ export function isRunStateV4(run: RunStateV2): run is RunStateV4 {
 export function isAbilityStateRun(run: RunStateV2): run is AbilityStateRun {
   return (
     isRunStateV4(run) ||
-    ((run.schemaVersion === 5 || run.schemaVersion === 6) &&
+    ((run.schemaVersion === 5 || run.schemaVersion === 6 || run.schemaVersion === 7) &&
       'setupV3' in run &&
       'productionContentV3' in run &&
       'rulesV3' in run &&
@@ -196,7 +197,7 @@ export function isAbilityStateRun(run: RunStateV2): run is AbilityStateRun {
       'migrationV4' in run &&
       'jokerRuntimeV5' in run &&
       'migrationV5' in run &&
-      (run.schemaVersion !== 6 || ('jokerRuntimeV6' in run && 'migrationV6' in run)))
+      (run.schemaVersion === 5 || ('jokerRuntimeV6' in run && 'migrationV6' in run)))
   );
 }
 

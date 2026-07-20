@@ -40,6 +40,7 @@ import {
   type CatalogRunState as RunStateV3,
 } from '../model/runV3';
 import { isRunStateV5OrV6, isRunStateV6, type RunStateV6 } from '../model/runV6';
+import { isRunStateV7 } from '../model/runV7';
 import type {
   BlindDefinition,
   BossRerollChoiceFrame,
@@ -2142,6 +2143,28 @@ function leaveShop(state: RunStateV2, command: LeaveShopCommandV2): CommandResul
     if (!anteEnded.ok) return reject(anteEnded.code, anteEnded.message);
     resolvedState = anteEnded.state;
   }
+  if (isRunStateV7(resolvedState) && resolvedState.sessionV7.runClass === 'tutorial') {
+    const finished = withCheckpoint({
+      ...resolvedState,
+      phase: { kind: 'finished' },
+      shop: null,
+      round: null,
+      result: {
+        kind: 'finished',
+        ante: resolvedState.progress.ante,
+        score: resolvedState.round?.score ?? 0,
+        reason: '完成八步入门教程',
+      },
+    });
+    return accept(finished, [
+      {
+        type: 'shop-left',
+        ante: finished.progress.ante,
+        position: finished.progress.blindPosition,
+      },
+      { type: 'run-finished', ante: finished.progress.ante },
+    ]);
+  }
   const advanced = advanceAfterShop(resolvedState);
   return accept(withCheckpoint(advanced), [
     {
@@ -2177,6 +2200,14 @@ function enterEndless(
   void command;
   if (state.phase.kind !== 'run-won') {
     return reject('illegal-phase', '当前不能进入无尽模式');
+  }
+  if (
+    isRunStateV7(state) &&
+    state.sessionV7.runClass !== 'campaign' &&
+    state.sessionV7.runClass !== 'seeded' &&
+    state.sessionV7.runClass !== 'migrated-legacy'
+  ) {
+    return reject('illegal-phase', '当前模式不能进入无尽演出');
   }
   const ante = materializeAnte(
     state.content,
@@ -2444,7 +2475,12 @@ function choosePackOption(
   }
   return accept(
     withCheckpoint(acquisitionEffects.state),
-    [{ type: 'item-purchased', contentId: option.item.contentId }],
+    [
+      { type: 'item-purchased', contentId: option.item.contentId },
+      ...(option.item.kind === 'consumable'
+        ? [{ type: 'item-consumed' as const, contentId: option.item.contentId }]
+        : []),
+    ],
     [{ type: 'item-arrived', contentId: option.item.contentId }],
   );
 }
@@ -2688,7 +2724,12 @@ function confirmTargetChoice(
   const resumed = resumeAfterTarget(effected.state, choice, resolved.fromInventory);
   const used = applyConsumableUsedWindow(resumed, resolved.contentId);
   if (!used.ok) return reject(used.code, used.message);
-  return accept(withCheckpoint(used.state));
+  return accept(withCheckpoint(used.state), [
+    ...(!resolved.fromInventory
+      ? [{ type: 'item-purchased' as const, contentId: resolved.contentId }]
+      : []),
+    { type: 'item-consumed', contentId: resolved.contentId },
+  ]);
 }
 
 function skipPack(state: RunStateV2, command: SkipPackCommandV2): CommandResultV2 {

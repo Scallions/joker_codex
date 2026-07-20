@@ -4,19 +4,26 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import {
   createLocalProfile,
-  deleteLocalProfile,
   exportActiveProfile,
-  importLocalProfile,
+  importLocalProfileToSlot,
   renameLocalProfile,
   selectLocalProfile,
-  startLocalProductionRun,
+  showMenu,
 } from '../../app/store/appSlice';
 import type { ProfileSlot } from '../../persistence/profiles';
-import { importProfileFromJson } from '../../persistence/profileTransfer';
+import {
+  importProfileFromJson,
+  type ImportedProfile,
+} from '../../persistence/profileTransfer';
 import styles from './ProfileScreen.module.css';
 
 const SLOTS: readonly ProfileSlot[] = [1, 2, 3];
 const SLOT_MARKS = ['甲', '乙', '丙'] as const;
+
+interface ImportCandidate {
+  readonly text: string;
+  readonly imported: ImportedProfile;
+}
 
 export function ProfileScreen() {
   const dispatch = useAppDispatch();
@@ -24,7 +31,8 @@ export function ProfileScreen() {
   const [editingSlot, setEditingSlot] = useState<ProfileSlot | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState('');
-  const [seedText, setSeedText] = useState('');
+  const [importCandidate, setImportCandidate] = useState<ImportCandidate | null>(null);
+  const [importTargetSlot, setImportTargetSlot] = useState<ProfileSlot>(1);
   const [localError, setLocalError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId);
@@ -39,7 +47,6 @@ export function ProfileScreen() {
         renameLocalProfile({
           profileId: profile.id,
           displayName,
-          nowEpochMs: Date.now(),
         }),
       ).then((result) => {
         if (renameLocalProfile.fulfilled.match(result)) {
@@ -53,7 +60,6 @@ export function ProfileScreen() {
         createLocalProfile({
           slot: editingSlot,
           displayName,
-          nowEpochMs: Date.now(),
         }),
       ).then((result) => {
         if (createLocalProfile.fulfilled.match(result)) {
@@ -100,29 +106,24 @@ export function ProfileScreen() {
     setLocalError(null);
     try {
       const text = await file.text();
-      const preview = importProfileFromJson(text);
-      const confirmed = window.confirm(
-        `导入“${preview.profile.displayName}”将覆盖第 ${preview.profile.slot} 档，是否继续？`,
+      const imported = importProfileFromJson(text);
+      const firstEmpty = SLOTS.find(
+        (slot) => !profiles.some((profile) => profile.slot === slot),
       );
-      if (confirmed) await dispatch(importLocalProfile(text)).unwrap();
+      setImportTargetSlot(firstEmpty ?? imported.profile.slot);
+      setImportCandidate({ text, imported });
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : String(error));
     }
   };
 
-  const startRun = () => {
+  const enterSelectedProfile = () => {
     if (!activeProfile) return;
     if (activeProfile.activeRunId) {
       void dispatch(selectLocalProfile(activeProfile.id));
       return;
     }
-    const now = Date.now();
-    void dispatch(
-      startLocalProductionRun({
-        seed: seedText.trim() || `百戏-${activeProfile.slot}-${now.toString(36)}`,
-        nowEpochMs: now,
-      }),
-    );
+    dispatch(showMenu());
   };
 
   return (
@@ -203,21 +204,6 @@ export function ProfileScreen() {
                     >
                       改名
                     </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            `确定删除“${profile.displayName}”及其本地牌局吗？`,
-                          )
-                        ) {
-                          void dispatch(deleteLocalProfile(profile.id));
-                        }
-                      }}
-                    >
-                      删除
-                    </button>
                   </div>
                 </>
               ) : (
@@ -244,32 +230,106 @@ export function ProfileScreen() {
           <span>当前戏主</span>
           <strong>{activeProfile?.displayName ?? '未选择'}</strong>
         </div>
-        <label className={styles.seedField}>
-          <span>演出种子（可选）</span>
-          <input
-            value={seedText}
-            maxLength={64}
-            placeholder="留空则自动题种"
-            onChange={(event) => setSeedText(event.target.value)}
-          />
-        </label>
         <button
           className={styles.startButton}
           disabled={!activeProfile || busy}
-          onClick={startRun}
+          onClick={enterSelectedProfile}
           type="button"
         >
           {busy
             ? '正在落印…'
             : activeProfile?.activeRunId
               ? '继续未完牌局'
-              : '开始八幕演出'}
+              : '进入主菜单'}
         </button>
       </footer>
 
       {localError ? <p className={styles.localError}>{localError}</p> : null}
 
       <AnimatePresence>
+        {importCandidate ? (
+          <motion.div
+            className={styles.modalBackdrop}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className={styles.nameForm}
+              initial={{ y: 24, scale: 0.98 }}
+              animate={{ y: 0, scale: 1 }}
+              exit={{ y: 16, scale: 0.98 }}
+            >
+              <p>档案导入预览</p>
+              <strong>{importCandidate.imported.profile.displayName}</strong>
+              <span>
+                目标{' '}
+                {
+                  importCandidate.imported.profile.objectives.filter(
+                    ({ completedAtEpochMs }) => completedAtEpochMs !== null,
+                  ).length
+                }{' '}
+                / 78 · 成就{' '}
+                {
+                  importCandidate.imported.profile.achievements.filter(
+                    ({ completedAtEpochMs }) => completedAtEpochMs !== null,
+                  ).length
+                }{' '}
+                / 31 · {importCandidate.imported.run ? '含活动牌局' : '无活动牌局'}
+              </span>
+              <label htmlFor="profile-import-slot">目标档位</label>
+              <select
+                id="profile-import-slot"
+                value={importTargetSlot}
+                onChange={(event) =>
+                  setImportTargetSlot(Number(event.target.value) as ProfileSlot)
+                }
+              >
+                {SLOTS.map((slot) => (
+                  <option key={slot} value={slot}>
+                    第 {slot} 档 ·{' '}
+                    {profiles.find((profile) => profile.slot === slot)?.displayName ??
+                      '空档'}
+                  </option>
+                ))}
+              </select>
+              <div>
+                <button type="button" onClick={() => setImportCandidate(null)}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    const occupant = profiles.find(
+                      (profile) => profile.slot === importTargetSlot,
+                    );
+                    if (
+                      occupant &&
+                      !window.confirm(
+                        `第 ${importTargetSlot} 档“${occupant.displayName}”将被替换，并保存一步恢复点。继续？`,
+                      )
+                    ) {
+                      return;
+                    }
+                    void dispatch(
+                      importLocalProfileToSlot({
+                        text: importCandidate.text,
+                        targetSlot: importTargetSlot,
+                      }),
+                    ).then((result) => {
+                      if (importLocalProfileToSlot.fulfilled.match(result)) {
+                        setImportCandidate(null);
+                      }
+                    });
+                  }}
+                >
+                  确认导入
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
         {editingSlot ? (
           <motion.div
             className={styles.modalBackdrop}

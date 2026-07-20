@@ -64,6 +64,8 @@ export interface CompiledRunSetupV3 {
 
 export interface CreateProductionRunOptionsV3 extends CompileRunSetupOptionsV3 {
   readonly seed: string;
+  readonly eligibilityObjectiveIds?: readonly string[];
+  readonly discoveredContentIds?: readonly string[];
   readonly resolvedExternalIds?: ReadonlySet<string>;
   readonly externalJokerDefinitions?: readonly JokerDefinitionV2[];
   readonly validationMode?: 'catalog-child' | 'integration-strict';
@@ -640,16 +642,51 @@ export function createProductionRunV3(
     ...setup.rulesV3.excludedRuleKeys,
   ]);
   const rowById = new Map(catalog.rows.map((row) => [row.id, row]));
+  const frozenObjectiveIds = options.eligibilityObjectiveIds
+    ? new Set(options.eligibilityObjectiveIds)
+    : null;
+  const frozenDiscoveryIds = options.discoveredContentIds
+    ? new Set(options.discoveredContentIds)
+    : null;
+  const allowedByFrozenProfile = (row: CatalogRow): boolean => {
+    if (!frozenObjectiveIds || !frozenDiscoveryIds) return true;
+    if (
+      row.unlockObjectiveId !== null &&
+      !frozenObjectiveIds.has(row.unlockObjectiveId)
+    ) {
+      return false;
+    }
+    if (
+      row.availability.kind === 'profile-objective' &&
+      !frozenObjectiveIds.has(row.availability.value)
+    ) {
+      return false;
+    }
+    if (
+      row.discovery.kind === 'profile-objective' &&
+      !frozenObjectiveIds.has(row.discovery.value)
+    ) {
+      return false;
+    }
+    return (
+      row.discovery.kind !== 'after-use' || frozenDiscoveryIds.has(row.discovery.value)
+    );
+  };
   const allowedBySetup = (contentId: string): boolean => {
     const row = rowById.get(contentId);
     return (
-      row === undefined || !catalogRowIsExcludedBySemanticRules(row, semanticRuleKeys)
+      row === undefined ||
+      (allowedByFrozenProfile(row) &&
+        !catalogRowIsExcludedBySemanticRules(row, semanticRuleKeys))
     );
   };
   const noJokerRoutes = semanticRuleKeys.has('no-joker-routes');
   const content = {
     ...productionContent,
-    items: [...productionContent.items, ...suppliedExternalJokers],
+    items: [
+      ...productionContent.items.filter(({ contentId }) => allowedBySetup(contentId)),
+      ...suppliedExternalJokers,
+    ],
     blinds: productionContent.blinds.filter(({ id }) => allowedBySetup(id)),
     tags: productionContent.tags.filter(({ id }) => allowedBySetup(id)),
     vouchers: productionContent.vouchers.filter(({ id }) => allowedBySetup(id)),

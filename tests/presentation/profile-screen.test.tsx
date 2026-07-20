@@ -18,7 +18,9 @@ describe('三档案戏票页', () => {
     await user.type(screen.getByLabelText('档案名'), '掌灯人');
     await user.click(screen.getByRole('button', { name: '落印建档' }));
 
-    expect(await screen.findByRole('heading', { name: '掌灯人' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '开始八幕演出' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: '今晚演哪一出' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '普通战役' })).toBeInTheDocument();
   });
 });

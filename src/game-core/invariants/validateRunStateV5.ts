@@ -22,7 +22,7 @@ export function validateRunStateV5(run: RunStateV5 | RunStateV6): RunValidationR
   const base = validateRunStateV3(run);
   const violations = base.ok ? [] : [...base.violations];
 
-  if (run.schemaVersion !== 5 && run.schemaVersion !== 6) {
+  if (run.schemaVersion !== 5 && run.schemaVersion !== 6 && run.schemaVersion !== 7) {
     violations.push('V5 基础牌局结构版本错误');
   }
   if (!/^[a-f0-9]{8}$/.test(run.migrationV5.recoveryFingerprint)) {

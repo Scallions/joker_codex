@@ -36,6 +36,7 @@ function commitRunCommand(
   profile: ProfileRecord,
   current: RunStateV2,
   command: RunCommandV2,
+  nowEpochMs: number,
 ): Promise<CommitRunCommandResult>;
 ```
 
@@ -260,6 +261,85 @@ function bossEffectsDisabledForRun(
 ): boolean;
 ```
 
+V7 adds profile ownership, a monotonic run sequence, run-class policy, and frozen
+profile-derived eligibility to the V6 gameplay state. New runs must be V7; V1-V6
+runs are compatibility inputs only.
+
+```ts
+type RunClassV7 =
+  | "campaign"
+  | "seeded"
+  | "challenge"
+  | "tutorial"
+  | "migrated-legacy";
+
+interface RunSessionV7 {
+  readonly runClass: RunClassV7;
+  readonly profileId: ProfileId | null;
+  readonly runSequence: number;
+  readonly progressionRulesVersion: typeof PROGRESSION_RULES_VERSION;
+  readonly eligibilityObjectiveIds: readonly string[];
+  readonly discoveredContentIds: readonly string[];
+  readonly tutorialScriptVersion: typeof TUTORIAL_SCRIPT_VERSION | null;
+}
+
+type RunStateV7 = Omit<RunStateV6, "schemaVersion" | "contentVersion"> & {
+  readonly schemaVersion: 7;
+  readonly contentVersion: RunStateV6["contentVersion"];
+  readonly sessionV7: RunSessionV7;
+  readonly migrationV7: MigrationMetadataV7;
+};
+
+interface CreateProductionRunOptionsV7 extends CreateProductionRunOptionsV6 {
+  readonly profileId: ProfileId;
+  readonly runSequence: number;
+  readonly runClass: Exclude<RunClassV7, "migrated-legacy">;
+  readonly eligibilityObjectiveIds: readonly string[];
+  readonly discoveredContentIds: readonly string[];
+}
+
+function createProductionRunV7(
+  catalog: ProductionCatalog,
+  options: CreateProductionRunOptionsV7,
+): RunStateV7;
+
+function migrateRunV6ToV7(run: RunStateV2): RunStateV7;
+function validateRunStateV7(state: RunStateV7): RunValidationResultV3;
+function validateProfileRunPair(
+  profile: ProfileRecord,
+  run: RunStateV2 | null,
+): ProfileRunPairValidation;
+```
+
+`runId` is `run:<profileId>:<runSequence>:<runClass>:<seed>`. A new run uses an
+eight-character uppercase alphanumeric seed and a positive safe-integer sequence.
+A migrated legacy run has `profileId: null`, `runSequence: 0`, and never advances
+progression. `eligibilityObjectiveIds` and `discoveredContentIds` are sorted,
+unique start-of-run snapshots; runtime catalogs, shop pools, setup, and validation
+must use those snapshots rather than live profile state.
+
+Profile schema V1 is the owner of all durable progression state. The projection
+cursor and run-local result delta are committed with the same checkpoint as the
+run; only the terminal projection is copied to `lastResultSummary`.
+
+```ts
+interface ProfileRecord extends ProfileProgressionState {
+  readonly schemaVersion: 1;
+  readonly id: ProfileId;
+  readonly slot: 1 | 2 | 3;
+  readonly activeRunId: RunId | null;
+}
+
+interface CurrentRunProgress {
+  readonly runId: RunId | null;
+  readonly campaignVictorySettled: boolean;
+  readonly resultDelta: ResultDeltaSummary | null;
+  // bounded run-local counters omitted here
+}
+
+type ProgressionPolicy = "full" | "challenge-only" | "tutorial-only" | "none";
+```
+
 V6 owns the J103/J127 shared targets independently from V5's J083/J099 targets.
 Target draws use a stable non-Stone full-deck pool, materialize pool/index evidence,
 and use a no-RNG Ace-of-Spades fallback. Capacity debt is always exactly
@@ -296,6 +376,14 @@ interface GameRepository {
   getActiveProfileId(): Promise<ProfileId | null>;
   loadRun(id: ProfileId): Promise<RunStateV2 | undefined>;
   loadRecoveryRun(id: ProfileId): Promise<RunStateV2 | undefined>;
+  loadProfileActionRecovery(id: ProfileId): Promise<
+    { readonly profile: ProfileRecord; readonly run: RunStateV2 | null } | undefined
+  >;
+  restoreProfileAction(id: ProfileId): Promise<{
+    readonly profile: ProfileRecord;
+    readonly run: RunStateV2 | null;
+  }>;
+  resetProfile(id: ProfileId, nowEpochMs: number): Promise<ProfileRecord>;
   commitCheckpoint(profile: ProfileRecord, run: RunStateV2): Promise<void>;
   replaceProfile(profile: ProfileRecord, run: RunStateV2 | null): Promise<void>;
   clearRun(profile: ProfileRecord): Promise<void>;
@@ -303,20 +391,20 @@ interface GameRepository {
 ```
 
 Physical IndexedDB version 1 owns `meta`, `settings`, `profiles`, `runs`, and
-`recovery`; the current logical run/content schema inside those stores is V6
-(`joker-catalog-3` for new campaigns). Loads chain V1 -> V2 -> V3 -> V4 -> V5 -> V6 while
+`recovery`, and `profileActionRecovery`; the current logical run schema inside
+those stores is V7. Loads chain V1 -> V2 -> V3 -> V4 -> V5 -> V6 -> V7 while
 preserving the exact pre-migration recovery record. Profile export normalizes a
-valid older run to a V6 `profile-transfer-6` envelope containing `profile`, the
-optional run, run content version, and a checksum over the canonical payload.
-Import still accepts valid legacy envelopes and migrates them forward. Positive
-Infinity is encoded by the score wire codec and must never pass through raw
-`JSON.stringify` as `null`.
+valid older run to a `profile-transfer-7` envelope containing profile schema/run
+schema/content versions, the profile, optional run, and a checksum over the
+canonical payload. Import still accepts valid legacy envelopes and migrates them
+forward. The 2 MB limit is measured in UTF-8 bytes. Positive Infinity is encoded
+by the score wire codec and must never pass through raw `JSON.stringify` as `null`.
 
 ## 3. Contracts
 
 - `src/game-core/**` is framework-free and may not import React, Redux, Motion,
   IndexedDB, `idb`, presentation, or application modules.
-- The V2-compatible command surface and `RunStateV6` are fully serializable.
+- The V2-compatible command surface and current `RunStateV7` are fully serializable.
   Production runs use `bxqp:` identifiers and snapshot exactly 230 non-Joker rows
   plus 150 real Joker rows. The aggregate is 380, IDs `bxqp:joker:001` through
   `150` are locally resolved, and no reserved Joker dependency remains unresolved
@@ -388,8 +476,17 @@ Infinity is encoded by the score wire codec and must never pass through raw
 - The first acquisition of a production Joker emits one durable discovery
   observation. Already materialized offers and pack choices remain unchanged
   across reload or a later catalog refresh.
-- New runs default to production D01/S01 and `joker-catalog-3`; fixtures remain
+- New runs default to production D01/S01 and `progression-modes-1`; fixtures remain
   explicit test/migration inputs only.
+- V7 run policy is closed: campaign (including post-win endless) advances full
+  progression; challenge advances only challenge attempts/completions, its
+  explicitly derived unlocks/achievements/statistics, and no ordinary ledger;
+  tutorial advances only tutorial state; seeded and migrated-legacy advance none.
+- Challenge setup requires both its sequential gate and matching completed
+  objective, and uses fixed D01/S01. Tutorial also uses D01/S01. Campaign and
+  seeded stakes are contextual to the selected deck. Starting any mode freezes the
+  eligible objective IDs and discovered Joker IDs; later profile changes cannot
+  expand an active run's pools.
 - Inventory capacity is the sum of instance `slotContribution`. A pack's temporary
   capacity is consumed once and materialized as an instance-level contribution
   exemption; it is not a hidden UI allowance.
@@ -404,9 +501,22 @@ Infinity is encoded by the score wire codec and must never pass through raw
   reveal state/events`. React never displays a proposed checkpoint before
   `transaction.done` resolves.
 - `commitCheckpoint` writes the prior run to `recovery`, then writes the profile and
-  new run in one read-write transaction. Import replacement is also atomic.
-- Import accepts at most 2 MB, validates JSON, schema/content versions, checksum,
-  profile/run identity, and run invariants before requesting user confirmation.
+  new run in one read-write transaction. Before any profile-only write, the
+  repository reads the paired run and validates the pair in the same transaction.
+  Import replacement, reset, restore, clear, and delete are also pair-atomic.
+- A valid profile/run pair has matching active-run IDs, V7 owner, run sequence,
+  projection cursor/checkpoint, frozen objective/discovery subsets, and legal
+  setup. The pair validator is shared by repository writes and transfer import.
+- Import accepts at most 2 MB of UTF-8, validates JSON, schema/content versions,
+  checksum, profile/run identity, V7 frozen setup, and run invariants before
+  requesting user confirmation.
+- A `run-lost` or `finished` checkpoint remains in `runs` so refresh can render the
+  same result. It is cleared only when the player explicitly returns to the menu.
+- Browser navigation is a typed `DurableAppRoute` serialized in the location hash.
+  With no active run, initialization may restore menu/setup/collection/
+  achievements/statistics/help/maintenance/notices. Any valid active run overrides
+  the hash and routes from its committed phase. A fresh profile cannot use a setup
+  hash to bypass the first-tutorial prompt.
 - Screens dispatch typed commands and render selectors/state only; poker evaluation,
   money changes, draw order, and inventory rules do not live in components.
 - Shop, pack, table, and audit screens resolve Joker art, rarity, flavor, and
@@ -441,16 +551,23 @@ Infinity is encoded by the score wire codec and must never pass through raw
 | Proposed state violates card, ID, budget, or phase invariants | Do not persist or reveal it |
 | IndexedDB transaction rejects | Keep the exact prior React state; report Chinese error |
 | Import exceeds size, fails JSON/Zod/checksum, or mismatches IDs | Reject before confirmation; keep all slots intact |
-| Stored V1/V2/V3/V4/V5 run is valid | Migrate through V6 atomically and keep the exact preimage in `recovery` |
+| Stored V1/V2/V3/V4/V5/V6 run is valid | Migrate through V7 atomically and keep the exact preimage in `recovery` |
 | V4/V5/V6 owned Joker lacks exactly one matching modifier/ability-state record | Invariant failure; do not persist |
 | V4/V5/V6 ability-state key/type differs from the frozen definition | Invariant/Zod failure; do not replace local data |
+| V7 owner/run sequence/projection cursor differs from the profile | Pair validation failure; abort the whole transaction |
+| V7 setup or runtime content requires an objective/discovery absent from the frozen snapshot | Invariant/pair validation failure; do not start, import, or commit |
+| Challenge/tutorial does not use D01/S01, or challenge is ahead of its sequential gate | Reject setup/import; keep profile and run unchanged |
+| Seeded/tutorial facts attempt to advance ordinary progression | Filter by run-class policy; persist no ordinary delta |
+| Import text exceeds 2,000,000 UTF-8 bytes | Reject before JSON parsing or replacement |
+| Terminal run is reloaded before explicit return-to-menu | Restore the same result phase and accumulated run delta |
+| Route hash requests setup for a fresh profile | Restore `menu`, keep `setupMode: null`, and show tutorial prompt |
 | Forced Joker rarity has no eligible row | `pool-empty`; return the original RNG and offer state |
 | Joker acquisition, sale, or destruction leaves an orphan modifier | Reject the whole proposal |
 | Stored/exported schema or content version is newer/unsupported | Reject; never downgrade or replace current data |
 | `integration-strict` has unresolved reserved 奇牌 IDs | Catalog/run creation fails; test doubles are forbidden |
 | Production catalog is not exactly 230 non-Jokers + 150 Jokers, or localization/asset/ownership/contract closure drifts | Bootstrap/content audit fails before play |
 | Joker raster is remote, missing, not 768x1024, shares a focal key, or lacks approved provenance | Content/browser audit fails before play |
-| Profile is deleted or replaced | Profile, run, recovery, and active-profile metadata remain consistent in one transaction |
+| Profile is deleted or replaced | Profile, run, recovery, profile-action recovery, and active-profile metadata remain consistent in one transaction |
 
 ## 5. Good / Base / Bad Cases
 
@@ -459,9 +576,17 @@ Infinity is encoded by the score wire codec and must never pass through raw
 - Good: a new fixture adds a serializable `EffectReference` and registered pure
   handler; existing routing invokes it at the declared window without a command
   switch change.
-- Good: production D01/S01 created twice from the same seed has identical V6 setup,
+- Good: production D01/S01 created twice from the same profile, sequence, mode, and
+  seed has identical V7 identity, frozen eligibility, V6 gameplay state,
   380-row snapshot, lineup, RNG, ability state, targets, discovery observations, and
   materialized choices, including after save/reload or export/import.
+- Good: a campaign checkpoint projects facts once, advances the cursor to the same
+  checkpoint, accumulates one run-local delta, and commits profile plus run in one
+  transaction; refresh of its terminal checkpoint renders the same complete result.
+- Base: a valid V1-V6 run migrates to a V7 `migrated-legacy` session with sequence
+  zero, evidence-backed discoveries only, and no invented historical progression.
+- Base: a seeded run may be replayed from its canonical share code, but produces no
+  objective, collection, achievement, victory-mark, or ordinary statistics delta.
 - Good: a Joker catalog row declares predicates, values, copy facet, stickers,
   initial state, localization, and asset metadata; generic handlers execute it
   without an ID branch, and the shared selector renders its committed current value.
@@ -481,6 +606,9 @@ Infinity is encoded by the score wire codec and must never pass through raw
 - Bad: React derives `storedMult`, sale growth, or silk count independently from
   engine rules, or an acquisition/destruction path updates inventory without the
   matching V4/V5/V6 modifier and discovery state.
+- Bad: a shop reads the current profile after run start, a profile is saved without
+  validating its paired run, a terminal run is deleted during load, or a component
+  stores the only copy of the current route/result delta.
 
 ## 6. Tests Required
 
@@ -492,17 +620,25 @@ Infinity is encoded by the score wire codec and must never pass through raw
   integration must prove lifecycle windows produce durable observations; score
   goldens must freeze source/copy/retrigger ordering and cycle/budget rejection.
 - Accepted campaign/economy commands must pass the version-appropriate V2/V3/V4/V5/V6
-  invariant validator and Zod structured-clone round trip after every checkpoint.
+  /V7 invariant validator and Zod structured-clone round trip after every checkpoint.
   Rejections compare the entire prior state, RNG, offers, inventory, ability
   state, observations, and checkpoint.
 - Property tests mix legal and rejected V2 commands and assert the same invariants;
   include regression coverage for face-down/forced/selected IDs after zone moves.
 - Repository tests for checkpoint/recovery, injected write failure, three-profile
   isolation, atomic replacement, and invalid import non-mutation.
-- V1 -> V2 -> V3 -> V4 -> V5 -> V6 migration must be deterministic and idempotent at its
+- V1 -> V2 -> V3 -> V4 -> V5 -> V6 -> V7 migration must be deterministic and
+  idempotent at its
   terminal version, retain the exact recovery preimage, reject future versions,
   and preserve production/migrated state through IndexedDB and
-  `profile-transfer-6` export/import round trips.
+  `profile-transfer-7` export/import round trips.
+- Pair tests must reject mismatched active-run IDs, V7 owners, sequence/cursor,
+  forged eligibility/discovery snapshots, locked setup, and a profile-only save
+  that would orphan a run. Injected transaction failure must leave both records
+  byte-equivalent to the preimage.
+- Progression policy tests must cover campaign/endless, challenge success/loss,
+  seeded, tutorial, and migrated-legacy facts; terminal result tests assert the
+  accumulated whole-run delta survives reload until explicit menu return.
 - Joker catalog tests assert 150 contiguous IDs, 61 Common/64 Uncommon/20 Rare/
   5 Legendary rows, exact 230/150/380 counts, zero unresolved production IDs, and
   complete localization, contract, discovery, ownership, and asset closure.
@@ -517,7 +653,9 @@ Infinity is encoded by the score wire codec and must never pass through raw
 - Component tests assert screens dispatch commands and show committed state/errors.
 - Playwright runs the same deterministic script in Chromium and WebKit, reloads at
   action boundaries, compares the full saved `RunState`, and covers win, loss, shop,
-  profile isolation, and export/import.
+  profile isolation, and export/import. Route coverage additionally reloads a
+  no-run feature page and mode setup, proves an active run overrides the route, and
+  proves terminal results remain visible.
 - The catalog audit must prove exactly 230 unique production rows, all-local
   assets, 13 family render paths, and zero remote content requests in Chromium
   and WebKit.
@@ -538,6 +676,9 @@ const result = executeCommandV2(run, command);
 if (result.ok) dispatch(runChanged(result.state));
 await repository.commitCheckpoint(profile, result.state);
 
+// Live profile state must not expand a run that already froze its pools.
+const shopPool = catalog.rows.filter((row) => isAvailable(profile, row));
+
 // Catalog IDs must not select executable behavior.
 if (effect.handlerId === "fixture:some-handler") mutateRun(run);
 
@@ -553,8 +694,18 @@ if (!result.ok) return result;
 
 const validation = validateRunStateV2(result.state);
 if (!validation.ok) return invariantFailure(validation.violations);
-await repository.commitCheckpoint(profile, result.state);
+const projectedProfile = reduceProfileProgression(
+  profile,
+  deriveProgressionFacts(run, result.state, result.domainEvents),
+  nowEpochMs,
+);
+const pair = validateProfileRunPair(projectedProfile, result.state);
+if (!pair.ok) return invariantFailure(pair.violations);
+await repository.commitCheckpoint(projectedProfile, result.state);
 return result; // reducer reveals this checkpoint only after persistence succeeds
+
+const frozenObjectives = new Set(run.sessionV7.eligibilityObjectiveIds);
+const shopPool = catalog.rows.filter((row) => isFrozenAvailable(row, frozenObjectives));
 
 const presentation = selectOwnedJokerPresentation(run, joker);
 // React renders presentation.currentValue; the selector reads committed V4/V5/V6 state.

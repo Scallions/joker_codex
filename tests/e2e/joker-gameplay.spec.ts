@@ -150,6 +150,10 @@ async function importFixtureRun(
     ...createProfile(1, '奇牌验收戏主', 100),
     activeRunId: run.runId,
     updatedAtEpochMs: 200,
+    currentRunProgress: {
+      ...createProfile(1, '奇牌验收戏主', 100).currentRunProgress,
+      runId: run.runId,
+    },
   };
   const fixturePath = testInfo.outputPath(`${label}.json`);
   await writeFile(fixturePath, exportProfileToJson(profile, run), 'utf8');
@@ -157,6 +161,7 @@ async function importFixtureRun(
   await expect(page.getByText('三方戏台，三份命数')).toBeVisible();
   page.once('dialog', (dialog) => void dialog.accept());
   await page.locator('input[type="file"]').setInputFiles(fixturePath);
+  await page.getByRole('button', { name: '确认导入' }).click();
 }
 
 async function expectApprovedJokerImage(image: Locator, assetName: string) {

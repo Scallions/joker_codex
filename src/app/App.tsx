@@ -2,9 +2,27 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Provider } from 'react-redux';
 
 import { IndexedDbGameRepository } from '../persistence/indexedDbRepository';
+import { AchievementBookScreen } from '../presentation/progression/AchievementBookScreen';
+import { CollectionScreen } from '../presentation/progression/CollectionScreen';
+import { HelpReferenceScreen } from '../presentation/progression/HelpReferenceScreen';
+import { MainMenuScreen } from '../presentation/progression/MainMenuScreen';
+import { ModeSetupScreen } from '../presentation/progression/ModeSetupScreen';
+import { NoticesScreen } from '../presentation/progression/NoticesScreen';
+import { ProfileMaintenanceScreen } from '../presentation/progression/ProfileMaintenanceScreen';
+import { ProgressionNoticeBanners } from '../presentation/progression/ProgressionNoticeBanners';
+import { StatisticsScreen } from '../presentation/progression/StatisticsScreen';
+import { TutorialCoach } from '../presentation/progression/TutorialCoach';
+import { isRunStateV7 } from '../game-core/model/runV7';
 import { ApplicationErrorBoundary } from './ApplicationErrorBoundary';
+import { readBrowserRoute, replaceBrowserRoute } from './routeState';
 import { createGameStore, type GameStore } from './store';
-import { initializeApplication, showProfiles } from './store/appSlice';
+import {
+  initializeApplication,
+  showHelp,
+  showMaintenance,
+  showMenu,
+  showProfiles,
+} from './store/appSlice';
 import { useAppDispatch, useAppSelector } from './store/hooks';
 import styles from './App.module.css';
 
@@ -83,7 +101,7 @@ function WelcomeStage() {
 function GameApplication() {
   const dispatch = useAppDispatch();
   const initialized = useRef(false);
-  const { status, error, run } = useAppSelector((state) => state.app);
+  const { status, error, run, setupMode } = useAppSelector((state) => state.app);
   const catalogAuditMode =
     typeof window === 'undefined'
       ? null
@@ -95,6 +113,15 @@ function GameApplication() {
     initialized.current = true;
     void dispatch(initializeApplication());
   }, [dispatch]);
+
+  useEffect(() => {
+    if (catalogAudit || status === 'loading') return;
+    if (status === 'setup') {
+      if (setupMode) replaceBrowserRoute({ status, setupMode });
+      return;
+    }
+    replaceBrowserRoute({ status });
+  }, [catalogAudit, setupMode, status]);
 
   return (
     <main className={styles.viewport}>
@@ -108,6 +135,16 @@ function GameApplication() {
             />
           ) : null}
           {!catalogAudit && status === 'profiles' ? <ProfileScreen /> : null}
+          {!catalogAudit && status === 'menu' ? <MainMenuScreen /> : null}
+          {!catalogAudit && status === 'setup' ? <ModeSetupScreen /> : null}
+          {!catalogAudit && status === 'collection' ? <CollectionScreen /> : null}
+          {!catalogAudit && status === 'achievements' ? <AchievementBookScreen /> : null}
+          {!catalogAudit && status === 'statistics' ? <StatisticsScreen /> : null}
+          {!catalogAudit && status === 'help' ? <HelpReferenceScreen /> : null}
+          {!catalogAudit && status === 'notices' ? <NoticesScreen /> : null}
+          {!catalogAudit && status === 'maintenance' ? (
+            <ProfileMaintenanceScreen />
+          ) : null}
           {!catalogAudit && status === 'playing' && run?.phase.kind === 'blind-select' ? (
             <BlindSelectScreen />
           ) : null}
@@ -134,15 +171,46 @@ function GameApplication() {
           ) : null}
         </Suspense>
         {!catalogAudit && status === 'playing' ? (
-          <button
-            type="button"
-            className={styles.profileNav}
-            aria-label="返回戏主名簿"
-            onClick={() => dispatch(showProfiles())}
-          >
-            戏主名簿
-          </button>
+          <>
+            <button
+              type="button"
+              className={styles.menuNav}
+              onClick={() => dispatch(showMenu())}
+            >
+              主菜单
+            </button>
+            <button
+              type="button"
+              className={styles.helpNav}
+              onClick={() => dispatch(showHelp())}
+            >
+              牌型帮助
+            </button>
+            <button
+              type="button"
+              className={styles.maintenanceNav}
+              onClick={() => dispatch(showMaintenance())}
+            >
+              档案维护
+            </button>
+            <button
+              type="button"
+              className={styles.profileNav}
+              aria-label="返回戏主名簿"
+              onClick={() => dispatch(showProfiles())}
+            >
+              戏主名簿
+            </button>
+          </>
         ) : null}
+        {!catalogAudit &&
+        status === 'playing' &&
+        run &&
+        isRunStateV7(run) &&
+        run.sessionV7.runClass === 'tutorial' ? (
+          <TutorialCoach />
+        ) : null}
+        {!catalogAudit && status === 'playing' ? <ProgressionNoticeBanners /> : null}
         <Suspense fallback={null}>
           <PresentationQueue />
         </Suspense>
@@ -154,7 +222,14 @@ function GameApplication() {
 
 export function App({ store: providedStore }: AppProps = {}) {
   const [store] = useState<GameStore>(
-    () => providedStore ?? createGameStore(new IndexedDbGameRepository()),
+    () =>
+      providedStore ??
+      createGameStore(
+        new IndexedDbGameRepository(),
+        undefined,
+        undefined,
+        readBrowserRoute,
+      ),
   );
 
   return (

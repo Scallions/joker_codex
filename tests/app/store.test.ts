@@ -7,17 +7,22 @@ import {
   deleteLocalProfile,
   renameLocalProfile,
   selectLocalProfile,
+  skipActiveTutorial,
   startLocalFixtureRun,
   submitRunCommand,
 } from '../../src/app/store/appSlice';
 import type { ProfileId } from '../../src/game-core/model/ids';
 import type { RunStateV2 } from '../../src/game-core/model/runV2';
 import type { GameRepository } from '../../src/persistence/repository';
-import type { ProfileRecord } from '../../src/persistence/profiles';
+import { createProfile, type ProfileRecord } from '../../src/persistence/profiles';
 
 function memoryRepository(): GameRepository {
   const profiles = new Map<string, ProfileRecord>();
   const runs = new Map<string, RunStateV2>();
+  const profileActions = new Map<
+    string,
+    { readonly profile: ProfileRecord; readonly run: RunStateV2 | null }
+  >();
   let activeProfileId: ProfileId | null = null;
 
   return {
@@ -35,6 +40,27 @@ function memoryRepository(): GameRepository {
     getActiveProfileId: async () => activeProfileId,
     loadRun: async (id) => runs.get(id),
     loadRecoveryRun: async () => undefined,
+    loadProfileActionRecovery: async (id) => profileActions.get(id),
+    restoreProfileAction: async (id) => {
+      const restored = profileActions.get(id);
+      if (!restored) throw new Error('没有恢复点');
+      profiles.set(id, restored.profile);
+      if (restored.run) runs.set(id, restored.run);
+      else runs.delete(id);
+      return restored;
+    },
+    resetProfile: async (id, nowEpochMs) => {
+      const profile = profiles.get(id);
+      if (!profile) throw new Error('档案不存在');
+      profileActions.set(id, { profile, run: runs.get(id) ?? null });
+      const reset = {
+        ...createProfile(profile.slot, profile.displayName, profile.createdAtEpochMs),
+        updatedAtEpochMs: nowEpochMs,
+      };
+      profiles.set(id, reset);
+      runs.delete(id);
+      return reset;
+    },
     commitCheckpoint: async (profile, run) => {
       profiles.set(profile.id, profile);
       runs.set(profile.id, run);
@@ -170,5 +196,69 @@ describe('应用状态纵切片', () => {
     await store.dispatch(deleteLocalProfile(profileId)).unwrap();
     expect(store.getState().app.profiles).toEqual([]);
     expect(store.getState().app.activeProfileId).toBeNull();
+  });
+
+  it('刷新后恢复无活动牌局的功能页面与模式设置', async () => {
+    const repository = memoryRepository();
+    const source = createGameStore(repository);
+    await source.dispatch(initializeApplication()).unwrap();
+    await source
+      .dispatch(createLocalProfile({ slot: 1, displayName: '寻路人', nowEpochMs: 100 }))
+      .unwrap();
+    await source.dispatch(skipActiveTutorial({ nowEpochMs: 150 })).unwrap();
+
+    const collection = createGameStore(repository, Date.now, undefined, () => ({
+      status: 'collection',
+    }));
+    await collection.dispatch(initializeApplication()).unwrap();
+    expect(collection.getState().app.status).toBe('collection');
+
+    const seededSetup = createGameStore(repository, Date.now, undefined, () => ({
+      status: 'setup',
+      setupMode: 'seeded',
+    }));
+    await seededSetup.dispatch(initializeApplication()).unwrap();
+    expect(seededSetup.getState().app).toMatchObject({
+      status: 'setup',
+      setupMode: 'seeded',
+    });
+  });
+
+  it('活动牌局优先于刷新前的功能页面路由', async () => {
+    const repository = memoryRepository();
+    const source = createGameStore(repository);
+    await source.dispatch(initializeApplication()).unwrap();
+    await source
+      .dispatch(createLocalProfile({ slot: 1, displayName: '续局人', nowEpochMs: 100 }))
+      .unwrap();
+    await source
+      .dispatch(startLocalFixtureRun({ seed: 'durable-run', nowEpochMs: 200 }))
+      .unwrap();
+
+    const restored = createGameStore(repository, Date.now, undefined, () => ({
+      status: 'collection',
+    }));
+    await restored.dispatch(initializeApplication()).unwrap();
+    expect(restored.getState().app.status).toBe('playing');
+    expect(restored.getState().app.run?.seed).toBe('durable-run');
+  });
+
+  it('新档案不能借刷新路由越过首次教程提示', async () => {
+    const repository = memoryRepository();
+    const source = createGameStore(repository);
+    await source.dispatch(initializeApplication()).unwrap();
+    await source
+      .dispatch(createLocalProfile({ slot: 1, displayName: '新戏主', nowEpochMs: 100 }))
+      .unwrap();
+
+    const restored = createGameStore(repository, Date.now, undefined, () => ({
+      status: 'setup',
+      setupMode: 'campaign',
+    }));
+    await restored.dispatch(initializeApplication()).unwrap();
+    expect(restored.getState().app).toMatchObject({
+      status: 'menu',
+      setupMode: null,
+    });
   });
 });

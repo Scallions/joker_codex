@@ -1,11 +1,12 @@
-import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
+import { createAsyncThunk, createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 import { createRunEconomyFixtureRun } from '../../content/fixtures/runEconomy';
 import { PRODUCTION_CATALOG } from '../../content/productionCatalog';
-import { createProductionRunV6 } from '../../content/runtime/runSetupV6';
+import { createProductionRunV7 } from '../../content/runtime/runSetupV7';
 import type { PresentationEventV2, RunCommandV2 } from '../../game-core/commands/typesV2';
 import type { ProfileId } from '../../game-core/model/ids';
 import type { RunStateV2 } from '../../game-core/model/runV2';
+import { isRunStateV7, type RunClassV7 } from '../../game-core/model/runV7';
 import {
   createProfile,
   renameProfile,
@@ -16,10 +17,38 @@ import type { GameRepository } from '../../persistence/repository';
 import {
   exportProfileToJson,
   importProfileFromJson,
+  remapImportedProfileToSlot,
 } from '../../persistence/profileTransfer';
+import {
+  projectRunAbandon,
+  projectRunStart,
+  projectTutorialSkip,
+} from '../../progression/reducer';
+import { normalizeGeneratedSeed } from '../../progression/seedCode';
+import {
+  assertAvailableModeSetup,
+  selectAvailableDecks,
+  selectFrozenEligibilityObjectiveIds,
+  selectAvailableStakesForDeck,
+} from '../../progression/selectors';
+import { createTutorialRun } from '../../tutorial/script';
 import { commitRunCommand } from '../commitRunCommand';
+import type { DurableAppRoute } from '../routeState';
 
-export type AppStatus = 'loading' | 'profiles' | 'playing';
+export type AppStatus =
+  | 'loading'
+  | 'profiles'
+  | 'menu'
+  | 'setup'
+  | 'playing'
+  | 'collection'
+  | 'achievements'
+  | 'statistics'
+  | 'help'
+  | 'maintenance'
+  | 'notices';
+
+export type ModeSetupKind = 'campaign' | 'seeded' | 'challenge';
 
 export interface AppState {
   readonly status: AppStatus;
@@ -29,6 +58,8 @@ export interface AppState {
   readonly activeProfileId: ProfileId | null;
   readonly run: RunStateV2 | null;
   readonly presentationEvents: readonly PresentationEventV2[];
+  readonly setupMode: ModeSetupKind | null;
+  readonly setupSeed: string | null;
 }
 
 interface ApplicationRootState {
@@ -37,7 +68,12 @@ interface ApplicationRootState {
 
 interface AppThunkConfig {
   readonly state: ApplicationRootState;
-  readonly extra: { readonly repository: GameRepository };
+  readonly extra: {
+    readonly repository: GameRepository;
+    readonly nowEpochMs: () => number;
+    readonly generateSeed: () => string;
+    readonly readInitialRoute: () => DurableAppRoute | null;
+  };
   readonly rejectValue: string;
 }
 
@@ -49,7 +85,20 @@ const initialState: AppState = {
   activeProfileId: null,
   run: null,
   presentationEvents: [],
+  setupMode: null,
+  setupSeed: null,
 };
+
+export const generateLocalSetupSeed = createAsyncThunk<string, void, AppThunkConfig>(
+  'app/generate-setup-seed',
+  (_argument, { extra, rejectWithValue }) => {
+    try {
+      return normalizeGeneratedSeed(extra.generateSeed());
+    } catch (error) {
+      return rejectWithValue(`生成种子失败：${errorMessage(error)}`);
+    }
+  },
+);
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '未知本地错误';
@@ -64,6 +113,7 @@ export const initializeApplication = createAsyncThunk<
     profiles: ProfileRecord[];
     activeProfileId: ProfileId | null;
     run: RunStateV2 | null;
+    initialRoute: DurableAppRoute | null;
   },
   void,
   AppThunkConfig
@@ -78,7 +128,12 @@ export const initializeApplication = createAsyncThunk<
     const run = activeProfileId
       ? ((await extra.repository.loadRun(activeProfileId)) ?? null)
       : null;
-    return { profiles, activeProfileId, run };
+    return {
+      profiles,
+      activeProfileId,
+      run,
+      initialRoute: extra.readInitialRoute(),
+    };
   } catch (error) {
     return rejectWithValue(`无法读取本地档案：${errorMessage(error)}`);
   }
@@ -86,18 +141,15 @@ export const initializeApplication = createAsyncThunk<
 
 export const createLocalProfile = createAsyncThunk<
   { profile: ProfileRecord; profiles: ProfileRecord[] },
-  { slot: ProfileSlot; displayName: string; nowEpochMs: number },
+  { slot: ProfileSlot; displayName: string; nowEpochMs?: number },
   AppThunkConfig
 >('app/create-profile', async (argument, { extra, getState, rejectWithValue }) => {
   try {
+    const nowEpochMs = argument.nowEpochMs ?? extra.nowEpochMs();
     if (getState().app.profiles.some((profile) => profile.slot === argument.slot)) {
       throw new Error('这个档案位已经有人了');
     }
-    const profile = createProfile(
-      argument.slot,
-      argument.displayName,
-      argument.nowEpochMs,
-    );
+    const profile = createProfile(argument.slot, argument.displayName, nowEpochMs);
     await extra.repository.saveProfile(profile);
     await extra.repository.setActiveProfile(profile.id);
     return { profile, profiles: await extra.repository.listProfiles() };
@@ -127,15 +179,16 @@ export const renameLocalProfile = createAsyncThunk<
   {
     profileId: ProfileId;
     displayName: string;
-    nowEpochMs: number;
+    nowEpochMs?: number;
   },
   AppThunkConfig
 >('app/rename-profile', async (argument, { extra, rejectWithValue }) => {
   try {
+    const nowEpochMs = argument.nowEpochMs ?? extra.nowEpochMs();
     const profile = await extra.repository.getProfile(argument.profileId);
     if (!profile) throw new Error('档案不存在');
     await extra.repository.saveProfile(
-      renameProfile(profile, argument.displayName, argument.nowEpochMs),
+      renameProfile(profile, argument.displayName, nowEpochMs),
     );
     return { profiles: await extra.repository.listProfiles() };
   } catch (error) {
@@ -168,10 +221,11 @@ export const deleteLocalProfile = createAsyncThunk<
 
 export const startLocalFixtureRun = createAsyncThunk<
   { profile: ProfileRecord; profiles: ProfileRecord[]; run: RunStateV2 },
-  { seed: string; nowEpochMs: number },
+  { seed: string; nowEpochMs?: number },
   AppThunkConfig
 >('app/start-fixture-run', async (argument, { extra, getState, rejectWithValue }) => {
   try {
+    const nowEpochMs = argument.nowEpochMs ?? extra.nowEpochMs();
     const activeProfileId = getState().app.activeProfileId;
     if (!activeProfileId) throw new Error('请先选择档案');
     const profile = getState().app.profiles.find((item) => item.id === activeProfileId);
@@ -180,7 +234,11 @@ export const startLocalFixtureRun = createAsyncThunk<
     const updatedProfile: ProfileRecord = {
       ...profile,
       activeRunId: run.runId,
-      updatedAtEpochMs: argument.nowEpochMs,
+      updatedAtEpochMs: nowEpochMs,
+      currentRunProgress: {
+        ...profile.currentRunProgress,
+        runId: run.runId,
+      },
     };
     await extra.repository.commitCheckpoint(updatedProfile, run);
     return {
@@ -199,20 +257,66 @@ export const startLocalFixtureRun = createAsyncThunk<
 
 export const startLocalProductionRun = createAsyncThunk<
   { profile: ProfileRecord; profiles: ProfileRecord[]; run: RunStateV2 },
-  { seed: string; nowEpochMs: number },
+  {
+    seed: string;
+    nowEpochMs?: number;
+    runClass?: Exclude<RunClassV7, 'migrated-legacy'>;
+    deckId?: string;
+    stakeId?: string;
+    challengeId?: string | null;
+  },
   AppThunkConfig
 >('app/start-production-run', async (argument, { extra, getState, rejectWithValue }) => {
   try {
+    const nowEpochMs = argument.nowEpochMs ?? extra.nowEpochMs();
     const activeProfileId = getState().app.activeProfileId;
     if (!activeProfileId) throw new Error('请先选择档案');
     const profile = getState().app.profiles.find((item) => item.id === activeProfileId);
     if (!profile) throw new Error('当前档案不存在');
-    const run = createProductionRunV6(PRODUCTION_CATALOG, { seed: argument.seed });
-    const updatedProfile: ProfileRecord = {
-      ...profile,
-      activeRunId: run.runId,
-      updatedAtEpochMs: argument.nowEpochMs,
-    };
+    const runClass = argument.runClass ?? 'campaign';
+    const firstDeck = selectAvailableDecks(profile, PRODUCTION_CATALOG)[0];
+    const deckId = argument.deckId ?? firstDeck?.id;
+    const stakeId =
+      argument.stakeId ??
+      (deckId
+        ? selectAvailableStakesForDeck(profile, PRODUCTION_CATALOG, deckId)[0]?.id
+        : undefined);
+    if (runClass === 'challenge') {
+      if (!argument.challengeId) throw new Error('请选择一项已开放挑战');
+      assertAvailableModeSetup(profile, PRODUCTION_CATALOG, {
+        runClass,
+        challengeId: argument.challengeId,
+      });
+    } else if (runClass !== 'tutorial') {
+      if (!deckId || !stakeId) throw new Error('缺少可用牌组或筹码等级');
+      assertAvailableModeSetup(profile, PRODUCTION_CATALOG, {
+        runClass,
+        deckId,
+        stakeId,
+      });
+    }
+    if (!deckId) throw new Error('缺少可用牌组');
+    const run =
+      runClass === 'tutorial'
+        ? createTutorialRun(PRODUCTION_CATALOG, profile, argument.seed)
+        : createProductionRunV7(PRODUCTION_CATALOG, {
+            seed: argument.seed,
+            profileId: profile.id,
+            runSequence: profile.nextRunSequence,
+            runClass,
+            ...(deckId ? { deckId } : {}),
+            ...(stakeId ? { stakeId } : {}),
+            ...(argument.challengeId !== undefined
+              ? { challengeId: argument.challengeId }
+              : {}),
+            eligibilityObjectiveIds: selectFrozenEligibilityObjectiveIds(
+              profile,
+              PRODUCTION_CATALOG,
+              deckId,
+            ),
+            discoveredContentIds: profile.collection.discoveredJokerIds,
+          });
+    const updatedProfile = projectRunStart(profile, run, nowEpochMs);
     await extra.repository.commitCheckpoint(updatedProfile, run);
     return {
       profile: updatedProfile,
@@ -229,7 +333,12 @@ export const startLocalProductionRun = createAsyncThunk<
 });
 
 export const submitRunCommand = createAsyncThunk<
-  { run: RunStateV2; presentationEvents: readonly PresentationEventV2[] },
+  {
+    profile: ProfileRecord;
+    profiles: ProfileRecord[];
+    run: RunStateV2;
+    presentationEvents: readonly PresentationEventV2[];
+  },
   RunCommandV2,
   AppThunkConfig
 >('app/submit-run-command', async (command, { extra, getState, rejectWithValue }) => {
@@ -237,9 +346,24 @@ export const submitRunCommand = createAsyncThunk<
   const profile = state.profiles.find((item) => item.id === state.activeProfileId);
   if (!profile || !state.run) return rejectWithValue('当前没有可操作的牌局');
 
-  const result = await commitRunCommand(extra.repository, profile, state.run, command);
+  const result = await commitRunCommand(
+    extra.repository,
+    profile,
+    state.run,
+    command,
+    extra.nowEpochMs(),
+  );
   if (!result.ok) return rejectWithValue(result.message);
-  return { run: result.state, presentationEvents: result.presentationEvents };
+  return {
+    profile: result.profile,
+    profiles: sortedProfiles(
+      state.profiles.map((item) =>
+        item.id === result.profile.id ? result.profile : item,
+      ),
+    ),
+    run: result.state,
+    presentationEvents: result.presentationEvents,
+  };
 });
 
 export const finishLocalRun = createAsyncThunk<
@@ -251,12 +375,11 @@ export const finishLocalRun = createAsyncThunk<
     const state = getState().app;
     const profile = state.profiles.find((item) => item.id === state.activeProfileId);
     if (!profile) throw new Error('当前档案不存在');
-    await extra.repository.clearRun(profile);
+    const projected = projectRunAbandon(profile, extra.nowEpochMs());
+    await extra.repository.clearRun(projected);
     return {
       profiles: sortedProfiles(
-        state.profiles.map((item) =>
-          item.id === profile.id ? { ...item, activeRunId: null } : item,
-        ),
+        state.profiles.map((item) => (item.id === profile.id ? projected : item)),
       ),
     };
   } catch (error) {
@@ -300,6 +423,146 @@ export const importLocalProfile = createAsyncThunk<
   }
 });
 
+export const importLocalProfileToSlot = createAsyncThunk<
+  { profiles: ProfileRecord[]; profile: ProfileRecord; run: RunStateV2 | null },
+  { text: string; targetSlot: ProfileSlot; nowEpochMs?: number },
+  AppThunkConfig
+>('app/import-profile-to-slot', async (argument, { extra, rejectWithValue }) => {
+  try {
+    const nowEpochMs = argument.nowEpochMs ?? extra.nowEpochMs();
+    const imported = remapImportedProfileToSlot(
+      importProfileFromJson(argument.text),
+      argument.targetSlot,
+      nowEpochMs,
+    );
+    await extra.repository.replaceProfile(imported.profile, imported.run);
+    await extra.repository.setActiveProfile(imported.profile.id);
+    return {
+      profiles: await extra.repository.listProfiles(),
+      profile: imported.profile,
+      run: imported.run,
+    };
+  } catch (error) {
+    return rejectWithValue(`导入失败：${errorMessage(error)}`);
+  }
+});
+
+export const abandonActiveRun = createAsyncThunk<
+  { profile: ProfileRecord; profiles: ProfileRecord[] },
+  { nowEpochMs?: number },
+  AppThunkConfig
+>('app/abandon-run', async (argument, { extra, getState, rejectWithValue }) => {
+  try {
+    const nowEpochMs = argument.nowEpochMs ?? extra.nowEpochMs();
+    const state = getState().app;
+    const profile = state.profiles.find((item) => item.id === state.activeProfileId);
+    if (!profile || !profile.activeRunId) throw new Error('当前没有可放弃的牌局');
+    const projected = projectRunAbandon(profile, nowEpochMs);
+    await extra.repository.clearRun(projected);
+    return {
+      profile: projected,
+      profiles: sortedProfiles(
+        state.profiles.map((item) => (item.id === projected.id ? projected : item)),
+      ),
+    };
+  } catch (error) {
+    return rejectWithValue(`弃局失败：${errorMessage(error)}`);
+  }
+});
+
+export const skipActiveTutorial = createAsyncThunk<
+  { profile: ProfileRecord; profiles: ProfileRecord[] },
+  { nowEpochMs?: number },
+  AppThunkConfig
+>('app/skip-tutorial', async (argument, { extra, getState, rejectWithValue }) => {
+  try {
+    const nowEpochMs = argument.nowEpochMs ?? extra.nowEpochMs();
+    const state = getState().app;
+    const profile = state.profiles.find((item) => item.id === state.activeProfileId);
+    if (!profile) throw new Error('当前没有可跳过的教程');
+    const activeTutorial =
+      profile.activeRunId !== null &&
+      state.run !== null &&
+      isRunStateV7(state.run) &&
+      state.run.sessionV7.runClass === 'tutorial';
+    if (!activeTutorial && profile.tutorial.status !== 'not-started') {
+      throw new Error('当前没有可跳过的教程');
+    }
+    const projected = projectTutorialSkip(profile, nowEpochMs);
+    if (activeTutorial) await extra.repository.clearRun(projected);
+    else await extra.repository.saveProfile(projected);
+    return {
+      profile: projected,
+      profiles: sortedProfiles(
+        state.profiles.map((item) => (item.id === projected.id ? projected : item)),
+      ),
+    };
+  } catch (error) {
+    return rejectWithValue(`跳过教程失败：${errorMessage(error)}`);
+  }
+});
+
+export const resetActiveProfile = createAsyncThunk<
+  { profile: ProfileRecord; profiles: ProfileRecord[] },
+  { nowEpochMs?: number },
+  AppThunkConfig
+>('app/reset-profile', async (argument, { extra, getState, rejectWithValue }) => {
+  try {
+    const nowEpochMs = argument.nowEpochMs ?? extra.nowEpochMs();
+    const profileId = getState().app.activeProfileId;
+    if (!profileId) throw new Error('请先选择档案');
+    const profile = await extra.repository.resetProfile(profileId, nowEpochMs);
+    return { profile, profiles: await extra.repository.listProfiles() };
+  } catch (error) {
+    return rejectWithValue(`重置失败：${errorMessage(error)}`);
+  }
+});
+
+export const restoreActiveProfile = createAsyncThunk<
+  { profile: ProfileRecord; profiles: ProfileRecord[]; run: RunStateV2 | null },
+  void,
+  AppThunkConfig
+>('app/restore-profile', async (_argument, { extra, getState, rejectWithValue }) => {
+  try {
+    const profileId = getState().app.activeProfileId;
+    if (!profileId) throw new Error('请先选择档案');
+    const restored = await extra.repository.restoreProfileAction(profileId);
+    return { ...restored, profiles: await extra.repository.listProfiles() };
+  } catch (error) {
+    return rejectWithValue(`恢复失败：${errorMessage(error)}`);
+  }
+});
+
+export const acknowledgeProgressionNotices = createAsyncThunk<
+  { profile: ProfileRecord; profiles: ProfileRecord[] },
+  { noticeIds: readonly string[]; nowEpochMs?: number },
+  AppThunkConfig
+>('app/acknowledge-notices', async (argument, { extra, getState, rejectWithValue }) => {
+  try {
+    const nowEpochMs = argument.nowEpochMs ?? extra.nowEpochMs();
+    const state = getState().app;
+    const profile = state.profiles.find((item) => item.id === state.activeProfileId);
+    if (!profile) throw new Error('请先选择档案');
+    const acknowledged = new Set(argument.noticeIds);
+    const projected: ProfileRecord = {
+      ...profile,
+      updatedAtEpochMs: nowEpochMs,
+      unreadNotices: profile.unreadNotices.filter(
+        ({ noticeId }) => !acknowledged.has(noticeId),
+      ),
+    };
+    await extra.repository.saveProfile(projected);
+    return {
+      profile: projected,
+      profiles: sortedProfiles(
+        state.profiles.map((item) => (item.id === projected.id ? projected : item)),
+      ),
+    };
+  } catch (error) {
+    return rejectWithValue(`通知更新失败：${errorMessage(error)}`);
+  }
+});
+
 const appSlice = createSlice({
   name: 'app',
   initialState,
@@ -317,10 +580,50 @@ const appSlice = createSlice({
       state.status = 'profiles';
       state.run = null;
       state.presentationEvents = [];
+      state.setupMode = null;
+      state.setupSeed = null;
+    },
+    showMenu(state) {
+      state.status = 'menu';
+      state.setupMode = null;
+      state.setupSeed = null;
+    },
+    resumeRun(state) {
+      if (state.run) state.status = 'playing';
+    },
+    showModeSetup(state, action: PayloadAction<ModeSetupKind>) {
+      state.status = 'setup';
+      state.setupMode = action.payload;
+      state.setupSeed = null;
+    },
+    showCollection(state) {
+      state.status = 'collection';
+    },
+    showAchievements(state) {
+      state.status = 'achievements';
+    },
+    showStatistics(state) {
+      state.status = 'statistics';
+    },
+    showHelp(state) {
+      state.status = 'help';
+    },
+    showMaintenance(state) {
+      state.status = 'maintenance';
+    },
+    showNotices(state) {
+      state.status = 'notices';
     },
   },
   extraReducers(builder) {
     builder
+      .addCase(generateLocalSetupSeed.fulfilled, (state, action) => {
+        state.setupSeed = action.payload;
+        state.error = null;
+      })
+      .addCase(generateLocalSetupSeed.rejected, (state, action) => {
+        state.error = action.payload ?? action.error.message ?? '生成种子失败';
+      })
       .addCase(initializeApplication.pending, (state) => {
         state.busy = true;
         state.error = null;
@@ -331,7 +634,27 @@ const appSlice = createSlice({
         profiles: action.payload.profiles,
         activeProfileId: action.payload.activeProfileId,
         run: action.payload.run,
-        status: action.payload.run ? 'playing' : 'profiles',
+        status: (() => {
+          if (action.payload.run) return 'playing';
+          if (!action.payload.activeProfileId) return 'profiles';
+          const route = action.payload.initialRoute;
+          const activeProfile = action.payload.profiles.find(
+            ({ id }) => id === action.payload.activeProfileId,
+          );
+          if (
+            route?.status === 'setup' &&
+            activeProfile?.tutorial.status === 'not-started'
+          ) {
+            return 'menu';
+          }
+          return route && route.status !== 'playing' ? route.status : 'menu';
+        })(),
+        setupMode:
+          action.payload.initialRoute?.status === 'setup' &&
+          action.payload.profiles.find(({ id }) => id === action.payload.activeProfileId)
+            ?.tutorial.status !== 'not-started'
+            ? action.payload.initialRoute.setupMode
+            : null,
       }))
       .addCase(initializeApplication.rejected, (state, action) => {
         state.busy = false;
@@ -342,13 +665,14 @@ const appSlice = createSlice({
         state.busy = true;
         state.error = null;
       })
-      .addCase(createLocalProfile.fulfilled, (state, action) => {
-        state.busy = false;
-        state.profiles = action.payload.profiles;
-        state.activeProfileId = action.payload.profile.id;
-        state.run = null;
-        state.status = 'profiles';
-      })
+      .addCase(createLocalProfile.fulfilled, (state, action): AppState => ({
+        ...state,
+        busy: false,
+        profiles: action.payload.profiles,
+        activeProfileId: action.payload.profile.id,
+        run: null,
+        status: 'menu',
+      }))
       .addCase(createLocalProfile.rejected, (state, action) => {
         state.busy = false;
         state.error = action.payload ?? action.error.message ?? '建档失败';
@@ -362,7 +686,7 @@ const appSlice = createSlice({
         busy: false,
         activeProfileId: action.payload.profileId,
         run: action.payload.run,
-        status: action.payload.run ? 'playing' : 'profiles',
+        status: action.payload.run ? 'playing' : 'menu',
         presentationEvents: [],
       }))
       .addCase(selectLocalProfile.rejected, (state, action) => {
@@ -373,10 +697,11 @@ const appSlice = createSlice({
         state.busy = true;
         state.error = null;
       })
-      .addCase(renameLocalProfile.fulfilled, (state, action) => {
-        state.busy = false;
-        state.profiles = action.payload.profiles;
-      })
+      .addCase(renameLocalProfile.fulfilled, (state, action): AppState => ({
+        ...state,
+        busy: false,
+        profiles: action.payload.profiles,
+      }))
       .addCase(renameLocalProfile.rejected, (state, action) => {
         state.busy = false;
         state.error = action.payload ?? action.error.message ?? '改名失败';
@@ -385,16 +710,15 @@ const appSlice = createSlice({
         state.busy = true;
         state.error = null;
       })
-      .addCase(deleteLocalProfile.fulfilled, (state, action) => {
-        state.busy = false;
-        state.profiles = action.payload.profiles;
-        state.activeProfileId = action.payload.activeProfileId;
-        if (action.payload.deletedActive) {
-          state.run = null;
-          state.status = 'profiles';
-          state.presentationEvents = [];
-        }
-      })
+      .addCase(deleteLocalProfile.fulfilled, (state, action): AppState => ({
+        ...state,
+        busy: false,
+        profiles: action.payload.profiles,
+        activeProfileId: action.payload.activeProfileId,
+        run: action.payload.deletedActive ? null : state.run,
+        status: action.payload.deletedActive ? 'profiles' : state.status,
+        presentationEvents: action.payload.deletedActive ? [] : state.presentationEvents,
+      }))
       .addCase(deleteLocalProfile.rejected, (state, action) => {
         state.busy = false;
         state.error = action.payload ?? action.error.message ?? '删除档案失败';
@@ -424,6 +748,7 @@ const appSlice = createSlice({
         profiles: action.payload.profiles,
         run: action.payload.run,
         status: 'playing',
+        setupSeed: null,
       }))
       .addCase(startLocalProductionRun.rejected, (state, action) => {
         state.busy = false;
@@ -436,6 +761,7 @@ const appSlice = createSlice({
       .addCase(submitRunCommand.fulfilled, (state, action): AppState => ({
         ...state,
         busy: false,
+        profiles: action.payload.profiles,
         run: action.payload.run,
         presentationEvents: action.payload.presentationEvents,
       }))
@@ -452,7 +778,7 @@ const appSlice = createSlice({
         busy: false,
         profiles: action.payload.profiles,
         run: null,
-        status: 'profiles',
+        status: 'menu',
         presentationEvents: [],
       }))
       .addCase(finishLocalRun.rejected, (state, action) => {
@@ -469,12 +795,106 @@ const appSlice = createSlice({
         profiles: action.payload.profiles,
         activeProfileId: action.payload.profile.id,
         run: action.payload.run,
-        status: action.payload.run ? 'playing' : 'profiles',
+        status: action.payload.run ? 'playing' : 'menu',
         presentationEvents: [],
       }))
       .addCase(importLocalProfile.rejected, (state, action) => {
         state.busy = false;
         state.error = action.payload ?? action.error.message ?? '导入失败';
+      })
+      .addCase(importLocalProfileToSlot.pending, (state) => {
+        state.busy = true;
+        state.error = null;
+      })
+      .addCase(importLocalProfileToSlot.fulfilled, (state, action): AppState => ({
+        ...state,
+        busy: false,
+        profiles: action.payload.profiles,
+        activeProfileId: action.payload.profile.id,
+        run: action.payload.run,
+        status: action.payload.run ? 'playing' : 'menu',
+        presentationEvents: [],
+      }))
+      .addCase(importLocalProfileToSlot.rejected, (state, action) => {
+        state.busy = false;
+        state.error = action.payload ?? action.error.message ?? '导入失败';
+      })
+      .addCase(abandonActiveRun.fulfilled, (state, action): AppState => ({
+        ...state,
+        busy: false,
+        profiles: action.payload.profiles,
+        run: null,
+        status: 'menu',
+        presentationEvents: [],
+      }))
+      .addCase(abandonActiveRun.pending, (state) => {
+        state.busy = true;
+        state.error = null;
+      })
+      .addCase(abandonActiveRun.rejected, (state, action) => {
+        state.busy = false;
+        state.error = action.payload ?? action.error.message ?? '弃局失败';
+      })
+      .addCase(skipActiveTutorial.fulfilled, (state, action): AppState => ({
+        ...state,
+        busy: false,
+        profiles: action.payload.profiles,
+        run: null,
+        status: 'menu',
+        presentationEvents: [],
+      }))
+      .addCase(skipActiveTutorial.pending, (state) => {
+        state.busy = true;
+        state.error = null;
+      })
+      .addCase(skipActiveTutorial.rejected, (state, action) => {
+        state.busy = false;
+        state.error = action.payload ?? action.error.message ?? '跳过教程失败';
+      })
+      .addCase(resetActiveProfile.fulfilled, (state, action): AppState => ({
+        ...state,
+        busy: false,
+        profiles: action.payload.profiles,
+        run: null,
+        status: 'menu',
+        presentationEvents: [],
+      }))
+      .addCase(resetActiveProfile.pending, (state) => {
+        state.busy = true;
+        state.error = null;
+      })
+      .addCase(resetActiveProfile.rejected, (state, action) => {
+        state.busy = false;
+        state.error = action.payload ?? action.error.message ?? '重置失败';
+      })
+      .addCase(restoreActiveProfile.fulfilled, (state, action): AppState => ({
+        ...state,
+        busy: false,
+        profiles: action.payload.profiles,
+        run: action.payload.run,
+        status: action.payload.run ? 'playing' : 'menu',
+        presentationEvents: [],
+      }))
+      .addCase(restoreActiveProfile.pending, (state) => {
+        state.busy = true;
+        state.error = null;
+      })
+      .addCase(restoreActiveProfile.rejected, (state, action) => {
+        state.busy = false;
+        state.error = action.payload ?? action.error.message ?? '恢复失败';
+      })
+      .addCase(acknowledgeProgressionNotices.fulfilled, (state, action): AppState => ({
+        ...state,
+        busy: false,
+        profiles: action.payload.profiles,
+      }))
+      .addCase(acknowledgeProgressionNotices.pending, (state) => {
+        state.busy = true;
+        state.error = null;
+      })
+      .addCase(acknowledgeProgressionNotices.rejected, (state, action) => {
+        state.busy = false;
+        state.error = action.payload ?? action.error.message ?? '通知更新失败';
       });
   },
 });
@@ -483,6 +903,15 @@ export const {
   clearError,
   clearPresentationEvents,
   consumePresentationEvent,
+  resumeRun,
+  showAchievements,
+  showCollection,
+  showHelp,
+  showMaintenance,
+  showMenu,
+  showModeSetup,
+  showNotices,
   showProfiles,
+  showStatistics,
 } = appSlice.actions;
 export const appReducer = appSlice.reducer;

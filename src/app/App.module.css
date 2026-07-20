@@ -221,7 +221,10 @@
   text-align: center;
 }
 
-.profileNav {
+.profileNav,
+.maintenanceNav,
+.menuNav,
+.helpNav {
   position: absolute;
   top: 1.15rem;
   right: 1.5rem;
@@ -234,6 +237,18 @@
   font-size: 0.72rem;
   letter-spacing: 0.1em;
   cursor: pointer;
+}
+
+.maintenanceNav {
+  right: 7.7rem;
+}
+
+.helpNav {
+  right: 14.3rem;
+}
+
+.menuNav {
+  right: 20.8rem;
 }
 
 .crashFallback {

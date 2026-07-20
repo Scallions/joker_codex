@@ -1,6 +1,6 @@
 import type { ProfileId } from '../../src/game-core/model/ids';
 import type { RunStateV2 } from '../../src/game-core/model/runV2';
-import type { ProfileRecord } from '../../src/persistence/profiles';
+import { createProfile, type ProfileRecord } from '../../src/persistence/profiles';
 import type { GameRepository } from '../../src/persistence/repository';
 
 interface MemoryRepositorySeed {
@@ -15,6 +15,10 @@ export function createMemoryRepository(seed: MemoryRepositorySeed = {}): GameRep
   );
   const runs = new Map<string, RunStateV2>(seed.runs ?? []);
   const recovery = new Map<string, RunStateV2>();
+  const profileActionRecovery = new Map<
+    string,
+    { readonly profile: ProfileRecord; readonly run: RunStateV2 | null }
+  >();
   let activeProfileId: ProfileId | null = seed.activeProfileId ?? null;
 
   return {
@@ -26,6 +30,7 @@ export function createMemoryRepository(seed: MemoryRepositorySeed = {}): GameRep
       profiles.delete(id);
       runs.delete(id);
       recovery.delete(id);
+      profileActionRecovery.delete(id);
     },
     setActiveProfile: async (id) => {
       activeProfileId = id;
@@ -33,6 +38,36 @@ export function createMemoryRepository(seed: MemoryRepositorySeed = {}): GameRep
     getActiveProfileId: async () => activeProfileId,
     loadRun: async (id) => runs.get(id),
     loadRecoveryRun: async (id) => recovery.get(id),
+    loadProfileActionRecovery: async (id) => profileActionRecovery.get(id),
+    restoreProfileAction: async (id) => {
+      const restored = profileActionRecovery.get(id);
+      if (!restored) throw new Error('没有可恢复的档案操作');
+      const current = profiles.get(id);
+      if (!current) throw new Error('当前档案不存在');
+      profileActionRecovery.set(id, {
+        profile: current,
+        run: runs.get(id) ?? null,
+      });
+      profiles.set(id, restored.profile);
+      if (restored.run) runs.set(id, restored.run);
+      else runs.delete(id);
+      return restored;
+    },
+    resetProfile: async (id, nowEpochMs) => {
+      const current = profiles.get(id);
+      if (!current) throw new Error('当前档案不存在');
+      profileActionRecovery.set(id, {
+        profile: current,
+        run: runs.get(id) ?? null,
+      });
+      const reset = {
+        ...createProfile(current.slot, current.displayName, current.createdAtEpochMs),
+        updatedAtEpochMs: nowEpochMs,
+      };
+      profiles.set(id, reset);
+      runs.delete(id);
+      return reset;
+    },
     commitCheckpoint: async (profile, run) => {
       const previous = runs.get(profile.id);
       if (previous) recovery.set(profile.id, previous);
@@ -41,7 +76,13 @@ export function createMemoryRepository(seed: MemoryRepositorySeed = {}): GameRep
     },
     replaceProfile: async (profile, run) => {
       const previous = runs.get(profile.id);
-      if (previous) recovery.set(profile.id, previous);
+      const previousProfile = profiles.get(profile.id);
+      if (previousProfile) {
+        profileActionRecovery.set(profile.id, {
+          profile: previousProfile,
+          run: previous ?? null,
+        });
+      }
       profiles.set(profile.id, profile);
       if (run) runs.set(profile.id, run);
       else runs.delete(profile.id);

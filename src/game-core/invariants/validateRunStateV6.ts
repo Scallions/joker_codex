@@ -8,7 +8,9 @@ export function validateRunStateV6(run: RunStateV6): RunValidationResultV3 {
   const base = validateRunStateV5(run);
   const violations = base.ok ? [] : [...base.violations];
 
-  if (run.schemaVersion !== 6) violations.push('V6 牌局结构版本错误');
+  if (run.schemaVersion !== 6 && run.schemaVersion !== 7) {
+    violations.push('V6 基础牌局结构版本错误');
+  }
   if (!/^[a-f0-9]{8}$/.test(run.migrationV6.recoveryFingerprint)) {
     violations.push('V6 迁移指纹无效');
   }

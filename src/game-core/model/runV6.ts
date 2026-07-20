@@ -21,20 +21,21 @@ export interface MigrationMetadataV6 {
 }
 
 export type RunStateV6 = Omit<RunStateV5, 'schemaVersion' | 'contentVersion'> & {
-  readonly schemaVersion: typeof RUN_SCHEMA_VERSION_V6;
+  readonly schemaVersion: typeof RUN_SCHEMA_VERSION_V6 | 7;
   readonly contentVersion:
     | 'run-economy-2'
     | 'catalog-baseline-3'
     | 'joker-catalog-1'
     | 'joker-catalog-2'
-    | typeof CONTENT_VERSION_V6;
+    | typeof CONTENT_VERSION_V6
+    | 'progression-modes-1';
   readonly jokerRuntimeV6: JokerRuntimeStateV6;
   readonly migrationV6: MigrationMetadataV6;
 };
 
 export function isRunStateV6(run: RunStateV2): run is RunStateV6 {
   return (
-    run.schemaVersion === RUN_SCHEMA_VERSION_V6 &&
+    (run.schemaVersion === RUN_SCHEMA_VERSION_V6 || run.schemaVersion === 7) &&
     'setupV3' in run &&
     'productionContentV3' in run &&
     'rulesV3' in run &&

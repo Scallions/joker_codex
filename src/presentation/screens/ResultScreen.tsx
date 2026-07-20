@@ -2,16 +2,60 @@ import { motion } from 'motion/react';
 
 import { finishLocalRun } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
+import { isRunStateV3 } from '../../game-core/model/runV3';
+import { isRunStateV7 } from '../../game-core/model/runV7';
 import { formatScore } from '../../game-core/score/score';
+import {
+  PROGRESSION_CONTENT_VERSION,
+  serializeSeedCode,
+} from '../../progression/seedCode';
 import styles from './ResultScreen.module.css';
 
 export function ResultScreen() {
   const dispatch = useAppDispatch();
-  const { run, busy } = useAppSelector((state) => state.app);
+  const { run, busy, profiles, activeProfileId } = useAppSelector((state) => state.app);
   if (!run || (run.phase.kind !== 'run-lost' && run.phase.kind !== 'finished'))
     return null;
 
   const won = run.phase.kind === 'finished';
+  const profile = profiles.find((item) => item.id === activeProfileId);
+  const delta =
+    profile?.lastResultSummary?.runId === run.runId ? profile.lastResultSummary : null;
+  const runClass = isRunStateV7(run) ? run.sessionV7.runClass : null;
+  const modeName =
+    runClass === 'campaign'
+      ? '普通战役'
+      : runClass === 'seeded'
+        ? '种子牌局 · 不推进永久进度'
+        : runClass === 'challenge'
+          ? '挑战模式'
+          : runClass === 'tutorial'
+            ? '入门教程'
+            : '本地牌局';
+  const frozenRows = isRunStateV3(run)
+    ? new Map(run.productionContentV3.rows.map((row) => [row.definition.id, row]))
+    : null;
+  const deckRow = isRunStateV3(run) ? frozenRows?.get(run.setupV3.deckId) : null;
+  const stakeRow = isRunStateV3(run) ? frozenRows?.get(run.setupV3.stakeId) : null;
+  const challengeRow =
+    isRunStateV3(run) && run.setupV3.challengeId
+      ? frozenRows?.get(run.setupV3.challengeId)
+      : null;
+  const seededShareCode =
+    runClass === 'seeded' &&
+    isRunStateV3(run) &&
+    run.contentVersion === PROGRESSION_CONTENT_VERSION &&
+    deckRow &&
+    stakeRow
+      ? serializeSeedCode({
+          contentVersion: PROGRESSION_CONTENT_VERSION,
+          seed: run.seed,
+          deckReference: deckRow.definition.referenceIndex,
+          stakeReference: stakeRow.definition.referenceIndex,
+          deckId: run.setupV3.deckId,
+          stakeId: run.setupV3.stakeId,
+        })
+      : null;
   return (
     <motion.div
       className={`${styles.screen} ${won ? styles.won : styles.lost}`}
@@ -33,7 +77,9 @@ export function ResultScreen() {
         {won ? '胜' : '散'}
       </motion.div>
       <div className={styles.copy}>
-        <p>{won ? '试演盲注 · 已破' : '试演盲注 · 未破'}</p>
+        <p>
+          {modeName} · {won ? '已完成' : '未完成'}
+        </p>
         <h1>{won ? '今夜压轴，满堂喝彩' : '锣声已止，再排一场'}</h1>
         <span>
           {won
@@ -41,6 +87,39 @@ export function ResultScreen() {
             : '牌已收拢，戏台仍在。换个种子，再来一手。'}
         </span>
       </div>
+
+      <div className={styles.setupIdentity}>
+        {deckRow ? (
+          <span>
+            牌组：{deckRow.definition.referenceIndex} · {deckRow.name}
+          </span>
+        ) : null}
+        {stakeRow ? (
+          <span>
+            筹码：{stakeRow.definition.referenceIndex} · {stakeRow.name}
+          </span>
+        ) : null}
+        {challengeRow ? (
+          <span>
+            挑战：{challengeRow.definition.referenceIndex} · {challengeRow.name}
+          </span>
+        ) : null}
+        <span>种子：{run.seed}</span>
+        <span>内容版本：{run.contentVersion}</span>
+      </div>
+
+      {seededShareCode ? (
+        <div className={styles.seedCode}>
+          <code>{seededShareCode}</code>
+          <button
+            type="button"
+            aria-label="复制本局分享码"
+            onClick={() => void navigator.clipboard?.writeText(seededShareCode)}
+          >
+            复制本局分享码
+          </button>
+        </div>
+      ) : null}
 
       <dl className={styles.summary}>
         <div>
@@ -67,12 +146,75 @@ export function ResultScreen() {
         <em>{run.lastHand ? `+${run.lastHand.score}` : '—'}</em>
       </div>
 
+      {delta ? (
+        <section className={styles.delta}>
+          <h2>本局永久进度</h2>
+          <div className={styles.deltaCounts}>
+            <span>内容解锁 {delta.objectiveIds.length}</span>
+            <span>奇牌发现 {delta.discoveredJokerIds.length}</span>
+            <span>成就题名 {delta.achievementIds.length}</span>
+            <span>胜幕印记 {delta.victoryMarkContentIds.length}</span>
+            <span>统计更新 {delta.statisticKeys.length}</span>
+          </div>
+          <details className={styles.deltaDetails}>
+            <summary>查看完整变动</summary>
+            <dl>
+              <div>
+                <dt>内容解锁</dt>
+                <dd>
+                  {delta.objectiveIds.length
+                    ? delta.objectiveIds.map((id) => <code key={id}>{id}</code>)
+                    : '无'}
+                </dd>
+              </div>
+              <div>
+                <dt>奇牌发现</dt>
+                <dd>
+                  {delta.discoveredJokerIds.length
+                    ? delta.discoveredJokerIds.map((id) => <code key={id}>{id}</code>)
+                    : '无'}
+                </dd>
+              </div>
+              <div>
+                <dt>成就题名</dt>
+                <dd>
+                  {delta.achievementIds.length
+                    ? delta.achievementIds.map((id) => <code key={id}>{id}</code>)
+                    : '无'}
+                </dd>
+              </div>
+              <div>
+                <dt>胜幕印记</dt>
+                <dd>
+                  {delta.victoryMarkContentIds.length
+                    ? delta.victoryMarkContentIds.map((id) => <code key={id}>{id}</code>)
+                    : '无'}
+                </dd>
+              </div>
+              <div>
+                <dt>统计更新</dt>
+                <dd>
+                  {delta.statisticKeys.length
+                    ? delta.statisticKeys.map((key) => <code key={key}>{key}</code>)
+                    : '无'}
+                </dd>
+              </div>
+            </dl>
+          </details>
+        </section>
+      ) : runClass === 'seeded' || runClass === 'tutorial' ? (
+        <section className={styles.delta}>
+          <h2>本局永久进度</h2>
+          <p>此模式不改变普通解锁、收藏、成就与统计。</p>
+        </section>
+      ) : null}
+
       <button
         type="button"
         disabled={busy}
         onClick={() => void dispatch(finishLocalRun())}
       >
-        {busy ? '正在收卷…' : '回到戏主名簿'}
+        {busy ? '正在收卷…' : '返回主菜单'}
       </button>
       <p className={styles.checkpoint}>结局已保存 · 检查点 #{run.checkpointId}</p>
     </motion.div>

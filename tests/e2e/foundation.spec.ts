@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises';
 
 import { createRunEconomyFixtureRun } from '../../src/content/fixtures/runEconomy';
 import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
-import { createProductionRunV6 } from '../../src/content/runtime/runSetupV6';
+import { createProductionRunV7 } from '../../src/content/runtime/runSetupV7';
 import { executeCommandV2 } from '../../src/game-core/commands/executeCommandV2';
 import type { RunCommandV2 } from '../../src/game-core/commands/typesV2';
 import { resolveHandScoreV2 } from '../../src/game-core/effects/scoreHandV2';
@@ -31,13 +31,36 @@ function combinations<T>(values: readonly T[], maximum = 5): T[][] {
   return output;
 }
 
+function indexedSeed(prefix: string, index: number): string {
+  const stem = prefix
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .padEnd(4, 'X')
+    .slice(0, 4);
+  return `${stem}${index.toString(36).toUpperCase().padStart(4, '0')}`;
+}
+
+function createBrowserCampaignRun(seed: string) {
+  const profile = createProfile(1, '浏览器戏主', 100);
+  return createProductionRunV7(PRODUCTION_CATALOG, {
+    seed,
+    profileId: profile.id,
+    runSequence: profile.nextRunSequence,
+    runClass: 'campaign',
+    eligibilityObjectiveIds: profile.objectives
+      .filter(({ completedAtEpochMs }) => completedAtEpochMs !== null)
+      .map(({ objectiveId }) => objectiveId),
+    discoveredContentIds: profile.collection.discoveredJokerIds,
+  });
+}
+
 function firstHandWinningProductionFixture(
   prefix: string,
   options: { readonly requireOpenablePack?: boolean } = {},
 ) {
   for (let index = 0; index < 300; index += 1) {
-    const seed = `${prefix}-${String(index)}`;
-    const initial = createProductionRunV6(PRODUCTION_CATALOG, { seed });
+    const seed = indexedSeed(prefix, index);
+    const initial = createBrowserCampaignRun(seed);
     const round = apply(initial, {
       type: 'select-blind',
       checkpointId: initial.checkpointId,
@@ -142,12 +165,17 @@ async function importFixtureRun(page: Page, path: string, run: RunStateV2) {
     ...createProfile(1, '压轴戏主', 100),
     activeRunId: run.runId,
     updatedAtEpochMs: 200,
+    currentRunProgress: {
+      ...createProfile(1, '压轴戏主', 100).currentRunProgress,
+      runId: run.runId,
+    },
   };
   await writeFile(path, exportProfileToJson(profile, run), 'utf8');
   await page.goto('/');
   await expect(page.getByText('三方戏台，三份命数')).toBeVisible();
   page.once('dialog', (dialog) => void dialog.accept());
   await page.locator('input[type="file"]').setInputFiles(path);
+  await page.getByRole('button', { name: '确认导入' }).click();
 }
 
 async function createProfileAndRun(
@@ -161,8 +189,10 @@ async function createProfileAndRun(
   await page.getByRole('button', { name: '在此建档' }).first().click();
   await page.getByLabel('档案名').fill(name);
   await page.getByRole('button', { name: '落印建档' }).click();
-  await page.getByLabel('演出种子（可选）').fill(seed);
-  await page.getByRole('button', { name: '开始八幕演出' }).click();
+  await page.getByRole('button', { name: '暂时跳过教程' }).click();
+  await page.getByRole('button', { name: '普通战役' }).click();
+  await page.getByLabel('演出种子').fill(seed);
+  await page.getByRole('button', { name: '开始普通战役' }).click();
   await expect(page.getByRole('heading', { name: '第 1 幕 · 择幕登台' })).toBeVisible();
   if (enterRound) {
     await page.getByRole('button', { name: '登台应战' }).click();
@@ -216,9 +246,9 @@ async function readActiveRun(page: Page): Promise<RunStateV2> {
 }
 
 test('固定种子在选择、出牌与弃牌边界都恢复相同检查点', async ({ page }) => {
-  const seed = 'browser-boundary-seed';
+  const seed = 'BOUND001';
   await createProfileAndRun(page, seed, '边界戏主', false);
-  let expected: RunStateV2 = createProductionRunV6(PRODUCTION_CATALOG, { seed });
+  let expected: RunStateV2 = createBrowserCampaignRun(seed);
   expect(await readActiveRun(page)).toEqual(expected);
 
   await page.getByRole('button', { name: '登台应战' }).click();
@@ -280,7 +310,7 @@ test('固定强手可破幕、领赏、进入夜市并打开已物化卡包', as
 });
 
 test('连续四次只出单张会进入失败落幕', async ({ page }) => {
-  await createProfileAndRun(page, 'browser-loss-seed', '败局戏主');
+  await createProfileAndRun(page, 'LOSS0001', '败局戏主');
   for (let hand = 0; hand < 4; hand += 1) {
     await page.getByTestId('playing-card').first().click();
     await page.getByRole('button', { name: '出牌' }).click();
@@ -349,7 +379,7 @@ test('写入故障不暴露未落盘检查点，故障消失后可继续', async
       return originalTransaction.call(this, storeNames);
     };
   });
-  await createProfileAndRun(page, 'browser-write-failure', '故障戏主');
+  await createProfileAndRun(page, 'FAIL0001', '故障戏主');
   const before = await readActiveRun(page);
   await page.evaluate(() => {
     (
@@ -368,7 +398,7 @@ test('写入故障不暴露未落盘检查点，故障消失后可继续', async
 });
 
 test('三档牌局相互隔离，导出后可恢复原检查点', async ({ page }, testInfo) => {
-  await createProfileAndRun(page, 'profile-a-seed', '甲档戏主');
+  await createProfileAndRun(page, 'PROFA001', '甲档戏主');
   await page.getByTestId('playing-card').first().click();
   await waitForCheckpoint(page, 2);
   const exportedRun = await readActiveRun(page);
@@ -383,15 +413,29 @@ test('三档牌局相互隔离，导出后可恢复原检查点', async ({ page 
   await page.getByRole('button', { name: '在此建档' }).first().click();
   await page.getByLabel('档案名').fill('乙档戏主');
   await page.getByRole('button', { name: '落印建档' }).click();
-  await page.getByLabel('演出种子（可选）').fill('profile-b-seed');
-  await page.getByRole('button', { name: '开始八幕演出' }).click();
-  expect((await readActiveRun(page)).seed).toBe('profile-b-seed');
+  await page.getByRole('button', { name: '暂时跳过教程' }).click();
+  await page.getByRole('button', { name: '普通战役' }).click();
+  await page.getByLabel('演出种子').fill('PROFB001');
+  await page.getByRole('button', { name: '开始普通战役' }).click();
+  expect((await readActiveRun(page)).seed).toBe('PROFB001');
 
   await page.getByRole('button', { name: '返回戏主名簿' }).click();
   page.once('dialog', (dialog) => void dialog.accept());
   await page.locator('input[type="file"]').setInputFiles(exportPath);
+  await page.getByRole('button', { name: '确认导入' }).click();
   await expect(page.getByRole('button', { name: '出牌' })).toBeVisible();
-  expect(await readActiveRun(page)).toEqual(exportedRun);
+  const restoredRun = await readActiveRun(page);
+  expect(restoredRun).toMatchObject({
+    ...exportedRun,
+    sessionV7: {
+      ...(
+        exportedRun as typeof restoredRun & {
+          readonly sessionV7: { readonly profileId: string | null };
+        }
+      ).sessionV7,
+      profileId: 'profile:3',
+    },
+  });
 });
 
 test('1280×720 基准画面覆盖名簿、盲注、牌桌、奖励、夜市与败局', async ({ page }) => {
@@ -407,8 +451,10 @@ test('1280×720 基准画面覆盖名簿、盲注、牌桌、奖励、夜市与�
   await page.getByRole('button', { name: '在此建档' }).first().click();
   await page.getByLabel('档案名').fill('画面戏主');
   await page.getByRole('button', { name: '落印建档' }).click();
-  await page.getByLabel('演出种子（可选）').fill(fixture.seed);
-  await page.getByRole('button', { name: '开始八幕演出' }).click();
+  await page.getByRole('button', { name: '暂时跳过教程' }).click();
+  await page.getByRole('button', { name: '普通战役' }).click();
+  await page.getByLabel('演出种子').fill(fixture.seed);
+  await page.getByRole('button', { name: '开始普通战役' }).click();
   await parkPointer(page);
   await expect(page).toHaveScreenshot('blind-screen-v2.png', {
     animations: 'disabled',

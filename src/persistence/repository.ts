@@ -12,6 +12,18 @@ export interface GameRepository {
   getActiveProfileId(): Promise<ProfileId | null>;
   loadRun(profileId: ProfileId): Promise<RunStateV2 | undefined>;
   loadRecoveryRun(profileId: ProfileId): Promise<RunStateV2 | undefined>;
+  loadProfileActionRecovery(profileId: ProfileId): Promise<
+    | {
+        readonly profile: ProfileRecord;
+        readonly run: RunStateV2 | null;
+      }
+    | undefined
+  >;
+  restoreProfileAction(profileId: ProfileId): Promise<{
+    readonly profile: ProfileRecord;
+    readonly run: RunStateV2 | null;
+  }>;
+  resetProfile(profileId: ProfileId, nowEpochMs: number): Promise<ProfileRecord>;
   commitCheckpoint(profile: ProfileRecord, run: RunStateV2): Promise<void>;
   replaceProfile(profile: ProfileRecord, run: RunStateV2 | null): Promise<void>;
   clearRun(profile: ProfileRecord): Promise<void>;

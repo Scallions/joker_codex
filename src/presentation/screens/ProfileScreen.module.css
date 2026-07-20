@@ -334,6 +334,26 @@
   padding: 0 0.8rem;
 }
 
+.nameForm select {
+  min-height: 2.5rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid rgba(113, 54, 43, 0.45);
+  background: rgba(255, 248, 226, 0.55);
+  color: #28161a;
+  font: inherit;
+}
+
+.nameForm > strong {
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 1.4rem;
+}
+
+.nameForm > span {
+  color: rgba(40, 22, 26, 0.68);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
 .nameForm > div {
   display: flex;
   justify-content: end;

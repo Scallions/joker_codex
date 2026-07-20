@@ -1,6 +1,7 @@
 import { RANKS, SUITS } from '../model/cards';
 import { stableId } from '../model/ids';
 import { isRunStateV3 } from '../model/runV3';
+import { isRunStateV7 } from '../model/runV7';
 import { resolveEffectOperations } from '../effects/registry';
 import type {
   ItemDefinitionV2,
@@ -19,6 +20,7 @@ import { nextInteger, type RandomState } from '../rng/random';
 import { pickStable, pickWeightedStable } from '../rng/weighted';
 import { purchasePrice } from './pricing';
 import { catalogRowIsExcludedBySemanticRules } from '../../content/runtime/eligibility';
+import type { CatalogRow } from '../../content/schema/catalog';
 import { resolveJokerPassiveCapabilities } from '../rules/jokerPassiveCapabilitiesV3';
 import type { EffectQueueFailureCode } from '../effects/registry';
 import { drawJokerDefinitionV3 } from './jokerRarityV3';
@@ -61,6 +63,33 @@ function ownedMaterializedContentIds(state: RunStateV2): Set<string> {
   ]);
 }
 
+function rowAllowedByFrozenProfileV7(
+  state: RunStateV2,
+  row: CatalogRow | undefined,
+): boolean {
+  if (!row || !isRunStateV7(state) || state.sessionV7.runSequence === 0) {
+    return true;
+  }
+  const objectives = new Set(state.sessionV7.eligibilityObjectiveIds);
+  const discoveries = new Set(state.sessionV7.discoveredContentIds);
+  if (row.unlockObjectiveId !== null && !objectives.has(row.unlockObjectiveId)) {
+    return false;
+  }
+  if (
+    row.availability.kind === 'profile-objective' &&
+    !objectives.has(row.availability.value)
+  ) {
+    return false;
+  }
+  if (
+    row.discovery.kind === 'profile-objective' &&
+    !objectives.has(row.discovery.value)
+  ) {
+    return false;
+  }
+  return row.discovery.kind !== 'after-use' || discoveries.has(row.discovery.value);
+}
+
 function planetIsFree(state: RunStateV2): boolean {
   const passives = resolveJokerPassiveCapabilities(state);
   return passives.ok && passives.capabilities.zeroPricePlanet;
@@ -101,6 +130,7 @@ export function definitionIsEligibleV3(
     ({ definition: candidate }) => candidate.id === definition.contentId,
   )?.definition;
   if (!row) return true;
+  if (!rowAllowedByFrozenProfileV7(state, row)) return false;
   if (
     catalogRowIsExcludedBySemanticRules(
       row,
@@ -846,10 +876,11 @@ function eligibleVouchers(state: RunStateV2): VoucherDefinition[] {
     )?.definition;
     return (
       row === undefined ||
-      !catalogRowIsExcludedBySemanticRules(
-        row,
-        new Set([...state.rulesV3.bannedContentIds, ...state.rulesV3.excludedRuleKeys]),
-      )
+      (rowAllowedByFrozenProfileV7(state, row) &&
+        !catalogRowIsExcludedBySemanticRules(
+          row,
+          new Set([...state.rulesV3.bannedContentIds, ...state.rulesV3.excludedRuleKeys]),
+        ))
     );
   });
 }

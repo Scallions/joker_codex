@@ -17,13 +17,14 @@ import type {
 export const RUN_SCHEMA_VERSION_V2 = 2 as const;
 export const CONTENT_VERSION_V2 = 'run-economy-2' as const;
 
-export type ExecutableRunSchemaVersion = 2 | 3 | 4 | 5 | 6;
+export type ExecutableRunSchemaVersion = 2 | 3 | 4 | 5 | 6 | 7;
 export type ExecutableRunContentVersion =
   | 'run-economy-2'
   | 'catalog-baseline-3'
   | 'joker-catalog-1'
   | 'joker-catalog-2'
-  | 'joker-catalog-3';
+  | 'joker-catalog-3'
+  | 'progression-modes-1';
 export type RunModeV2 =
   | 'fixture-campaign'
   | 'migrated-foundation'
