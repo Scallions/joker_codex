@@ -302,3 +302,36 @@ Closed the V7 release ledger, deterministic replay, persistence fault matrix, co
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: 百戏奇牌 parent acceptance
+
+**Date**: 2026-07-21
+**Task**: 百戏奇牌 parent acceptance
+**Branch**: `main`
+
+### Summary
+
+Revalidated the complete V7 release from a clean install, confirmed 644 tests and 64 Chromium/WebKit flows, reconciled all nine completed child archives and AC-01 through AC-13, retained the approved Safari WebDriver exception, and archived the parent task only.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3822930` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
