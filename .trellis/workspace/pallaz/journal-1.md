@@ -436,3 +436,37 @@ Completed a Chinese desktop UI and player-experience audit with Chromium and Web
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Fix UI audit findings
+
+**Date**: 2026-07-21
+**Task**: Fix UI audit findings
+**Branch**: `main`
+
+### Summary
+
+Resolved tutorial recovery, table action ownership, artwork sizing, adaptive layouts, large-stage composition, and feedback polish; verified Chromium and WebKit; retired superseded audit artifacts.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1051ab9` | (see git log) |
+| `ac3c341` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
