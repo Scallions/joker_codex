@@ -37,7 +37,7 @@ async function readActiveRun(page: Page): Promise<RunStateV2> {
   });
 }
 
-async function enterRound(page: Page) {
+async function enterRound(page: Page, seed = 'PRES0001') {
   await page.goto('/');
   await expect(page.getByText('三方戏台，三份命数')).toBeVisible();
   await page.getByRole('button', { name: '在此建档' }).first().click();
@@ -45,7 +45,7 @@ async function enterRound(page: Page) {
   await page.getByRole('button', { name: '落印建档' }).click();
   await page.getByRole('button', { name: '暂时跳过教程' }).click();
   await page.getByRole('button', { name: '普通战役' }).click();
-  await page.getByLabel('演出种子').fill('PRES0001');
+  await page.getByLabel('演出种子').fill(seed);
   await page.getByRole('button', { name: '开始普通战役' }).click();
   await page.getByRole('button', { name: '登台应战' }).click();
   await expect(page.getByRole('button', { name: '出牌' })).toBeVisible();
@@ -66,6 +66,60 @@ async function landCurrentPresentation(page: Page) {
 async function selectFirstCard(page: Page) {
   await page.locator('[data-card-id]').first().click();
   await landCurrentPresentation(page);
+}
+
+async function waitForScorePresentation(page: Page) {
+  const performance = page.locator('[data-sequence-id]');
+  await expect(performance).toBeVisible();
+  await expect(performance).toHaveCount(0, { timeout: 12_000 });
+}
+
+async function expectSettledHandToMatchCommittedPose(page: Page) {
+  const run = await readActiveRun(page);
+  const committedIds = run.round?.handIds ?? [];
+
+  await expect
+    .poll(
+      async () => {
+        const poses = await page.locator('[data-card-id]').evaluateAll((cards) =>
+          cards.map((card) => {
+            const element = card as HTMLElement;
+            const rect = element.getBoundingClientRect();
+            const transform = getComputedStyle(element).transform;
+            const matrix = new DOMMatrixReadOnly(
+              transform === 'none' ? undefined : transform,
+            );
+            return {
+              id: element.dataset.cardId,
+              centerX: rect.left + rect.width / 2,
+              entryState: element.dataset.cardEntryState,
+              opacity: Number.parseFloat(getComputedStyle(element).opacity),
+              rotation: (Math.atan2(matrix.b, matrix.a) * 180) / Math.PI,
+            };
+          }),
+        );
+        const center = (poses.length - 1) / 2;
+        return {
+          ids: poses.map(({ id }) => id),
+          allSettled: poses.every(({ entryState }) => entryState === 'settled'),
+          allVisible: poses.every(({ opacity }) => opacity >= 0.99),
+          leftToRight: poses.every(
+            ({ centerX }, index) => index === 0 || poses[index - 1]!.centerX < centerX,
+          ),
+          currentFanPose: poses.every(
+            ({ rotation }, index) => Math.abs(rotation - (index - center) * 2.2) <= 0.25,
+          ),
+        };
+      },
+      { timeout: 8_000 },
+    )
+    .toEqual({
+      ids: committedIds,
+      allSettled: true,
+      allVisible: true,
+      leftToRight: true,
+      currentFanPose: true,
+    });
 }
 
 test('完整与利落朱印都只呈现已提交结果，一点落定不会重发牌局命令', async ({ page }) => {
@@ -102,4 +156,28 @@ test('完整与利落朱印都只呈现已提交结果，一点落定不会重�
 
   await page.reload();
   expect(await readActiveRun(page)).toEqual(committedBrisk);
+});
+
+test('连续出牌后点数与花色手牌保持已提交顺序和完整扇形姿态', async ({ page }) => {
+  await enterRound(page, 'BOUND001');
+  await landCurrentPresentation(page);
+  await expectSettledHandToMatchCommittedPose(page);
+
+  await selectFirstCard(page);
+  await page.getByRole('button', { name: '出牌' }).click();
+  await waitForScorePresentation(page);
+  await expectSettledHandToMatchCommittedPose(page);
+
+  await page.getByRole('button', { name: '按花色' }).click();
+  await landCurrentPresentation(page);
+  await selectFirstCard(page);
+  await page.getByRole('button', { name: '出牌' }).click();
+  await waitForScorePresentation(page);
+  await expectSettledHandToMatchCommittedPose(page);
+
+  const committed = await readActiveRun(page);
+  await page.reload();
+  await expect(page.getByRole('button', { name: '出牌' })).toBeVisible();
+  await expectSettledHandToMatchCommittedPose(page);
+  expect(await readActiveRun(page)).toEqual(committed);
 });

@@ -92,7 +92,7 @@ function CardButton({
       disabled={disabled || forced}
       onClick={onSelect}
       layout="position"
-      initial={entryPose}
+      initial={false}
       animate={
         entryHeld
           ? entryPose

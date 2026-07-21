@@ -1012,6 +1012,11 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
 - New hand-card motion uses stable card IDs and transient presentation state only.
   Sequence completion, skip, hidden-tab completion, or performer failure releases
   the same committed cards without dispatching another gameplay command.
+- Stable card nodes mount from the committed pose (`initial={false}`). Only unseen
+  replacement IDs receive the hidden entry pose through explicit transient
+  animation state; the hidden pose is never advertised as a reusable initial value
+  to the presence/layout reconciler. This prevents surviving cards from being
+  stranded at `opacity: 0` or at a previous index's rotation.
 - The fixed 16:9 stage groups navigation into one flex-owned zone. Audio, status,
   inventory, ledger, center, and the complete hand assembly stay contained and
   separated by at least 8 CSS pixels at 1280x720 and 1920x1080. Inside the hand
@@ -1035,6 +1040,7 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
 | `table-hand-cards` or `table-actions` escapes `table-hand`, or the fan overlaps the rail | Browser geometry gate fails |
 | Full tutorial copy is requested | Open the named modal overlay without advancing tutorial state |
 | Presentation completes, skips, hides, or fails | Release transient cards; keep the saved run byte-equivalent |
+| A played card exits while a replacement is inserted or the hand reorders | Every surviving card settles visible, left-to-right in committed order, at the fan pose for its current index |
 
 ### 5. Good / Base / Bad Cases
 
@@ -1063,6 +1069,10 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
   and stacking inside the hand assembly, and checks no outer scroll plus intentional
   modal overlap. Changed snapshots are accepted only after those geometry
   assertions pass.
+- A rendered-control regression performs consecutive rank- and suit-sorted plays,
+  then compares persisted IDs with DOM order, verifies every settled card is
+  visible, checks strictly increasing horizontal centers and current-index fan
+  rotations, and repeats the same assertions after reload.
 - The motion performance probe retains frame-gap P95 at or below 50 ms and zero
   repeated Long Task or timer-drift violations above 50 ms.
 
