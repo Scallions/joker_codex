@@ -524,6 +524,20 @@ by the score wire codec and must never pass through raw `JSON.stringify` as `nul
   recompute a score effect or mutate ability state. The 150 raster assets must be
   local 768x1024 WebP files with unique focal keys and reviewed provenance
   sidecars; runtime content requests may not leave the local origin.
+- Fixed-stage shop collections that exceed one visible grid must use explicit,
+  mutually exclusive local navigation and mount only the active collection. A
+  tutorial-driven default may follow the committed profile step, but it must not
+  react to an optimistic click, pending command, inventory delta, or failed write.
+- Fixed-stage target choices keep their confirmation row inside the stage after a
+  valid selection. The screen and owning panel use `overflow: clip`; only the
+  target grid may use `overflow: auto`. A full playing-card target set uses 13 rank
+  columns at 1280x720 and 1920x1080 so its first target, last target, and enabled
+  confirmation are all directly hit-testable without scrolling the whole screen.
+- Joker artwork inspection is one stage-local, presentation-only host fed by the
+  shared Joker presentation selectors. It stores no durable state, exposes no
+  gameplay actions, mounts no concealed or undiscovered payload, keeps the full
+  image uncropped with `object-fit: contain`, and uses only bounded motion below
+  the global drawer layer.
 - The 16:9 stage uses `overflow: clip`, not `overflow: hidden`. The latter creates a
   scroll container; focusing a bottom action can retain an internal scroll offset
   across screens and shift the next absolute-positioned screen. Welcome typography
@@ -546,6 +560,7 @@ by the score wire codec and must never pass through raw `JSON.stringify` as `nul
 | V6 Joker debt differs from `max(0, usedJokerSlots - jokerSlots)` | Invariant failure; do not persist |
 | Item/pack/blind/tag/voucher reference is absent from frozen content | Invariant or `pool-empty`; do not commit |
 | Pending choice has foreign/duplicate targets or stale choice ID | `invalid-target`/`choice-mismatch`; preserve frame and RNG |
+| Valid target choice puts its enabled confirmation outside the fixed stage or behind an owning scroll container | Browser geometry gate fails; recompose the target grid/action ownership without changing the choice command |
 | Reward ID is already consumed or receipt total does not equal its lines | Invariant failure; do not persist |
 | Money would fall below `-allowedDebt` | `insufficient-funds`; preserve offer and RNG |
 | Proposed state violates card, ID, budget, or phase invariants | Do not persist or reveal it |
@@ -590,6 +605,11 @@ by the score wire codec and must never pass through raw `JSON.stringify` as `nul
 - Good: a Joker catalog row declares predicates, values, copy facet, stickers,
   initial state, localization, and asset metadata; generic handlers execute it
   without an ID branch, and the shared selector renders its committed current value.
+- Good: a 52-card target choice renders as four suit rows, keeps the action row
+  visible, and directly hits both edge targets plus `确认施行` at both desktop
+  baselines.
+- Base: at a narrower width, only the target grid scrolls while the instruction and
+  confirmation remain fixed inside their owning screen.
 - Base: a rejected command returns a Chinese domain error while the current run,
   random state, budgets, and save remain unchanged.
 - Base: a valid V2/V3/V4/V5 fixture run loads as V6 while preserving its content version,
@@ -600,6 +620,8 @@ by the score wire codec and must never pass through raw `JSON.stringify` as `nul
 - Bad: a component calculates score or draws cards, a handler mutates state or calls
   itself, a thunk updates Redux before `commitCheckpoint` resolves, or a migration
   silently invents missing gameplay data.
+- Bad: a role-based browser click scrolls a clipped target confirmation into view
+  and is accepted as proof that the player could discover or directly hit it.
 - Bad: replacing a V2 snapshot with current production rows, resolving future
   奇牌 dependencies with shipped doubles, or offering behavior through a
   `contentId`/`handlerId` conditional outside the registry.
@@ -651,11 +673,21 @@ by the score wire codec and must never pass through raw `JSON.stringify` as `nul
 - Rarity tests assert non-empty-pool renormalization, stable within-rarity draws,
   forced empty-pool non-consumption, and real shop/Buffoon-pack acquisition.
 - Component tests assert screens dispatch commands and show committed state/errors.
+- Shop and artwork component tests assert active-only offer mounting, post-commit
+  tutorial tab changes, failed-write preimage equality, one read-only inspector
+  host, and no concealed or undiscovered inspector trigger or metadata.
 - Playwright runs the same deterministic script in Chromium and WebKit, reloads at
   action boundaries, compares the full saved `RunState`, and covers win, loss, shop,
   profile isolation, and export/import. Route coverage additionally reloads a
   no-run feature page and mode setup, proves an active run overrides the route, and
   proves terminal results remain visible.
+- Shop geometry tests must check the center of each visible action with
+  `document.elementFromPoint`; role-based automation clicks alone are insufficient
+  because they may scroll a clipped descendant into view and hide a real overlap.
+- Target-choice geometry tests select the minimum valid targets, then check the
+  first target, last target, and enabled confirmation through
+  `document.elementFromPoint` at 1280x720 and 1920x1080 in Chromium and WebKit.
+  They also require `overflow: clip` on the screen/panel and no outer page scroll.
 - The catalog audit must prove exactly 230 unique production rows, all-local
   assets, 13 family render paths, and zero remote content requests in Chromium
   and WebKit.
@@ -709,6 +741,35 @@ const shopPool = catalog.rows.filter((row) => isFrozenAvailable(row, frozenObjec
 
 const presentation = selectOwnedJokerPresentation(run, joker);
 // React renders presentation.currentValue; the selector reads committed V4/V5/V6 state.
+```
+
+For a fixed-stage target choice, putting all overflow on the whole screen makes an
+automation click look healthy while hiding the player's final action:
+
+```css
+/* Wrong: the confirmation follows a tall grid inside a nested screen scroller. */
+.targetChoiceScreen {
+  overflow: auto;
+}
+```
+
+```css
+/* Correct: only dense targets scroll; the action row remains a fixed flex child. */
+.targetChoiceScreen,
+.targetChoicePanel {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+.targetGrid {
+  min-height: 0;
+  overflow: auto;
+}
+
+.targetActions {
+  flex: 0 0 auto;
+}
 ```
 
 Handlers stay pure and return primitives; the queue applies them after cycle/budget

@@ -264,6 +264,18 @@
   opacity: 0.42;
 }
 
+.catalogArtworkTrigger {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+.catalogArtworkTrigger img {
+  opacity: 0.58;
+}
+
 .catalogArtwork img[data-asset-source='project-svg'] {
   padding: 5px;
   object-fit: contain;

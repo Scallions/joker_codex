@@ -1,6 +1,6 @@
 .performance {
   position: absolute;
-  z-index: 40;
+  z-index: var(--bx-layer-notice);
   inset: 0;
   display: grid;
   place-items: center;

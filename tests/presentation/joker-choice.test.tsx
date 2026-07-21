@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { App } from '../../src/app/App';
 import { createGameStore } from '../../src/app/store';
@@ -13,6 +14,7 @@ import { createMemoryRepository } from '../helpers/memoryRepository';
 
 describe('百戏包奇牌选项', () => {
   it('用目录插画和初始当前值展示已物化的奇牌选项', async () => {
+    const user = userEvent.setup();
     const initial = createProductionRunV4(PRODUCTION_CATALOG, {
       seed: 'choice-joker-art',
     });
@@ -62,5 +64,9 @@ describe('百戏包奇牌选项', () => {
     const art = await screen.findByTestId('joker-art-bxqp:joker:050');
     expect(art).toHaveAttribute('src', '/assets/jokers/050.webp');
     expect(screen.getByText('当前 +100 筹码')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '查看 燃尽纸灯 大图' }));
+    expect(
+      screen.getByRole('dialog', { name: '奇牌鉴赏 · 燃尽纸灯' }),
+    ).toBeInTheDocument();
   });
 });

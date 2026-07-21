@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Provider } from 'react-redux';
 
 import { IndexedDbGameRepository } from '../persistence/indexedDbRepository';
+import { JokerArtworkInspectorProvider } from '../presentation/components/JokerArtworkInspector';
 import { PlayingStageChrome } from '../presentation/components/PlayingStageChrome';
 import { StageShell } from '../presentation/components/StageShell';
 import { AchievementBookScreen } from '../presentation/progression/AchievementBookScreen';
@@ -93,6 +94,7 @@ function GameApplication() {
   const sceneId = catalogAudit
     ? 'archive-ledger'
     : selectStageScene(status, run?.phase.kind);
+  const inspectorScope = `${status}:${run?.phase.kind ?? 'none'}`;
 
   useEffect(() => {
     if (initialized.current) return;
@@ -115,53 +117,57 @@ function GameApplication() {
       showGlobalControls={!catalogAudit}
       presentationSpeed={settings.presentationSpeed}
     >
-      <Suspense fallback={null}>{!catalogAudit ? <AudioDirector /> : null}</Suspense>
-      {status === 'loading' ? <WelcomeStage /> : null}
-      <Suspense fallback={<WelcomeStage />}>
-        {catalogAudit ? (
-          <CatalogAuditScreen
-            ledger={catalogAuditMode === 'jokers' ? 'joker' : 'non-joker'}
-          />
-        ) : null}
-        {!catalogAudit && status === 'profiles' ? <ProfileScreen /> : null}
-        {!catalogAudit && status === 'menu' ? <MainMenuScreen /> : null}
-        {!catalogAudit && status === 'setup' ? <ModeSetupScreen /> : null}
-        {!catalogAudit && status === 'collection' ? <CollectionScreen /> : null}
-        {!catalogAudit && status === 'achievements' ? <AchievementBookScreen /> : null}
-        {!catalogAudit && status === 'statistics' ? <StatisticsScreen /> : null}
-        {!catalogAudit && status === 'help' ? <HelpReferenceScreen /> : null}
-        {!catalogAudit && status === 'notices' ? <NoticesScreen /> : null}
-        {!catalogAudit && status === 'maintenance' ? <ProfileMaintenanceScreen /> : null}
-        {!catalogAudit && status === 'playing' && run?.phase.kind === 'blind-select' ? (
-          <BlindSelectScreen />
-        ) : null}
-        {!catalogAudit && status === 'playing' && run?.phase.kind === 'round' ? (
-          <GameTableScreen />
-        ) : null}
-        {!catalogAudit && status === 'playing' && run?.phase.kind === 'round-reward' ? (
-          <RewardScreen />
-        ) : null}
-        {!catalogAudit && status === 'playing' && run?.phase.kind === 'shop' ? (
-          <ShopScreen />
-        ) : null}
-        {!catalogAudit && status === 'playing' && run?.phase.kind === 'choice' ? (
-          <ChoiceScreen />
-        ) : null}
-        {!catalogAudit && status === 'playing' && run?.phase.kind === 'run-won' ? (
-          <RunWonScreen />
-        ) : null}
-        {!catalogAudit &&
-        status === 'playing' &&
-        run &&
-        (run.phase.kind === 'run-lost' || run.phase.kind === 'finished') ? (
-          <ResultScreen />
-        ) : null}
-      </Suspense>
-      {!catalogAudit && status === 'playing' ? <PlayingStageChrome /> : null}
-      <Suspense fallback={null}>
-        <PresentationQueue />
-      </Suspense>
-      {error ? <p className={styles.errorBanner}>{error}</p> : null}
+      <JokerArtworkInspectorProvider key={inspectorScope}>
+        <Suspense fallback={null}>{!catalogAudit ? <AudioDirector /> : null}</Suspense>
+        {status === 'loading' ? <WelcomeStage /> : null}
+        <Suspense fallback={<WelcomeStage />}>
+          {catalogAudit ? (
+            <CatalogAuditScreen
+              ledger={catalogAuditMode === 'jokers' ? 'joker' : 'non-joker'}
+            />
+          ) : null}
+          {!catalogAudit && status === 'profiles' ? <ProfileScreen /> : null}
+          {!catalogAudit && status === 'menu' ? <MainMenuScreen /> : null}
+          {!catalogAudit && status === 'setup' ? <ModeSetupScreen /> : null}
+          {!catalogAudit && status === 'collection' ? <CollectionScreen /> : null}
+          {!catalogAudit && status === 'achievements' ? <AchievementBookScreen /> : null}
+          {!catalogAudit && status === 'statistics' ? <StatisticsScreen /> : null}
+          {!catalogAudit && status === 'help' ? <HelpReferenceScreen /> : null}
+          {!catalogAudit && status === 'notices' ? <NoticesScreen /> : null}
+          {!catalogAudit && status === 'maintenance' ? (
+            <ProfileMaintenanceScreen />
+          ) : null}
+          {!catalogAudit && status === 'playing' && run?.phase.kind === 'blind-select' ? (
+            <BlindSelectScreen />
+          ) : null}
+          {!catalogAudit && status === 'playing' && run?.phase.kind === 'round' ? (
+            <GameTableScreen />
+          ) : null}
+          {!catalogAudit && status === 'playing' && run?.phase.kind === 'round-reward' ? (
+            <RewardScreen />
+          ) : null}
+          {!catalogAudit && status === 'playing' && run?.phase.kind === 'shop' ? (
+            <ShopScreen />
+          ) : null}
+          {!catalogAudit && status === 'playing' && run?.phase.kind === 'choice' ? (
+            <ChoiceScreen />
+          ) : null}
+          {!catalogAudit && status === 'playing' && run?.phase.kind === 'run-won' ? (
+            <RunWonScreen />
+          ) : null}
+          {!catalogAudit &&
+          status === 'playing' &&
+          run &&
+          (run.phase.kind === 'run-lost' || run.phase.kind === 'finished') ? (
+            <ResultScreen />
+          ) : null}
+        </Suspense>
+        {!catalogAudit && status === 'playing' ? <PlayingStageChrome /> : null}
+        <Suspense fallback={null}>
+          <PresentationQueue />
+        </Suspense>
+        {error ? <p className={styles.errorBanner}>{error}</p> : null}
+      </JokerArtworkInspectorProvider>
     </StageShell>
   );
 }

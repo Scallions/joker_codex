@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { submitRunCommand } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import type { Rank, Suit } from '../../game-core/model/cards';
+import { JokerArtworkTrigger } from '../components/JokerArtworkInspector';
 import { selectJokerPresentation } from '../selectors/jokerPresentation';
 import styles from './DecisionScreen.module.css';
 
@@ -67,12 +68,10 @@ export function ChoiceScreen() {
                 data-joker-ensemble={presentation?.ensemble}
               >
                 {presentation ? (
-                  <img
-                    className={styles.jokerOptionArtwork}
-                    src={presentation.assetPath}
-                    alt=""
-                    data-testid={`joker-art-${presentation.contentId}`}
-                    data-focal-key={presentation.focalKey}
+                  <JokerArtworkTrigger
+                    presentation={presentation}
+                    className={styles.jokerOptionArtworkTrigger}
+                    imageClassName={styles.jokerOptionArtwork}
                   />
                 ) : null}
                 <small>
@@ -190,7 +189,8 @@ export function ChoiceScreen() {
   for (const item of run.inventory.consumables) labels.set(item.instanceId, item.name);
   return (
     <motion.div
-      className={styles.screen}
+      className={`${styles.screen} ${styles.targetChoiceScreen}`}
+      data-layout-zone="target-choice-screen"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
@@ -202,7 +202,11 @@ export function ChoiceScreen() {
           </h1>
         </div>
       </header>
-      <section className={styles.choicePanel}>
+      <section
+        className={styles.choicePanel}
+        data-layout-zone="target-choice-panel"
+        data-target-kind={choice.kind === 'targets' ? choice.targetKind : 'playing-card'}
+      >
         <div className={styles.targetGrid}>
           {choice.eligibleIds.map((id) => (
             <button
@@ -223,7 +227,7 @@ export function ChoiceScreen() {
             </button>
           ))}
         </div>
-        <div className={styles.footerActions}>
+        <div className={styles.footerActions} data-layout-zone="target-choice-actions">
           {choice.optional ? (
             <button
               type="button"

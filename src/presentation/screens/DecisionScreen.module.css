@@ -24,6 +24,38 @@
   border: 1px solid rgb(211 165 76 / 18%);
 }
 
+.targetChoiceScreen {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+.targetChoiceScreen .header {
+  flex: 0 0 auto;
+}
+
+.targetChoiceScreen .choicePanel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 12px;
+  padding-block: 18px;
+  overflow: clip;
+}
+
+.targetChoiceScreen .targetGrid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.targetChoiceScreen .footerActions {
+  flex: 0 0 auto;
+  padding-top: 10px;
+  border-top: 1px solid rgb(71 46 27 / 28%);
+}
+
 .header {
   position: relative;
   display: flex;
@@ -113,15 +145,19 @@
   letter-spacing: 0.15em;
 }
 
-.jokerOptionArtwork {
+.jokerOptionArtworkTrigger {
   display: block;
   width: 100%;
   height: 168px;
   margin-bottom: 15px;
   border: 1px solid rgb(74 42 28 / 62%);
-  object-fit: cover;
   object-position: center;
   box-shadow: 0 8px 16px rgb(52 30 23 / 24%);
+}
+
+.jokerOptionArtwork {
+  object-fit: cover;
+  object-position: center;
 }
 
 .blind h2,
@@ -267,6 +303,17 @@
   margin: 22px 0;
 }
 
+.choicePanel[data-target-kind='playing-card'] .targetGrid {
+  grid-template-columns: repeat(13, minmax(48px, 1fr));
+  align-content: start;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.choicePanel[data-target-kind='playing-card'] .targetGrid button {
+  min-height: 60px;
+}
+
 .targetGrid button {
   min-height: 82px;
   padding: 8px;
@@ -328,6 +375,10 @@
   }
 
   .targetGrid {
+    grid-template-columns: repeat(4, minmax(64px, 1fr));
+  }
+
+  .choicePanel[data-target-kind='playing-card'] .targetGrid {
     grid-template-columns: repeat(4, minmax(64px, 1fr));
   }
 }

@@ -7,7 +7,9 @@ import type { CatalogFamily } from '../../content/schema/catalog';
 import type { JokerRarity } from '../../content/schema/catalog';
 import { selectCollectionRows } from '../../progression/selectors';
 import { CatalogEmblem } from '../catalog/CatalogEmblem';
+import { JokerArtworkTrigger } from '../components/JokerArtworkInspector';
 import { PaperLedger } from '../components/StagePrimitives';
+import { selectJokerPresentation } from '../selectors/jokerPresentation';
 import styles from './ProgressionScreens.module.css';
 
 const FAMILY_NAMES: Readonly<Record<CatalogFamily, string>> = {
@@ -90,7 +92,7 @@ export function CollectionScreen() {
         </div>
       </header>
 
-      <div className={styles.scrollArea}>
+      <div className={styles.scrollArea} data-layout-zone="collection-scroll">
         <div className={styles.collectionSummary}>
           <div>
             <span>目录完成</span>
@@ -190,6 +192,10 @@ export function CollectionScreen() {
               row.objectiveCurrent !== null && row.objectiveTarget
                 ? Math.min(100, (row.objectiveCurrent / row.objectiveTarget) * 100)
                 : null;
+            const jokerPresentation =
+              row.family === 'joker' && row.discovered
+                ? selectJokerPresentation(row.contentId)
+                : undefined;
             return (
               <article
                 key={row.contentId}
@@ -203,13 +209,16 @@ export function CollectionScreen() {
                 <div className={styles.catalogArtwork} data-silhouette={!row.discovered}>
                   {row.assetPath && row.assetFocalKey ? (
                     row.family === 'joker' ? (
-                      <img
-                        src={row.assetPath}
-                        alt=""
-                        loading="lazy"
-                        data-focal-key={row.assetFocalKey}
-                        data-asset-source={row.assetSource}
-                      />
+                      jokerPresentation ? (
+                        <JokerArtworkTrigger
+                          presentation={jokerPresentation}
+                          className={styles.catalogArtworkTrigger}
+                          loading="lazy"
+                          assetSource={row.assetSource ?? undefined}
+                        />
+                      ) : (
+                        <i aria-hidden="true" />
+                      )
                     ) : (
                       <CatalogEmblem
                         family={row.family}

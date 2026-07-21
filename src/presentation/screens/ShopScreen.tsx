@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { motion } from 'motion/react';
 
 import { submitRunCommand } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import { saleValue } from '../../game-core/economy/pricing';
+import { isRunStateV7 } from '../../game-core/model/runV7';
+import { JokerArtworkTrigger } from '../components/JokerArtworkInspector';
 import {
   selectJokerPresentation,
   selectOwnedJokerPresentation,
@@ -10,9 +13,33 @@ import {
 import { motionProfileForSpeed } from '../motion/motionTokens';
 import styles from './ShopScreen.module.css';
 
+type ShopOfferGroup = 'items' | 'packs';
+
+function defaultOfferGroup(tutorialStepId: string | null): ShopOfferGroup {
+  return tutorialStepId === 'tutorial:step:07' ? 'packs' : 'items';
+}
+
 export function ShopScreen() {
   const dispatch = useAppDispatch();
-  const { run, busy, settings } = useAppSelector((state) => state.app);
+  const { run, busy, settings, profiles, activeProfileId } = useAppSelector(
+    (state) => state.app,
+  );
+  const activeProfile = profiles.find(({ id }) => id === activeProfileId);
+  const tutorialStepId =
+    run && isRunStateV7(run) && run.sessionV7.runClass === 'tutorial'
+      ? (activeProfile?.tutorial.currentStepId ?? null)
+      : null;
+  const [offerSelection, setOfferSelection] = useState(() => ({
+    tutorialStepId,
+    group: defaultOfferGroup(tutorialStepId),
+  }));
+  const offerGroup =
+    offerSelection.tutorialStepId === tutorialStepId
+      ? offerSelection.group
+      : defaultOfferGroup(tutorialStepId);
+  const selectOfferGroup = (group: ShopOfferGroup) =>
+    setOfferSelection({ tutorialStepId, group });
+
   if (!run || run.phase.kind !== 'shop' || !run.shop) return null;
   const shop = run.shop;
   const checkpointId = run.checkpointId;
@@ -64,161 +91,207 @@ export function ShopScreen() {
               <span>掌柜今夜摆出</span>
               <strong>奇牌、变牌与戏牌</strong>
             </div>
+            {offerGroup === 'items' ? (
+              <button
+                type="button"
+                aria-label="重掷商品"
+                disabled={busy || available < rerollPrice || shop.cardOffers.length === 0}
+                onClick={() =>
+                  void dispatch(submitRunCommand({ type: 'reroll-shop', checkpointId }))
+                }
+              >
+                换摊 · {rerollPrice === 0 ? '免费' : `¥${rerollPrice}`}
+              </button>
+            ) : (
+              <span className={styles.packHint}>密封待拆 · 当场取用</span>
+            )}
+          </div>
+
+          <div
+            className={styles.offerTabs}
+            data-layout-zone="shop-offer-tabs"
+            aria-label="夜市商品分组"
+          >
             <button
               type="button"
-              aria-label="重掷商品"
-              disabled={busy || available < rerollPrice || shop.cardOffers.length === 0}
-              onClick={() =>
-                void dispatch(submitRunCommand({ type: 'reroll-shop', checkpointId }))
-              }
+              aria-label={`单品 ${shop.cardOffers.length}`}
+              aria-pressed={offerGroup === 'items'}
+              onClick={() => selectOfferGroup('items')}
             >
-              换摊 · {rerollPrice === 0 ? '免费' : `¥${rerollPrice}`}
+              <span>单品</span>
+              <strong>{shop.cardOffers.length}</strong>
+            </button>
+            <button
+              type="button"
+              aria-label={`补充包 ${shop.packOffers.length}`}
+              aria-pressed={offerGroup === 'packs'}
+              onClick={() => selectOfferGroup('packs')}
+            >
+              <span>补充包</span>
+              <strong>{shop.packOffers.length}</strong>
             </button>
           </div>
 
-          <div className={styles.offers}>
-            {shop.cardOffers.map((offer, index) => {
-              const presentation =
-                offer.item.kind === 'joker'
-                  ? selectJokerPresentation(offer.item.contentId)
-                  : undefined;
-              return (
-                <motion.article
-                  className={`${styles.offer} ${offer.item.kind === 'joker' ? styles.jokerOffer : styles.consumableOffer}`}
-                  key={offer.id}
-                  initial={{ y: 18, opacity: 0, rotate: index === 0 ? -1 : 1 }}
-                  animate={{ y: 0, opacity: 1, rotate: 0 }}
-                  transition={{
-                    delay: (index * motionProfile.staggerMs) / 1_000,
-                    duration: motionProfile.routineMs / 1_000,
-                  }}
-                  data-joker-rarity={presentation?.rarity}
-                  data-joker-ensemble={presentation?.ensemble}
-                >
-                  <span className={styles.offerKind}>
-                    {offer.item.kind === 'joker'
-                      ? presentation
-                        ? `奇牌挂牌 · ${presentation.rarityLabel}`
-                        : '奇牌挂牌'
-                      : offer.item.kind === 'consumable'
-                        ? '消耗道具'
-                        : '永久戏牌'}
-                  </span>
-                  {presentation ? (
-                    <img
-                      className={styles.offerArtwork}
-                      src={presentation.assetPath}
-                      alt=""
-                      data-testid={`joker-art-${presentation.contentId}`}
-                      data-focal-key={presentation.focalKey}
-                    />
-                  ) : (
+          <div
+            className={styles.offers}
+            data-layout-zone="shop-offer-grid"
+            data-offer-group={offerGroup}
+          >
+            {offerGroup === 'items'
+              ? shop.cardOffers.map((offer, index) => {
+                  const presentation =
+                    offer.item.kind === 'joker'
+                      ? selectJokerPresentation(offer.item.contentId)
+                      : undefined;
+                  return (
+                    <motion.article
+                      className={`${styles.offer} ${offer.item.kind === 'joker' ? styles.jokerOffer : styles.consumableOffer}`}
+                      key={offer.id}
+                      initial={{ y: 18, opacity: 0, rotate: index === 0 ? -1 : 1 }}
+                      animate={{ y: 0, opacity: 1, rotate: 0 }}
+                      transition={{
+                        delay: (index * motionProfile.staggerMs) / 1_000,
+                        duration: motionProfile.routineMs / 1_000,
+                      }}
+                      data-joker-rarity={presentation?.rarity}
+                      data-joker-ensemble={presentation?.ensemble}
+                    >
+                      <span className={styles.offerKind}>
+                        {offer.item.kind === 'joker'
+                          ? presentation
+                            ? `奇牌挂牌 · ${presentation.rarityLabel}`
+                            : '奇牌挂牌'
+                          : offer.item.kind === 'consumable'
+                            ? '消耗道具'
+                            : '永久戏牌'}
+                      </span>
+                      {presentation ? (
+                        <JokerArtworkTrigger
+                          presentation={presentation}
+                          className={styles.offerArtworkTrigger}
+                          imageClassName={styles.offerArtwork}
+                        />
+                      ) : (
+                        <div className={styles.offerIcon} aria-hidden="true">
+                          {offer.item.kind === 'joker'
+                            ? '奇'
+                            : offer.item.kind === 'consumable'
+                              ? '变'
+                              : '牌'}
+                        </div>
+                      )}
+                      <h2>{offer.item.name}</h2>
+                      <p>{offer.item.description}</p>
+                      {presentation?.currentValue ? (
+                        <span className={styles.jokerCurrentValue}>
+                          {presentation.currentValue}
+                        </span>
+                      ) : null}
+                      {presentation ? (
+                        <small className={styles.jokerFlavor}>
+                          {presentation.flavor}
+                        </small>
+                      ) : null}
+                      <button
+                        type="button"
+                        className={styles.purchaseButton}
+                        aria-label={`购买 ${offer.item.name}`}
+                        disabled={busy || available < offer.price}
+                        onClick={() =>
+                          void dispatch(
+                            submitRunCommand({
+                              type: 'buy-shop-offer',
+                              checkpointId,
+                              offerId: offer.id,
+                            }),
+                          )
+                        }
+                      >
+                        <span>收入戏箱</span>
+                        <strong>¥{offer.price}</strong>
+                      </button>
+                    </motion.article>
+                  );
+                })
+              : shop.packOffers.map((offer, index) => (
+                  <motion.article
+                    className={`${styles.offer} ${styles.packOffer}`}
+                    key={offer.id}
+                    initial={{ y: 18, opacity: 0, rotate: index === 0 ? -1 : 1 }}
+                    animate={{ y: 0, opacity: 1, rotate: 0 }}
+                    transition={{
+                      delay: (index * motionProfile.staggerMs) / 1_000,
+                      duration: motionProfile.routineMs / 1_000,
+                    }}
+                  >
+                    <span className={styles.offerKind}>密封卡包</span>
                     <div className={styles.offerIcon} aria-hidden="true">
-                      {offer.item.kind === 'joker'
-                        ? '奇'
-                        : offer.item.kind === 'consumable'
-                          ? '变'
-                          : '牌'}
+                      封
                     </div>
-                  )}
-                  <h2>{offer.item.name}</h2>
-                  <p>{offer.item.description}</p>
-                  {presentation?.currentValue ? (
-                    <span className={styles.jokerCurrentValue}>
-                      {presentation.currentValue}
-                    </span>
-                  ) : null}
-                  {presentation ? (
-                    <small className={styles.jokerFlavor}>{presentation.flavor}</small>
-                  ) : null}
+                    <h2>{offer.name}</h2>
+                    <p>{offer.description}</p>
+                    <button
+                      type="button"
+                      className={styles.purchaseButton}
+                      aria-label={`购买 ${offer.name}`}
+                      disabled={busy || available < offer.price}
+                      onClick={() =>
+                        void dispatch(
+                          submitRunCommand({
+                            type: 'buy-pack',
+                            checkpointId,
+                            offerId: offer.id,
+                          }),
+                        )
+                      }
+                    >
+                      <span>当场拆封</span>
+                      <strong>{offer.price === 0 ? '赠' : `¥${offer.price}`}</strong>
+                    </button>
+                  </motion.article>
+                ))}
+            {(offerGroup === 'items'
+              ? shop.cardOffers.length
+              : shop.packOffers.length) === 0 ? (
+              <div className={styles.soldOut}>
+                {offerGroup === 'items' ? '单品货架已空' : '补充包已经售罄'}
+              </div>
+            ) : null}
+          </div>
+
+          {voucherOffers.length > 0 ? (
+            <div className={styles.voucherRail} data-layout-zone="shop-vouchers">
+              {voucherOffers.map((offer, index) => (
+                <article className={styles.voucherOffer} key={offer.id}>
+                  <span>
+                    <strong>{offer.name}</strong> · {offer.description}
+                    {index > 0 ? ' · 戏签加挂' : null}
+                  </span>
                   <button
                     type="button"
-                    aria-label={`购买 ${offer.item.name}`}
+                    aria-label={`兑换 ${offer.name}`}
                     disabled={busy || available < offer.price}
                     onClick={() =>
                       void dispatch(
                         submitRunCommand({
-                          type: 'buy-shop-offer',
+                          type: 'buy-voucher',
                           checkpointId,
                           offerId: offer.id,
                         }),
                       )
                     }
                   >
-                    <span>收入戏箱</span>
-                    <strong>¥{offer.price}</strong>
+                    兑换 · ¥{offer.price}
                   </button>
-                </motion.article>
-              );
-            })}
-            {shop.packOffers.map((offer, index) => (
-              <motion.article
-                className={`${styles.offer} ${styles.jokerOffer}`}
-                key={offer.id}
-                initial={{ y: 18, opacity: 0, rotate: 1 }}
-                animate={{ y: 0, opacity: 1, rotate: 0 }}
-                transition={{
-                  delay:
-                    ((shop.cardOffers.length + index) * motionProfile.staggerMs) / 1_000,
-                  duration: motionProfile.routineMs / 1_000,
-                }}
-              >
-                <span className={styles.offerKind}>密封卡包</span>
-                <div className={styles.offerIcon} aria-hidden="true">
-                  封
-                </div>
-                <h2>{offer.name}</h2>
-                <p>{offer.description}</p>
-                <button
-                  type="button"
-                  aria-label={`购买 ${offer.name}`}
-                  disabled={busy || available < offer.price}
-                  onClick={() =>
-                    void dispatch(
-                      submitRunCommand({
-                        type: 'buy-pack',
-                        checkpointId,
-                        offerId: offer.id,
-                      }),
-                    )
-                  }
-                >
-                  <span>当场拆封</span>
-                  <strong>{offer.price === 0 ? '赠' : `¥${offer.price}`}</strong>
-                </button>
-              </motion.article>
-            ))}
-            {shop.cardOffers.length + shop.packOffers.length === 0 ? (
-              <div className={styles.soldOut}>今夜货架已空</div>
-            ) : null}
-          </div>
-
-          {voucherOffers.map((offer, index) => (
-            <article className={styles.soldOut} key={offer.id}>
-              <strong>{offer.name}</strong> · {offer.description}
-              {index > 0 ? ' · 戏签加挂' : null}
-              <button
-                type="button"
-                aria-label={`兑换 ${offer.name}`}
-                disabled={busy || available < offer.price}
-                onClick={() =>
-                  void dispatch(
-                    submitRunCommand({
-                      type: 'buy-voucher',
-                      checkpointId,
-                      offerId: offer.id,
-                    }),
-                  )
-                }
-              >
-                兑换木牌 · ¥{offer.price}
-              </button>
-            </article>
-          ))}
+                </article>
+              ))}
+            </div>
+          ) : null}
         </section>
 
         <motion.aside
           className={styles.inventory}
+          data-layout-zone="shop-inventory"
           initial={{ opacity: 0, x: 18 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{
@@ -244,12 +317,10 @@ export function ShopScreen() {
               return (
                 <article key={joker.instanceId} title={joker.description}>
                   {presentation ? (
-                    <img
-                      className={styles.ownedJokerArtwork}
-                      src={presentation.assetPath}
-                      alt=""
-                      data-testid={`joker-art-${presentation.contentId}`}
-                      data-focal-key={presentation.focalKey}
+                    <JokerArtworkTrigger
+                      presentation={presentation}
+                      className={styles.ownedJokerArtworkTrigger}
+                      imageClassName={styles.ownedJokerArtwork}
                     />
                   ) : (
                     <span className={styles.ownedJokerFallback}>奇</span>

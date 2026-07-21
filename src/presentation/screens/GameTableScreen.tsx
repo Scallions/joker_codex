@@ -9,6 +9,7 @@ import { evaluatePokerHand } from '../../game-core/poker/evaluate';
 import { canSellJokerForRun, hasActiveBlindRule } from '../../game-core/rules/runtimeV3';
 import { formatScore } from '../../game-core/score/score';
 import { selectHandCardsV2 } from '../../game-core/selectors/runV2';
+import { JokerArtworkTrigger } from '../components/JokerArtworkInspector';
 import { selectOwnedJokerPresentation } from '../selectors/jokerPresentation';
 import { motionProfileForSpeed, type MotionProfile } from '../motion/motionTokens';
 import styles from './GameTableScreen.module.css';
@@ -243,16 +244,14 @@ export function GameTableScreen() {
                 transition={{ delay: index * 0.04 }}
                 title={concealJokers ? '压轴幕布遮住了这张奇牌' : joker.description}
                 data-has-art={String(showArtwork)}
-                data-joker-rarity={presentation?.rarity}
-                data-joker-ensemble={presentation?.ensemble}
+                data-joker-rarity={showArtwork ? presentation?.rarity : undefined}
+                data-joker-ensemble={showArtwork ? presentation?.ensemble : undefined}
               >
                 {showArtwork && presentation ? (
-                  <img
-                    className={styles.jokerPlacardArtwork}
-                    src={presentation.assetPath}
-                    alt=""
-                    data-testid={`joker-art-${presentation.contentId}`}
-                    data-focal-key={presentation.focalKey}
+                  <JokerArtworkTrigger
+                    presentation={presentation}
+                    className={styles.jokerPlacardArtworkTrigger}
+                    imageClassName={styles.jokerPlacardArtwork}
                   />
                 ) : null}
                 <span>奇牌 {index + 1}</span>

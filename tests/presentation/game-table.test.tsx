@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { App } from '../../src/app/App';
@@ -84,6 +84,7 @@ describe('午夜百戏牌桌', () => {
   });
 
   it('生产奇牌在牌桌显示审定插画与已提交的当前能力值', async () => {
+    const user = userEvent.setup();
     const initial = createProductionRunV4(PRODUCTION_CATALOG, {
       seed: 'table-joker-art',
     });
@@ -115,5 +116,123 @@ describe('午夜百戏牌桌', () => {
     const art = await screen.findByTestId('joker-art-bxqp:joker:044');
     expect(art).toHaveAttribute('src', '/assets/jokers/044.webp');
     expect(screen.getByText('当前 +0 倍率')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '查看 无面夜行 大图' }));
+    const dialog = screen.getByRole('dialog', { name: '奇牌鉴赏 · 无面夜行' });
+    expect(within(dialog).getByText('当前 +0 倍率')).toBeInTheDocument();
+    expect(within(dialog).getByTestId('joker-inspector-art')).toHaveAttribute(
+      'src',
+      '/assets/jokers/044.webp',
+    );
+  });
+
+  it('班主覆面规则下不泄露奇牌身份，也不提供大图入口', async () => {
+    const initial = createProductionRunV4(PRODUCTION_CATALOG, {
+      seed: 'table-joker-concealed',
+    });
+    const acquired = acquireContentByIdV3(initial, 'bxqp:joker:044', 'table-hidden');
+    if (!acquired.ok || !isRunStateV4(acquired.state)) {
+      throw new Error(acquired.ok ? '未保持 V4' : acquired.message);
+    }
+    const selected = executeCommandV2(acquired.state, {
+      type: 'select-blind',
+      checkpointId: acquired.state.checkpointId,
+      position: 'small',
+    });
+    if (!selected.ok || !isRunStateV4(selected.state) || !selected.state.round) {
+      throw new Error(selected.ok ? '未保持 V4 回合' : selected.rejection.message);
+    }
+    const concealedRun = {
+      ...selected.state,
+      round: {
+        ...selected.state.round,
+        blind: {
+          ...selected.state.round.blind,
+          effects: [
+            ...selected.state.round.blind.effects,
+            {
+              id: 'test:conceal-jokers',
+              handlerId: 'blind-rule',
+              windows: [],
+              priority: 0,
+              parameters: { key: 'conceal-reorder-jokers', value: true },
+            },
+          ],
+        },
+      },
+    };
+    const profile = {
+      ...createProfile(1, '幕后戏主', 100),
+      activeRunId: concealedRun.runId,
+    };
+    render(
+      <App
+        store={createGameStore(
+          createMemoryRepository({
+            profiles: [profile],
+            runs: [[profile.id, concealedRun]],
+            activeProfileId: profile.id,
+          }),
+        )}
+      />,
+    );
+
+    const concealedPlacard = (await screen.findByText('幕后剪影')).closest('article');
+    expect(concealedPlacard).not.toHaveAttribute('data-joker-rarity');
+    expect(concealedPlacard).not.toHaveAttribute('data-joker-ensemble');
+    expect(screen.queryByRole('button', { name: '查看 无面夜行 大图' })).toBeNull();
+    expect(screen.queryByTestId('joker-art-bxqp:joker:044')).toBeNull();
+  });
+
+  it('可见但被压制的奇牌仍可鉴赏，并保留牌桌压制状态', async () => {
+    const user = userEvent.setup();
+    const initial = createProductionRunV4(PRODUCTION_CATALOG, {
+      seed: 'table-joker-debuffed',
+    });
+    const acquired = acquireContentByIdV3(initial, 'bxqp:joker:044', 'table-debuffed');
+    if (!acquired.ok || !isRunStateV4(acquired.state)) {
+      throw new Error(acquired.ok ? '未保持 V4' : acquired.message);
+    }
+    const selected = executeCommandV2(acquired.state, {
+      type: 'select-blind',
+      checkpointId: acquired.state.checkpointId,
+      position: 'small',
+    });
+    if (!selected.ok || !isRunStateV4(selected.state)) {
+      throw new Error(selected.ok ? '未保持 V4' : selected.rejection.message);
+    }
+    const debuffedRun = {
+      ...selected.state,
+      inventory: {
+        ...selected.state.inventory,
+        jokers: selected.state.inventory.jokers.map((joker) => ({
+          ...joker,
+          debuffed: true,
+        })),
+      },
+    };
+    const profile = {
+      ...createProfile(1, '压制戏主', 100),
+      activeRunId: debuffedRun.runId,
+    };
+    render(
+      <App
+        store={createGameStore(
+          createMemoryRepository({
+            profiles: [profile],
+            runs: [[profile.id, debuffedRun]],
+            activeProfileId: profile.id,
+          }),
+        )}
+      />,
+    );
+
+    expect(await screen.findByText('压制')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '查看 无面夜行 大图' }));
+    expect(
+      within(screen.getByRole('dialog', { name: '奇牌鉴赏 · 无面夜行' })).getByText(
+        '当前 +0 倍率',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('压制')).toBeInTheDocument();
   });
 });

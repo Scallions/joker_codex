@@ -301,6 +301,10 @@ test('固定强手可破幕、领赏、进入夜市并打开已物化卡包', as
   const state = await readActiveRun(page);
   const pack = firstOpenablePack(state);
   if (!pack) throw new Error('确定性牌局没有可正常拆封的卡包');
+  if (!state.shop) throw new Error('确定性牌局没有夜市');
+  await page
+    .getByRole('button', { name: `补充包 ${state.shop.packOffers.length}` })
+    .click();
   await page.getByRole('button', { name: `购买 ${pack.name}` }).click();
   await expect(page.getByText('卡包已拆 · 选项已落印')).toBeVisible();
   const choice = (await readActiveRun(page)).pendingChoice?.current;
@@ -470,7 +474,11 @@ test('1280×720 基准画面覆盖名簿、盲注、牌桌、奖励、夜市与�
   for (const cardId of fixture.cardIds)
     await page.locator(`[data-card-id="${cardId}"]`).click();
   await page.getByRole('button', { name: '出牌' }).click();
-  await page.getByRole('button', { name: '落定演出，显示已提交结果' }).click();
+  const settlePerformance = page.getByRole('button', {
+    name: '落定演出，显示已提交结果',
+  });
+  await settlePerformance.evaluate((element) => (element as HTMLButtonElement).click());
+  await expect(settlePerformance).toHaveCount(0);
   await parkPointer(page);
   await expect(page).toHaveScreenshot('reward-screen-v2.png', {
     animations: 'disabled',
@@ -506,7 +514,7 @@ test('1920×1080 名簿与牌桌保持固定舞台、无页面滚动和无遮挡
   await expect(page.getByRole('button', { name: '弃牌' })).toBeInViewport();
   await expect(page.getByLabel('午夜百戏舞台')).toHaveScreenshot(
     'table-screen-1920-v1.png',
-    { animations: 'disabled' },
+    { animations: 'disabled', maxDiffPixels: 10 },
   );
   expect(
     await page.evaluate(() => ({

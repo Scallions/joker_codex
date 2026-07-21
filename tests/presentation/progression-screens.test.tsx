@@ -8,6 +8,7 @@ import { createGameStore } from '../../src/app/store';
 import { isRunStateV7 } from '../../src/game-core/model/runV7';
 import { createProfile } from '../../src/persistence/profiles';
 import { projectTutorialSkip } from '../../src/progression/reducer';
+import { selectJokerPresentation } from '../../src/presentation/selectors/jokerPresentation';
 import { createMemoryRepository } from '../helpers/memoryRepository';
 
 describe('局外功能页面', () => {
@@ -100,5 +101,41 @@ describe('局外功能页面', () => {
 
     expect(screen.getAllByText('无穷终幕')).toHaveLength(2);
     expect(screen.getByText('最佳 无穷终幕')).toBeInTheDocument();
+  });
+
+  it('已发现奇牌可以鉴赏大图，未发现奇牌不泄露入口或素材', async () => {
+    const user = userEvent.setup();
+    const skipped = projectTutorialSkip(createProfile(1, '图鉴鉴赏人', 100), 150);
+    const discovered = selectJokerPresentation('bxqp:joker:001');
+    if (!discovered) throw new Error('缺少 J001 展示数据');
+    const profile = {
+      ...skipped,
+      collection: {
+        ...skipped.collection,
+        discoveredJokerIds: ['bxqp:joker:001'],
+      },
+    };
+    const store = createGameStore(
+      createMemoryRepository({ profiles: [profile], activeProfileId: profile.id }),
+    );
+    render(<App store={store} />);
+
+    await screen.findByRole('heading', { name: '今晚演哪一出' });
+    await user.click(screen.getByRole('button', { name: '百戏图鉴' }));
+    await user.selectOptions(screen.getByLabelText('内容类别'), 'joker');
+    expect(screen.getAllByText('未发现奇牌')).toHaveLength(149);
+    expect(
+      screen.getByRole('button', { name: `查看 ${discovered.name} 大图` }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryAllByRole('button', { name: /查看 未发现奇牌 大图/ }),
+    ).toHaveLength(0);
+
+    await user.click(
+      screen.getByRole('button', { name: `查看 ${discovered.name} 大图` }),
+    );
+    expect(
+      screen.getByRole('dialog', { name: `奇牌鉴赏 · ${discovered.name}` }),
+    ).toBeInTheDocument();
   });
 });

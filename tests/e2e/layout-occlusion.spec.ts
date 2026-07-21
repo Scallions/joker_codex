@@ -25,7 +25,9 @@ async function createOrdinaryTable(page: Page) {
   await page.getByRole('button', { name: '登台应战' }).click();
   await expect(page.getByRole('button', { name: '出牌' })).toBeVisible();
   const performer = page.getByRole('button', { name: '落定演出，显示已提交结果' });
-  if (await performer.isVisible()) await performer.click();
+  if (await performer.isVisible()) {
+    await performer.evaluate((element) => (element as HTMLButtonElement).click());
+  }
   await page.mouse.move(640, 240);
   await page.waitForTimeout(500);
 }

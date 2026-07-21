@@ -77,3 +77,52 @@ export async function expectNoOuterScroll(page: Page) {
     y: 0,
   });
 }
+
+export async function expectDirectHitTarget(locator: Locator, label: string) {
+  await expect(locator, `${label} 不可见`).toBeVisible();
+  const result = await locator.evaluate((target) => {
+    const rect = target.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return {
+      direct: hit !== null && (hit === target || target.contains(hit)),
+      hitTag: hit?.tagName ?? null,
+      hitText: hit?.textContent?.trim().slice(0, 80) ?? null,
+      x,
+      y,
+    };
+  });
+  expect(
+    result.direct,
+    `${label} 中心点 (${result.x.toFixed(1)}, ${result.y.toFixed(1)}) 命中 ${result.hitTag ?? '空'}：${result.hitText ?? ''}`,
+  ).toBe(true);
+}
+
+export async function expectPairwiseNonOverlapping(locator: Locator, label: string) {
+  const boxes = await locator.evaluateAll((elements) =>
+    elements.map((element) => {
+      const box = element.getBoundingClientRect();
+      return { x: box.x, y: box.y, width: box.width, height: box.height };
+    }),
+  );
+  for (let first = 0; first < boxes.length; first += 1) {
+    for (let second = first + 1; second < boxes.length; second += 1) {
+      const left = boxes[first]!;
+      const right = boxes[second]!;
+      const horizontal = Math.max(
+        0,
+        Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x),
+      );
+      const vertical = Math.max(
+        0,
+        Math.min(left.y + left.height, right.y + right.height) -
+          Math.max(left.y, right.y),
+      );
+      expect(
+        horizontal * vertical,
+        `${label} 的第 ${String(first + 1)} 与第 ${String(second + 1)} 项发生重叠`,
+      ).toBe(0);
+    }
+  }
+}

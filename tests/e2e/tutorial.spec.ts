@@ -2,6 +2,12 @@ import { expect, test, type Page } from '@playwright/test';
 
 import type { RunStateV2 } from '../../src/game-core/model/runV2';
 import type { ProfileRecord } from '../../src/persistence/profiles';
+import {
+  expectDirectHitTarget,
+  expectNoOuterScroll,
+  expectPairwiseNonOverlapping,
+  layoutZone,
+} from './helpers/layoutGeometry';
 
 async function readActiveRun(page: Page): Promise<RunStateV2 | null> {
   return page.evaluate(async () => {
@@ -178,15 +184,53 @@ test('八步教程通过真实界面完成且不写入普通进度', async ({ pa
   checkpointId += 1;
   await waitForCheckpoint(page, checkpointId);
   await expect(page.getByRole('heading', { name: '奇牌入班' })).toBeVisible();
+  const settlePerformance = page.getByRole('button', {
+    name: '落定演出，显示已提交结果',
+  });
+  if (await settlePerformance.isVisible()) {
+    await settlePerformance.evaluate((element) => (element as HTMLButtonElement).click());
+    await expect(settlePerformance).toHaveCount(0);
+  }
 
   state = await readActiveRun(page);
   if (!state?.shop) throw new Error('教程夜市状态丢失');
   const jokerShopState = state;
-  const joker = jokerShopState.shop!.cardOffers.find(
+  const jokerShop = state.shop;
+  const joker = jokerShop.cardOffers.find(
     (offer) => offer.item.kind === 'joker' && offer.price <= jokerShopState.economy.money,
   );
   if (!joker) throw new Error('教程夜市没有可购买奇牌');
-  await page.getByRole('button', { name: `购买 ${joker.item.name}` }).click();
+  const jokerPurchase = page.getByRole('button', { name: `购买 ${joker.item.name}` });
+  const itemTab = page.getByRole('button', {
+    name: `单品 ${jokerShop.cardOffers.length}`,
+  });
+  const packTab = page.getByRole('button', {
+    name: `补充包 ${jokerShop.packOffers.length}`,
+  });
+  await expect(itemTab).toHaveAttribute('aria-pressed', 'true');
+  await expect(packTab).toHaveAttribute('aria-pressed', 'false');
+  for (const offer of jokerShop.packOffers) {
+    await expect(page.getByRole('button', { name: `购买 ${offer.name}` })).toHaveCount(0);
+  }
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1920, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(120);
+    await expectPairwiseNonOverlapping(
+      layoutZone(page, 'shop-offer-grid').locator('article'),
+      `教程单品 ${String(viewport.width)}x${String(viewport.height)}`,
+    );
+    for (const offer of jokerShop.cardOffers) {
+      await expectDirectHitTarget(
+        page.getByRole('button', { name: `购买 ${offer.item.name}` }),
+        `购买 ${offer.item.name}`,
+      );
+    }
+    await expectNoOuterScroll(page);
+  }
+  await jokerPurchase.click();
   checkpointId += 1;
   await waitForCheckpoint(page, checkpointId);
   await expect(page.getByRole('heading', { name: '打开补充包' })).toBeVisible();
@@ -194,6 +238,44 @@ test('八步教程通过真实界面完成且不写入普通进度', async ({ pa
   state = await readActiveRun(page);
   if (!state?.shop) throw new Error('教程夜市状态丢失');
   const packShopState = state;
+  const packShop = state.shop;
+  await expect(
+    page.getByRole('button', {
+      name: `补充包 ${packShop.packOffers.length}`,
+    }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  for (const offer of packShop.cardOffers) {
+    await expect(
+      page.getByRole('button', { name: `购买 ${offer.item.name}` }),
+    ).toHaveCount(0);
+  }
+  await page.reload();
+  await expect(page.getByRole('heading', { name: '打开补充包' })).toBeVisible();
+  await expect(
+    page.getByRole('button', {
+      name: `补充包 ${packShop.packOffers.length}`,
+    }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await page.waitForTimeout(500);
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1920, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(120);
+    await expectPairwiseNonOverlapping(
+      layoutZone(page, 'shop-offer-grid').locator('article'),
+      `教程补充包 ${String(viewport.width)}x${String(viewport.height)}`,
+    );
+    for (const offer of packShop.packOffers) {
+      await expectDirectHitTarget(
+        page.getByRole('button', { name: `购买 ${offer.name}` }),
+        `购买 ${offer.name}`,
+      );
+    }
+    await expectNoOuterScroll(page);
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
   const pack = packShopState.shop!.packOffers.find((offer) => {
     const definition = packShopState.content.packs.find(({ id }) => id === offer.packId);
     return (
@@ -209,13 +291,29 @@ test('八步教程通过真实界面完成且不写入普通进度', async ({ pa
   state = await readActiveRun(page);
   const packChoice = state?.pendingChoice?.current;
   if (!packChoice || packChoice.kind !== 'pack') throw new Error('教程补充包没有候选');
-  const consumable = packChoice.options.find(({ item }) => item.kind === 'consumable');
+  const consumable =
+    packChoice.options.find(
+      ({ item }) => item.kind === 'consumable' && item.targetKind !== 'none',
+    ) ?? packChoice.options.find(({ item }) => item.kind === 'consumable');
   if (!consumable) throw new Error('教程补充包没有消耗牌');
-  await page
+  const consumableChoice = page
     .getByRole('heading', { name: consumable.item.name })
     .locator('..')
-    .getByRole('button', { name: '选此件' })
-    .click();
+    .getByRole('button', { name: '选此件' });
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1920, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(120);
+    await expectDirectHitTarget(
+      consumableChoice,
+      `补充包消耗牌 ${String(viewport.width)}x${String(viewport.height)}`,
+    );
+    await expectNoOuterScroll(page);
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await consumableChoice.click();
   checkpointId += 1;
   await waitForCheckpoint(page, checkpointId);
 
@@ -227,7 +325,34 @@ test('八步教程通过真实界面完成且不写入普通进度', async ({ pa
       checkpointId += 1;
       await waitForCheckpoint(page, checkpointId);
     }
-    await page.getByRole('button', { name: '确认施行' }).click();
+    const confirmChoice = page.getByRole('button', { name: '确认施行' });
+    for (const viewport of [
+      { width: 1280, height: 720 },
+      { width: 1920, height: 1080 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.waitForTimeout(120);
+      const targetScreen = layoutZone(page, 'target-choice-screen');
+      const targetPanel = layoutZone(page, 'target-choice-panel');
+      await expect(targetScreen).toHaveCSS('overflow', 'clip');
+      await expect(targetPanel).toHaveCSS('overflow', 'clip');
+      const eligibleTargets = page.locator('button[data-selected]');
+      await expectDirectHitTarget(
+        eligibleTargets.first(),
+        `补充包首个目标 ${String(viewport.width)}x${String(viewport.height)}`,
+      );
+      await expectDirectHitTarget(
+        eligibleTargets.last(),
+        `补充包末个目标 ${String(viewport.width)}x${String(viewport.height)}`,
+      );
+      await expectDirectHitTarget(
+        confirmChoice,
+        `补充包目标确认 ${String(viewport.width)}x${String(viewport.height)}`,
+      );
+      await expectNoOuterScroll(page);
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await confirmChoice.click();
     checkpointId += 1;
     await waitForCheckpoint(page, checkpointId);
   }

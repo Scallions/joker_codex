@@ -49,6 +49,22 @@ function ownedPresentationV6(state: RunStateV6, ordinal: number) {
 }
 
 describe('奇牌展示选择器', () => {
+  it('150 张生产奇牌都解析为唯一的本地 3:4 素材路径', () => {
+    const presentations = Array.from({ length: 150 }, (_, index) =>
+      selectJokerPresentation(`bxqp:joker:${String(index + 1).padStart(3, '0')}`),
+    );
+    expect(presentations.every(Boolean)).toBe(true);
+    expect(new Set(presentations.map((item) => item?.assetPath)).size).toBe(150);
+    for (const [index, presentation] of presentations.entries()) {
+      expect(presentation?.assetPath).toBe(
+        `/assets/jokers/${String(index + 1).padStart(3, '0')}.webp`,
+      );
+      expect(presentation?.name).not.toBe('');
+      expect(presentation?.description).not.toBe('');
+      expect(presentation?.flavor).not.toBe('');
+    }
+  });
+
   it('从生产目录统一解析图像、中文身份、风味与稀有度', () => {
     expect(selectJokerPresentation('bxqp:joker:021')).toMatchObject({
       contentId: 'bxqp:joker:021',

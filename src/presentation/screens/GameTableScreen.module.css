@@ -85,7 +85,7 @@
   text-align: left;
 }
 
-.jokerPlacardArtwork {
+.jokerPlacardArtworkTrigger {
   position: absolute;
   top: 0.24rem;
   bottom: 0.24rem;
@@ -93,8 +93,11 @@
   width: 2.55rem;
   border: 1px solid rgba(255, 223, 157, 0.45);
   border-radius: 0.14rem;
-  object-fit: cover;
   box-shadow: 0.18rem 0 0.55rem rgba(26, 4, 14, 0.36);
+}
+
+.jokerPlacardArtwork {
+  object-fit: cover;
 }
 
 .jokerPlacard::before,

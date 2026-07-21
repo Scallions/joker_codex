@@ -83,9 +83,10 @@
 
 .offerSection {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 0.42rem;
   padding: 1rem 1.2rem;
-  overflow: hidden;
+  overflow: clip;
 }
 
 .sectionTitle,
@@ -118,8 +119,11 @@
 }
 
 .sectionTitle button,
-.offer button,
-.inventory button,
+.offerTabs button,
+.purchaseButton,
+.voucherOffer button,
+.ownedJokerActions button,
+.consumables button,
 .footer button {
   border: 0;
   font: inherit;
@@ -135,23 +139,80 @@
   font-weight: 800;
 }
 
+.sectionTitle .packHint {
+  color: #c69d59;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.offerTabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.offerTabs button {
+  display: flex;
+  min-height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  border: 1px solid rgba(204, 158, 75, 0.25);
+  background: rgba(27, 25, 48, 0.78);
+  color: rgba(230, 206, 157, 0.58);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.offerTabs button strong {
+  display: grid;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(196, 63, 59, 0.22);
+  color: #d5b76e;
+  font-family: Georgia, serif;
+  letter-spacing: 0;
+}
+
+.offerTabs button[aria-pressed='true'] {
+  border-color: rgba(226, 176, 81, 0.7);
+  color: #f2d89d;
+  background:
+    linear-gradient(180deg, rgba(162, 51, 49, 0.35), rgba(60, 30, 42, 0.82)), #21182d;
+  box-shadow: inset 0 -2px 0 #bd3940;
+}
+
 .offers {
   display: grid;
   min-height: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: 0.65rem;
-  padding: 0.45rem 0.7rem;
+  gap: 0.55rem;
+  overflow: clip;
+  padding: 0.05rem 0;
 }
 
 .offer {
   position: relative;
   display: grid;
   min-height: 0;
-  place-items: center;
-  align-content: center;
-  overflow: hidden;
-  padding: 0.65rem 0.8rem;
+  grid-template-columns: 4.8rem minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(1.4rem, 1fr) auto auto auto;
+  grid-template-areas:
+    'kind kind'
+    'art title'
+    'art description'
+    'art current'
+    'art flavor'
+    'art action';
+  gap: 0.08rem 0.58rem;
+  align-items: center;
+  overflow: clip;
+  padding: 0.48rem 0.62rem;
   color: #2d1b20;
   box-shadow: 0 18px 36px rgba(0, 0, 0, 0.3);
   clip-path: polygon(0 0, 93% 0, 100% 7%, 100% 100%, 7% 100%, 0 93%);
@@ -167,6 +228,11 @@
     linear-gradient(145deg, rgba(255, 255, 255, 0.15), transparent 45%), #a6c2a0;
 }
 
+.packOffer {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.18), transparent 45%), #d4b77d;
+}
+
 .offer::before {
   position: absolute;
   inset: 0.35rem;
@@ -176,6 +242,8 @@
 }
 
 .offerKind {
+  grid-area: kind;
+  justify-self: start;
   color: rgba(84, 47, 38, 0.55);
   font-size: 0.48rem;
   font-weight: 800;
@@ -183,10 +251,11 @@
 }
 
 .offerIcon {
+  grid-area: art;
+  justify-self: center;
   display: grid;
-  width: 2.4rem;
-  height: 2.4rem;
-  margin: 0.12rem 0;
+  width: 3.2rem;
+  height: 3.2rem;
   place-items: center;
   border: 1px solid #9e3636;
   border-radius: 50%;
@@ -196,17 +265,23 @@
   box-shadow: inset 0 0 0 0.22rem rgba(159, 47, 50, 0.08);
 }
 
-.offerArtwork {
-  width: 3.1rem;
-  height: 4.15rem;
-  margin: 0.15rem 0;
+.offerArtworkTrigger {
+  grid-area: art;
+  width: 4.45rem;
+  height: 5.93rem;
+  justify-self: center;
   border: 1px solid rgba(87, 31, 31, 0.58);
   border-radius: 0.2rem;
-  object-fit: cover;
   box-shadow: 0 0.28rem 0.55rem rgba(42, 18, 21, 0.3);
 }
 
+.offerArtwork {
+  object-fit: cover;
+}
+
 .offer h2 {
+  grid-area: title;
+  justify-self: start;
   margin: 0;
   font-family: 'STKaiti', 'KaiTi', serif;
   font-size: 1rem;
@@ -214,23 +289,31 @@
 }
 
 .offer > p {
-  min-height: 1.2rem;
-  margin: 0.12rem 0 0.22rem;
+  display: -webkit-box;
+  grid-area: description;
+  margin: 0.08rem 0;
+  overflow: hidden;
   color: rgba(51, 31, 31, 0.65);
   font-size: 0.58rem;
-  line-height: 1.2;
-  text-align: center;
+  line-height: 1.25;
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .jokerCurrentValue {
+  grid-area: current;
+  justify-self: start;
   color: #84252f;
   font-size: 0.56rem;
   font-weight: 900;
 }
 
 .jokerFlavor {
-  max-width: 13rem;
-  margin: 0.05rem 0 0.18rem;
+  grid-area: flavor;
+  max-width: 100%;
+  justify-self: stretch;
+  margin: 0;
   overflow: hidden;
   color: rgba(66, 42, 35, 0.52);
   font-family: 'STKaiti', 'KaiTi', serif;
@@ -240,9 +323,11 @@
   white-space: nowrap;
 }
 
-.offer > button {
+.purchaseButton {
   display: flex;
-  min-width: 8rem;
+  width: 100%;
+  min-width: 0;
+  grid-area: action;
   align-items: center;
   justify-content: space-between;
   padding: 0.3rem 0.55rem;
@@ -250,12 +335,12 @@
   color: #ffe8b5;
 }
 
-.offer > button span {
+.purchaseButton span {
   font-size: 0.62rem;
   letter-spacing: 0.08em;
 }
 
-.offer > button strong {
+.purchaseButton strong {
   color: #ffd063;
   font-family: Georgia, serif;
 }
@@ -273,13 +358,45 @@
   text-align: center;
 }
 
-.soldOut button {
-  padding: 0.35rem 0.6rem;
+.voucherRail {
+  display: flex;
+  min-width: 0;
+  gap: 0.45rem;
+  overflow-x: auto;
+  overflow-y: clip;
+  scrollbar-color: rgba(211, 165, 76, 0.52) rgba(11, 15, 39, 0.5);
+}
+
+.voucherOffer {
+  display: flex;
+  min-width: 100%;
+  min-height: 2.1rem;
+  flex: 0 0 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.28rem 0.45rem;
+  border: 1px solid rgba(205, 160, 76, 0.2);
+  color: rgba(229, 206, 160, 0.72);
+  background: rgba(77, 36, 45, 0.36);
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 0.62rem;
+}
+
+.voucherOffer > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voucherOffer button {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.52rem;
+  border: 1px solid rgba(211, 165, 76, 0.45);
   color: #f7dda5;
   background: #70232c;
-  border: 1px solid rgba(211, 165, 76, 0.45);
-  font: inherit;
-  cursor: pointer;
+  font-size: 0.58rem;
 }
 
 .inventory {
@@ -312,13 +429,16 @@
   background: rgba(92, 25, 38, 0.45);
 }
 
-.ownedJokerArtwork,
+.ownedJokerArtworkTrigger,
 .ownedJokerFallback {
   grid-row: 1 / span 2;
   width: 3.1rem;
   height: 4.1rem;
   border: 1px solid rgba(224, 181, 93, 0.38);
   border-radius: 0.18rem;
+}
+
+.ownedJokerArtwork {
   object-fit: cover;
 }
 
@@ -368,7 +488,7 @@
   gap: 0.25rem;
 }
 
-.ownedJokers button {
+.ownedJokerActions button {
   padding: 0.25rem 0.42rem;
   background: #20172b;
   color: #c9aa6d;
