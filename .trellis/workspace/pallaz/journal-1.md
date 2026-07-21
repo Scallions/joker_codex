@@ -503,3 +503,36 @@ Reproduced the rendered hand regression, prevented stable Motion card nodes from
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Fix card deselection position
+
+**Date**: 2026-07-22
+**Task**: Fix card deselection position
+**Branch**: `main`
+
+### Summary
+
+Fixed the card deselection pose so cards immediately return to their settled fan position, preserved hover re-entry behavior, and added Chromium/WebKit regression coverage.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d61737e` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

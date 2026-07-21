@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
-- **Last Active**: 2026-07-21
+- **Total Sessions**: 16
+- **Last Active**: 2026-07-22
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~505 | Active |
+| `journal-1.md` | ~538 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-07-22 | Fix card deselection position | `d61737e` | `main` |
 | 15 | 2026-07-21 | Fix post-play hand ordering | `74d6542` | `main` |
 | 14 | 2026-07-21 | Fix UI audit findings | `1051ab9`, `ac3c341` | `main` |
 | 13 | 2026-07-21 | UI experience playtest audit | `3672bdf` | `main` |
