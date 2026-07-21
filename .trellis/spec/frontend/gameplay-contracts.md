@@ -910,3 +910,110 @@ window.addEventListener("pointerdown", (event) => {
   if (event.isTrusted) void engine.unlock();
 });
 ```
+
+## Scenario: Accepted hand normalization and fixed-stage presentation geometry
+
+### 1. Scope / Trigger
+
+- Apply this contract whenever an accepted command can return to an active round,
+  change the playing-card set, or change the table/chrome presentation.
+- Hand membership and order remain engine-owned durable state. Layout and motion
+  may present that committed state, but must not derive another order in React.
+
+### 2. Signatures
+
+```ts
+executeCommandV2(state: RunStateV2, command: RunCommandV2): CommandResultV2;
+
+interface StageShellProps {
+  readonly presentationSpeed?: PresentationSpeed;
+}
+
+motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
+```
+
+- `PlayingStageChrome` owns the shared `playing-status` and
+  `playing-navigation` zones. `SoundStageDrawer` owns `audio-controls`.
+- Table geometry exposes `table-inventory`, `table-ledger`, `table-center`,
+  `table-hand`, and `table-actions` through stable `data-layout-zone` values.
+
+### 3. Contracts
+
+- After the command-specific handler accepts, `executeCommandV2` resolves every
+  `playing-card-added` window, then sorts an active round's `handIds` once with
+  `sortCardIdsV2(state, handIds, round.sortMode)`, then returns the accepted result.
+- Automatic normalization emits no sort event, consumes no RNG, and creates no
+  additional checkpoint. It returns the original state object when the phase is
+  not an active round or the current order already matches.
+- Rejected commands return their exact preimage and never normalize a legacy
+  unsorted save. Such a save normalizes on its next accepted round command.
+- New hand-card motion uses stable card IDs and transient presentation state only.
+  Sequence completion, skip, hidden-tab completion, or performer failure releases
+  the same committed cards without dispatching another gameplay command.
+- The fixed 16:9 stage groups navigation into one flex-owned zone and keeps the
+  named audio, status, inventory, ledger, center, hand, and action zones contained
+  and separated by at least 8 CSS pixels at 1280x720 and 1920x1080.
+- Tutorial guidance has priority in the shared status slot. Its long copy opens as
+  an explicit `tutorial-detail` overlay; progression notices remain compact.
+- `full` and `brisk` motion profiles share endpoints and stable IDs. `brisk` changes
+  timing/stagger only; neither profile may change committed DOM content or geometry.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| Accepted command returns an active round with unsorted `handIds` | Normalize once using the committed `sortMode` |
+| Accepted command adds playing cards | Resolve all added-card windows before normalization |
+| Command is rejected | Preserve exact state, card order, checkpoint, events, and RNG |
+| Active hand is already ordered or no round is active | Preserve the original state object |
+| Tutorial and unread notice both exist | Render tutorial in `playing-status`; keep notice durable for later display |
+| Named fixed-stage zones intersect or have less than 8px separation | Browser geometry gate fails |
+| Full tutorial copy is requested | Open the named modal overlay without advancing tutorial state |
+| Presentation completes, skips, hides, or fails | Release transient cards; keep the saved run byte-equivalent |
+
+### 5. Good / Base / Bad Cases
+
+- Good: discard draws replacements, added-card effects finish, and the returned
+  hand is suit-sorted with identical card sets, draw pile, RNG, events, and one
+  accepted checkpoint.
+- Good: audio controls, compact tutorial status, grouped navigation, Joker
+  inventory, ledger, hand, and actions remain visibly separated in both browsers.
+- Base: a legacy unsorted active save remains unchanged when a command rejects and
+  normalizes on the next accepted round command.
+- Bad: a component sorts a copy of the hand, an automatic sort emits a domain
+  event, or an absolute-positioned button independently competes for top-row space.
+
+### 6. Tests Required
+
+- Engine regression tests cover initial rank order, rank/suit play and discard,
+  added-card effects, legacy unsorted saves, selected/forced/face-down ID
+  conservation, rejection preimage equality, and manual sort event/checkpoint rules.
+- Component tests cover the single navigation zone, tutorial/notice priority,
+  explicit tutorial modal, always-visible skip, card hold/release, bounded score
+  impact nodes, and `StageShell` full/brisk propagation.
+- Playwright runs Chromium and WebKit at 1280x720 and 1920x1080, checks containment,
+  the explicit minimum-gap matrix, no outer scroll, and intentional modal overlap.
+  Changed snapshots are accepted only after those geometry assertions pass.
+- The motion performance probe retains frame-gap P95 at or below 50 ms and zero
+  repeated Long Task or timer-drift violations above 50 ms.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// React invents a second order and a separate button owns a competing offset.
+const visibleHand = [...run.round.handIds].sort(componentComparator);
+return <button style={{ position: "absolute", top: 16, right: 200 }}>帮助</button>;
+```
+
+#### Correct
+
+```ts
+const normalized = normalizeActiveRoundHandOrder(afterAddedCardWindows);
+return accept(normalized, domainEvents, presentationEvents);
+
+// Presentation consumes the committed order and shared geometry ownership.
+const visibleHand = run.round.handIds;
+return <PlayingStageChrome />;
+```
