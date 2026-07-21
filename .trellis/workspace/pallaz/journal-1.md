@@ -536,3 +536,36 @@ Fixed the card deselection pose so cards immediately return to their settled fan
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Bootstrap project guidelines
+
+**Date**: 2026-07-22
+**Task**: Bootstrap project guidelines
+**Branch**: `main`
+
+### Summary
+
+Replaced the Trellis guideline scaffolds with codebase-derived backend-boundary and frontend conventions, including IndexedDB, deterministic engine, React, Redux, strict TypeScript, and verification contracts.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d962386` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
