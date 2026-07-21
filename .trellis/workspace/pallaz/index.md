@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
+- **Total Sessions**: 15
 - **Last Active**: 2026-07-21
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~472 | Active |
+| `journal-1.md` | ~505 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 15 | 2026-07-21 | Fix post-play hand ordering | `74d6542` | `main` |
 | 14 | 2026-07-21 | Fix UI audit findings | `1051ab9`, `ac3c341` | `main` |
 | 13 | 2026-07-21 | UI experience playtest audit | `3672bdf` | `main` |
 | 12 | 2026-07-21 | Repair tutorial shop and Joker artwork presentation | `c619e09` | `main` |

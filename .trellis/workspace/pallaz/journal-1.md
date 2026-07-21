@@ -470,3 +470,36 @@ Resolved tutorial recovery, table action ownership, artwork sizing, adaptive lay
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Fix post-play hand ordering
+
+**Date**: 2026-07-21
+**Task**: Fix post-play hand ordering
+**Branch**: `main`
+
+### Summary
+
+Reproduced the rendered hand regression, prevented stable Motion card nodes from reusing hidden entry poses, added Chromium and WebKit coverage for rank and suit ordering, and documented the animation contract.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `74d6542` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
