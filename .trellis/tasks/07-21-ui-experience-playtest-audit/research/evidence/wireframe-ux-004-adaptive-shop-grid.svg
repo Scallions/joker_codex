@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760">
+  <rect width="1400" height="760" fill="#080b20"/>
+  <text x="50" y="54" fill="#f8df9b" font-size="30" font-weight="700" font-family="system-ui, sans-serif">UX-004 · 稀疏货架的自适应构图（结构草图）</text>
+  <text x="50" y="84" fill="#b7b9ca" font-size="16" font-family="system-ui, sans-serif">限制单品卡最大宽高，让高质量素材与核心信息成为视觉主体。</text>
+  <g transform="translate(40 112)">
+    <rect width="640" height="600" rx="12" fill="#11152c" stroke="#66543a" stroke-width="2"/>
+    <text x="24" y="40" fill="#c9cad5" font-size="22" font-weight="700" font-family="system-ui, sans-serif">现在：2 件商品仍拉满整行</text>
+    <rect x="24" y="70" width="592" height="454" fill="#10172d" stroke="#66543a"/>
+    <g fill="#ead9ad" stroke="#a83d42" stroke-width="2">
+      <rect x="46" y="100" width="256" height="350"/>
+      <rect x="338" y="100" width="256" height="350"/>
+    </g>
+    <g font-family="system-ui, sans-serif">
+      <text x="70" y="150" fill="#8f2732" font-size="18">青梅转</text><text x="362" y="150" fill="#8f2732" font-size="18">朱砂易</text>
+      <text x="70" y="180" fill="#4a4140" font-size="13">一句很短的效果说明</text><text x="362" y="180" fill="#4a4140" font-size="13">一句很短的效果说明</text>
+      <rect x="70" y="392" width="208" height="38" fill="#9e2632"/><rect x="362" y="392" width="208" height="38" fill="#9e2632"/>
+      <text x="174" y="417" text-anchor="middle" fill="#fff" font-size="14">购买 ¥3</text><text x="466" y="417" text-anchor="middle" fill="#fff" font-size="14">购买 ¥3</text>
+    </g>
+    <text x="320" y="566" text-anchor="middle" fill="#ff9c91" font-size="16" font-family="system-ui, sans-serif">内容很小，空白却被包装成巨大卡片</text>
+  </g>
+  <g transform="translate(720 112)">
+    <rect width="640" height="600" rx="12" fill="#11152c" stroke="#d5aa50" stroke-width="3"/>
+    <text x="24" y="40" fill="#f8df9b" font-size="22" font-weight="700" font-family="system-ui, sans-serif">建议：设最大尺寸并居中</text>
+    <rect x="24" y="70" width="592" height="454" fill="#10172d" stroke="#66543a"/>
+    <g fill="#ead9ad" stroke="#d5aa50" stroke-width="3">
+      <rect x="98" y="104" width="208" height="330"/>
+      <rect x="334" y="104" width="208" height="330"/>
+    </g>
+    <g fill="#2e1822" stroke="#a83d42" stroke-width="2">
+      <rect x="116" y="124" width="172" height="126"/>
+      <rect x="352" y="124" width="172" height="126"/>
+    </g>
+    <circle cx="202" cy="187" r="44" fill="#9e2632" opacity="0.7"/>
+    <path d="M180 190 C198 160, 222 165, 230 195 C212 216, 192 217, 180 190" fill="#f0c96b"/>
+    <circle cx="438" cy="187" r="44" fill="#9e2632" opacity="0.7"/>
+    <path d="M414 180 L462 180 L438 220 z" fill="#f0c96b"/>
+    <g font-family="system-ui, sans-serif">
+      <text x="122" y="284" fill="#8f2732" font-size="19" font-weight="700">青梅转</text>
+      <text x="358" y="284" fill="#8f2732" font-size="19" font-weight="700">朱砂易</text>
+      <text x="122" y="312" fill="#4a4140" font-size="13">消耗牌 · 转化 1 张牌</text>
+      <text x="358" y="312" fill="#4a4140" font-size="13">消耗牌 · 改变花色</text>
+      <rect x="122" y="374" width="160" height="42" fill="#9e2632"/><rect x="358" y="374" width="160" height="42" fill="#9e2632"/>
+      <text x="202" y="401" text-anchor="middle" fill="#fff" font-size="15">购买 ¥3</text><text x="438" y="401" text-anchor="middle" fill="#fff" font-size="15">购买 ¥3</text>
+    </g>
+    <text x="320" y="474" text-anchor="middle" fill="#9fd8c5" font-size="15" font-family="system-ui, sans-serif">1–2 件居中；3–4 件扩展为紧凑网格</text>
+    <text x="320" y="566" text-anchor="middle" fill="#b7b9ca" font-size="16" font-family="system-ui, sans-serif">素材、品类、效果、价格形成稳定扫读顺序</text>
+  </g>
+</svg>

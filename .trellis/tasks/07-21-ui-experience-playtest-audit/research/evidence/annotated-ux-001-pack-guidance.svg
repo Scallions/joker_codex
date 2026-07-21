@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#ffe07a"/>
+    </marker>
+  </defs>
+  <image href="chromium-1280x720-tutorial-step7-shop-packs.png" width="1280" height="720"/>
+  <rect x="172" y="17" width="698" height="42" rx="3" fill="none" stroke="#ffe07a" stroke-width="4"/>
+  <rect x="127" y="271" width="703" height="280" rx="8" fill="#ffdf7430" stroke="#ffe07a" stroke-width="4" stroke-dasharray="12 7"/>
+  <rect x="891" y="177" width="342" height="108" rx="8" fill="#330a18e8" stroke="#ffe07a" stroke-width="2"/>
+  <text x="913" y="211" fill="#fff2bf" font-size="22" font-weight="700" font-family="system-ui, sans-serif">UX-001 · 教程兼容性不可见</text>
+  <text x="913" y="244" fill="#fff" font-size="18" font-family="system-ui, sans-serif">四种补充包均可购买，外观与按钮一致，</text>
+  <text x="913" y="270" fill="#fff" font-size="18" font-family="system-ui, sans-serif">没有标记哪一种能产出本步要求的消耗牌。</text>
+  <path d="M890 258 C860 280, 846 320, 824 340" fill="none" stroke="#ffe07a" stroke-width="4" marker-end="url(#arrow)"/>
+  <rect x="882" y="322" width="358" height="90" rx="8" fill="#330a18e8" stroke="#ff6b6b" stroke-width="2"/>
+  <text x="904" y="356" fill="#ffb1a8" font-size="20" font-weight="700" font-family="system-ui, sans-serif">必要动作前缺少防错提示</text>
+  <text x="904" y="387" fill="#fff" font-size="18" font-family="system-ui, sans-serif">错误包购买成功后会进入不可恢复状态。</text>
+  <path d="M882 387 C845 410, 824 438, 808 473" fill="none" stroke="#ff6b6b" stroke-width="4" marker-end="url(#arrow)"/>
+</svg>
