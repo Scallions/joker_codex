@@ -1017,6 +1017,12 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
   animation state; the hidden pose is never advertised as a reusable initial value
   to the presence/layout reconciler. This prevents surviving cards from being
   stranded at `opacity: 0` or at a previous index's rotation.
+- A stable card's Motion `transform` channel owns only durable fan geometry plus
+  entry/exit motion. Pointer hover and press use independent CSS `translate` and
+  `scale` properties, so an asynchronous selection commit cannot be overwritten by
+  a stale Motion gesture or selected spring. Deselecting suppresses hover for the
+  remainder of that pointer visit; hover becomes eligible again only after pointer
+  leave followed by physical pointer movement.
 - The fixed 16:9 stage groups navigation into one flex-owned zone. Audio, status,
   inventory, ledger, center, and the complete hand assembly stay contained and
   separated by at least 8 CSS pixels at 1280x720 and 1920x1080. Inside the hand
@@ -1041,6 +1047,7 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
 | Full tutorial copy is requested | Open the named modal overlay without advancing tutorial state |
 | Presentation completes, skips, hides, or fails | Release transient cards; keep the saved run byte-equivalent |
 | A played card exits while a replacement is inserted or the hand reorders | Every surviving card settles visible, left-to-right in committed order, at the fan pose for its current index |
+| A selected card is clicked again while the pointer remains over it | Clear committed/DOM selection and immediately restore fan `x`, `y`, rotation, and scale `1`; do not apply hover again during the same pointer visit |
 
 ### 5. Good / Base / Bad Cases
 
@@ -1051,10 +1058,16 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
   inventory, ledger, center, and the hand assembly remain visibly separated in
   both browsers; the card fan and its owned action rail remain stacked inside the
   hand assembly.
+- Good: a selected edge or middle card is deselected, returns to its exact fan pose
+  under the stationary pointer, and regains ordinary hover only after leave and
+  re-entry.
 - Base: a legacy unsorted active save remains unchanged when a command rejects and
   normalizes on the next accepted round command.
 - Bad: a component sorts a copy of the hand, an automatic sort emits a domain
   event, or an absolute-positioned button independently competes for top-row space.
+- Bad: `animate`, `whileHover`, and `whileTap` all write `y`/`scale` on the same
+  Motion element while an asynchronous selection command can re-render it; an old
+  gesture or selected endpoint may later strand the visibly unselected card.
 
 ### 6. Tests Required
 
@@ -1073,6 +1086,10 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
   then compares persisted IDs with DOM order, verifies every settled card is
   visible, checks strictly increasing horizontal centers and current-index fan
   rotations, and repeats the same assertions after reload.
+- A deselection regression uses rendered controls on edge and non-edge cards,
+  compares committed and DOM selection, asserts complete matrix/CSS pose under the
+  stationary pointer, repeats the toggle to detect drift, then verifies hover
+  returns after leave/re-entry in Chromium and WebKit.
 - The motion performance probe retains frame-gap P95 at or below 50 ms and zero
   repeated Long Task or timer-drift violations above 50 ms.
 
@@ -1089,6 +1106,15 @@ return (
     <aside data-layout-zone="table-actions">...</aside>
   </>
 );
+```
+
+```tsx
+// Durable fan and transient gestures race in one Motion transform channel.
+<motion.button
+  animate={{ y: selected ? -24 : fanY, scale: 1 }}
+  whileHover={{ y: selected ? -28 : -10, scale: 1.025 }}
+  whileTap={{ scale: 0.97 }}
+/>
 ```
 
 #### Correct
@@ -1108,4 +1134,15 @@ return (
     </section>
   </>
 );
+```
+
+```tsx
+// Motion owns durable geometry; CSS individual transforms own pointer feedback.
+<motion.button
+  animate={{ y: fanY, scale: 1, rotate: fanRotation }}
+  style={{
+    '--card-interaction-y': interactionY,
+    '--card-interaction-scale': interactionScale,
+  }}
+/>
 ```

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import type { RunStateV2 } from '../../src/game-core/model/runV2';
 
@@ -94,6 +94,8 @@ async function expectSettledHandToMatchCommittedPose(page: Page) {
               centerX: rect.left + rect.width / 2,
               entryState: element.dataset.cardEntryState,
               opacity: Number.parseFloat(getComputedStyle(element).opacity),
+              scale: Math.hypot(matrix.a, matrix.b),
+              translateY: matrix.f,
               rotation: (Math.atan2(matrix.b, matrix.a) * 180) / Math.PI,
             };
           }),
@@ -107,7 +109,10 @@ async function expectSettledHandToMatchCommittedPose(page: Page) {
             ({ centerX }, index) => index === 0 || poses[index - 1]!.centerX < centerX,
           ),
           currentFanPose: poses.every(
-            ({ rotation }, index) => Math.abs(rotation - (index - center) * 2.2) <= 0.25,
+            ({ rotation, scale, translateY }, index) =>
+              Math.abs(rotation - (index - center) * 2.2) <= 0.25 &&
+              Math.abs(scale - 1) <= 0.005 &&
+              Math.abs(translateY - Math.abs(index - center) * 2.2) <= 0.5,
           ),
         };
       },
@@ -120,6 +125,106 @@ async function expectSettledHandToMatchCommittedPose(page: Page) {
       leftToRight: true,
       currentFanPose: true,
     });
+}
+
+interface CardMotionPose {
+  readonly hovered: boolean;
+  readonly scale: number;
+  readonly translateX: number;
+  readonly translateY: number;
+  readonly rotation: number;
+}
+
+function settledCardMotionPose(
+  index: number,
+  count: number,
+): Omit<CardMotionPose, 'hovered'> {
+  const center = (count - 1) / 2;
+  return {
+    scale: 1,
+    translateX: 0,
+    translateY: Math.abs(index - center) * 2.2,
+    rotation: (index - center) * 2.2,
+  };
+}
+
+async function readCardMotionPose(card: Locator): Promise<CardMotionPose> {
+  return card.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const transform = style.transform;
+    const matrix = new DOMMatrixReadOnly(transform === 'none' ? undefined : transform);
+    const translateParts = style.translate === 'none' ? [] : style.translate.split(' ');
+    const interactionTranslateY = Number.parseFloat(translateParts[1] ?? '0');
+    const interactionScale =
+      style.scale === 'none' ? 1 : Number.parseFloat(style.scale.split(' ')[0] ?? '1');
+    return {
+      hovered: element.matches(':hover'),
+      scale: Math.hypot(matrix.a, matrix.b) * interactionScale,
+      translateX: matrix.e,
+      translateY: matrix.f + interactionTranslateY,
+      rotation: (Math.atan2(matrix.b, matrix.a) * 180) / Math.PI,
+    };
+  });
+}
+
+async function expectCardMotionPose(
+  card: Locator,
+  expected: Omit<CardMotionPose, 'hovered'>,
+  hovered: boolean,
+) {
+  await expect
+    .poll(
+      async () => {
+        const actual = await readCardMotionPose(card);
+        const comparisons = {
+          hovered: actual.hovered,
+          scale: Math.abs(actual.scale - expected.scale) <= 0.005,
+          translateX: Math.abs(actual.translateX - expected.translateX) <= 0.5,
+          translateY: Math.abs(actual.translateY - expected.translateY) <= 0.5,
+          rotation: Math.abs(actual.rotation - expected.rotation) <= 0.25,
+        };
+        if (
+          comparisons.hovered === hovered &&
+          comparisons.scale &&
+          comparisons.translateX &&
+          comparisons.translateY &&
+          comparisons.rotation
+        ) {
+          return comparisons;
+        }
+        return {
+          ...comparisons,
+          actual: {
+            scale: Number(actual.scale.toFixed(4)),
+            translateX: Number(actual.translateX.toFixed(2)),
+            translateY: Number(actual.translateY.toFixed(2)),
+            rotation: Number(actual.rotation.toFixed(2)),
+          },
+        };
+      },
+      { timeout: 5_000 },
+    )
+    .toEqual({
+      hovered,
+      scale: true,
+      translateX: true,
+      translateY: true,
+      rotation: true,
+    });
+}
+
+async function expectCardSelected(page: Page, cardId: string, selected: boolean) {
+  await expect
+    .poll(async () =>
+      (await readActiveRun(page)).round?.selectedCardIds.some((id) => id === cardId),
+    )
+    .toBe(selected);
+  const card = page.locator(`[data-card-id="${cardId}"]`);
+  if (selected) {
+    await expect(card).toHaveClass(/selectedCard/);
+  } else {
+    await expect(card).not.toHaveClass(/selectedCard/);
+  }
 }
 
 test('完整与利落朱印都只呈现已提交结果，一点落定不会重发牌局命令', async ({ page }) => {
@@ -180,4 +285,68 @@ test('连续出牌后点数与花色手牌保持已提交顺序和完整扇形�
   await expect(page.getByRole('button', { name: '出牌' })).toBeVisible();
   await expectSettledHandToMatchCommittedPose(page);
   expect(await readActiveRun(page)).toEqual(committed);
+});
+
+test('取消选中立即恢复完整扇形姿态，离开后重新启用悬停反馈', async ({ page }) => {
+  await enterRound(page, 'BOUND001');
+  await landCurrentPresentation(page);
+  await page.mouse.move(4, 4);
+
+  const cards = page.locator('[data-card-id]');
+  const cardCount = await cards.count();
+  const leftmostCard = cards.first();
+  const leftmostId = await leftmostCard.getAttribute('data-card-id');
+  if (!leftmostId) throw new Error('最左侧手牌缺少稳定 ID');
+
+  const settledPose = settledCardMotionPose(0, cardCount);
+  await expectCardMotionPose(leftmostCard, settledPose, false);
+
+  await leftmostCard.click();
+  await expectCardSelected(page, leftmostId, true);
+  await expect
+    .poll(async () => (await readCardMotionPose(leftmostCard)).translateY)
+    .toBeLessThan(settledPose.translateY - 20);
+
+  await leftmostCard.click();
+  await expectCardSelected(page, leftmostId, false);
+  await expectCardMotionPose(leftmostCard, settledPose, true);
+
+  await page.mouse.move(4, 4);
+  await expectCardMotionPose(leftmostCard, settledPose, false);
+
+  await leftmostCard.hover();
+  await expectCardMotionPose(
+    leftmostCard,
+    {
+      ...settledPose,
+      scale: 1.025,
+      translateY: -10,
+    },
+    true,
+  );
+  await page.mouse.move(4, 4);
+  await expectCardMotionPose(leftmostCard, settledPose, false);
+
+  await leftmostCard.click();
+  await expectCardSelected(page, leftmostId, true);
+  await leftmostCard.click();
+  await expectCardSelected(page, leftmostId, false);
+  await expectCardMotionPose(leftmostCard, settledPose, true);
+  await page.mouse.move(4, 4);
+  await expectCardMotionPose(leftmostCard, settledPose, false);
+
+  const middleCard = cards.nth(3);
+  const middleId = await middleCard.getAttribute('data-card-id');
+  if (!middleId) throw new Error('中间手牌缺少稳定 ID');
+  const middleSettledPose = settledCardMotionPose(3, cardCount);
+  await expectCardMotionPose(middleCard, middleSettledPose, false);
+
+  await middleCard.click();
+  await expectCardSelected(page, middleId, true);
+  await middleCard.click();
+  await expectCardSelected(page, middleId, false);
+  await expectCardMotionPose(middleCard, middleSettledPose, true);
+  await page.mouse.move(4, 4);
+  await expectCardMotionPose(middleCard, middleSettledPose, false);
+  await expectSettledHandToMatchCommittedPose(page);
 });

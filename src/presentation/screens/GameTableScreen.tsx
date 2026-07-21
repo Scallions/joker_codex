@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, type MotionStyle } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { finishLocalRun, submitRunCommand } from '../../app/store/appSlice';
@@ -59,6 +59,11 @@ interface CardButtonProps {
   readonly onSelect: () => void;
 }
 
+interface CardInteractionStyle extends MotionStyle {
+  readonly '--card-interaction-y': string;
+  readonly '--card-interaction-scale': number;
+}
+
 function CardButton({
   card,
   index,
@@ -73,10 +78,35 @@ function CardButton({
   motionProfile,
   onSelect,
 }: CardButtonProps) {
+  const [pointerInside, setPointerInside] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hoverSuppressed, setHoverSuppressed] = useState(false);
   const red = card.suit === 'hearts' || card.suit === 'diamonds';
   const center = (count - 1) / 2;
+  const settledY = Math.abs(index - center) * 2.2;
+  const hoverActive = pointerInside && !hoverSuppressed;
+  const interactionY = selected
+    ? (hoverActive ? -28 : -24) - settledY
+    : hoverActive
+      ? -10 - settledY
+      : 0;
+  const interactionStyle: CardInteractionStyle = {
+    '--card-interaction-y': `${interactionY}px`,
+    '--card-interaction-scale': pressed ? 0.97 : hoverActive ? 1.025 : 1,
+  };
   const entryPose = { opacity: 0, x: 84, y: 42, scale: 0.9, rotate: 5 };
   const entryDelay = entering ? (index * motionProfile.staggerMs) / 1_000 : 0;
+  useEffect(() => {
+    if (!hoverSuppressed || pointerInside) return;
+    const releaseHoverSuppression = () => setHoverSuppressed(false);
+    window.addEventListener('pointermove', releaseHoverSuppression, { once: true });
+    return () => window.removeEventListener('pointermove', releaseHoverSuppression);
+  }, [hoverSuppressed, pointerInside]);
+  const selectCard = () => {
+    setPressed(false);
+    if (selected) setHoverSuppressed(true);
+    onSelect();
+  };
   return (
     <motion.button
       type="button"
@@ -90,9 +120,20 @@ function CardButton({
         faceDown ? '覆面戏牌' : `${SUIT_NAME[card.suit]} ${RANK_LABEL[card.rank]}`
       }
       disabled={disabled || forced}
-      onClick={onSelect}
+      onPointerEnter={() => {
+        setPointerInside(true);
+      }}
+      onPointerLeave={() => {
+        setPointerInside(false);
+        setPressed(false);
+      }}
+      onPointerDown={() => setPressed(true)}
+      onPointerUp={() => setPressed(false)}
+      onPointerCancel={() => setPressed(false)}
+      onClick={selectCard}
       layout="position"
       initial={false}
+      style={interactionStyle}
       animate={
         entryHeld
           ? entryPose
@@ -100,7 +141,7 @@ function CardButton({
               opacity: 1,
               x: 0,
               scale: 1,
-              y: selected ? -24 : Math.abs(index - center) * 2.2,
+              y: settledY,
               rotate: (index - center) * 2.2,
             }
       }
@@ -115,8 +156,6 @@ function CardButton({
               rotate: index <= center ? -16 : 16,
             }
       }
-      whileHover={{ y: selected ? -28 : -10, scale: 1.025 }}
-      whileTap={{ scale: 0.97 }}
       transition={{
         type: 'spring',
         stiffness: motionProfile.spring.stiffness,
