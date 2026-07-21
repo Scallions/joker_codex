@@ -335,3 +335,38 @@ Revalidated the complete V7 release from a clean install, confirmed 644 tests an
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Polish UI layout, playability, and motion
+
+**Date**: 2026-07-21
+**Task**: Polish UI layout, playability, and motion
+**Branch**: `main`
+
+### Summary
+
+Fixed desktop layout collisions, made accepted hand ordering authoritative, added bounded full/brisk stage motion, and validated Chromium/WebKit geometry, tests, coverage, and build budget.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7818789` | (see git log) |
+| `88d2d43` | (see git log) |
+| `31d7625` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
