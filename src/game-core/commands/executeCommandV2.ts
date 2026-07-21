@@ -148,6 +148,16 @@ function accept(
   };
 }
 
+function normalizeActiveRoundHandOrder(state: RunStateV2): RunStateV2 {
+  if (state.phase.kind !== 'round' || !state.round) return state;
+  const handIds = sortCardIdsV2(state, state.round.handIds, state.round.sortMode);
+  const orderMatches = handIds.every(
+    (cardId, index) => cardId === state.round?.handIds[index],
+  );
+  if (orderMatches) return state;
+  return { ...state, round: { ...state.round, handIds } };
+}
+
 function withCheckpoint(state: RunStateV2): RunStateV2 {
   return { ...state, checkpointId: state.checkpointId + 1 };
 }
@@ -2904,7 +2914,6 @@ export function executeCommandV2(
   if (!result.ok) return result;
   const previousIds = new Set(state.deck.cards.map(({ id }) => id));
   const addedCards = result.state.deck.cards.filter(({ id }) => !previousIds.has(id));
-  if (addedCards.length === 0) return result;
 
   let next = result.state;
   for (const card of addedCards) {
@@ -2923,5 +2932,7 @@ export function executeCommandV2(
     if (!added.ok) return reject(added.code, added.message);
     next = added.state;
   }
-  return accept(next, result.domainEvents, result.presentationEvents);
+  const normalized = normalizeActiveRoundHandOrder(next);
+  if (addedCards.length === 0 && normalized === result.state) return result;
+  return accept(normalized, result.domainEvents, result.presentationEvents);
 }
