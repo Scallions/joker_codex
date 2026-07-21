@@ -60,7 +60,6 @@ export function AchievementBookScreen() {
                     <h3>{definition.name}</h3>
                   </div>
                 </div>
-                <code className={styles.achievementId}>{definition.achievementId}</code>
                 <p>{definition.description}</p>
                 <div
                   className={styles.progressTrack}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   generateLocalSetupSeed,
@@ -26,6 +26,11 @@ const MODE_TITLES = {
   seeded: '种子牌局设置',
   challenge: '挑战模式设置',
 } as const;
+
+interface CopyFeedback {
+  readonly code: string;
+  readonly status: 'success' | 'failure';
+}
 
 export function ModeSetupScreen() {
   const dispatch = useAppDispatch();
@@ -58,6 +63,8 @@ export function ModeSetupScreen() {
   const [seedOverride, setSeedOverride] = useState<string | null>(null);
   const seedInput = seedOverride ?? setupSeed ?? '';
   const [localMessage, setLocalMessage] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<CopyFeedback | null>(null);
+  const copyAttempt = useRef(0);
 
   useEffect(() => {
     if (setupSeed === null) {
@@ -94,6 +101,10 @@ export function ModeSetupScreen() {
   const previewDeckAllowed = previewDeck !== undefined;
   const previewStakeAllowed = previewStake !== undefined;
   const canonicalCode = seedPreview ? serializeSeedCode(seedPreview) : null;
+
+  useEffect(() => {
+    copyAttempt.current += 1;
+  }, [canonicalCode]);
 
   if (!profile || !setupMode) return null;
 
@@ -132,9 +143,28 @@ export function ModeSetupScreen() {
   };
 
   const selectedChallenge = challenges.find((challenge) => challenge.id === challengeId);
+  const currentCopyFeedback = copyFeedback?.code === canonicalCode ? copyFeedback : null;
+
+  const copyShareCode = async () => {
+    if (!canonicalCode) return;
+    const attempt = ++copyAttempt.current;
+    setCopyFeedback(null);
+    try {
+      if (!navigator.clipboard) throw new Error('当前环境不支持剪贴板');
+      await navigator.clipboard.writeText(canonicalCode);
+      if (copyAttempt.current !== attempt) return;
+      setCopyFeedback({ code: canonicalCode, status: 'success' });
+    } catch {
+      if (copyAttempt.current !== attempt) return;
+      setCopyFeedback({ code: canonicalCode, status: 'failure' });
+    }
+  };
 
   return (
-    <PaperLedger className={styles.screen}>
+    <PaperLedger
+      className={`${styles.screen} ${styles.contentHeightScreen}`}
+      data-layout-size="content"
+    >
       <header className={styles.header}>
         <div>
           <p>{profile.displayName} · 仅显示本档已开放内容</p>
@@ -251,19 +281,23 @@ export function ModeSetupScreen() {
                 <button
                   type="button"
                   className={styles.button}
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(canonicalCode);
-                    setLocalMessage('分享码已复制');
-                  }}
+                  onClick={() => void copyShareCode()}
                 >
-                  复制分享码
+                  {currentCopyFeedback?.status === 'success' ? '已复制 ✓' : '复制分享码'}
                 </button>
               ) : null}
             </article>
           </>
         )}
 
-        {localMessage ? <p className={styles.localMessage}>{localMessage}</p> : null}
+        {localMessage || currentCopyFeedback ? (
+          <p className={styles.localMessage}>
+            {localMessage ??
+              (currentCopyFeedback?.status === 'success'
+                ? '分享码已复制'
+                : '复制失败，请手动选择分享码')}
+          </p>
+        ) : null}
         <div className={styles.setupActions}>
           <button
             type="button"

@@ -22,6 +22,7 @@ export function ResultScreen() {
   const delta =
     profile?.lastResultSummary?.runId === run.runId ? profile.lastResultSummary : null;
   const runClass = isRunStateV7(run) ? run.sessionV7.runClass : null;
+  const isTutorial = runClass === 'tutorial';
   const modeName =
     runClass === 'campaign'
       ? '普通战役'
@@ -58,7 +59,7 @@ export function ResultScreen() {
       : null;
   return (
     <motion.div
-      className={`${styles.screen} ${won ? styles.won : styles.lost}`}
+      className={`${styles.screen} ${won ? styles.won : styles.lost} ${isTutorial ? styles.tutorial : ''}`}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.45 }}
@@ -80,33 +81,43 @@ export function ResultScreen() {
         <p>
           {modeName} · {won ? '已完成' : '未完成'}
         </p>
-        <h1>{won ? '今夜压轴，满堂喝彩' : '锣声已止，再排一场'}</h1>
+        <h1>
+          {isTutorial
+            ? '八步入门 · 8/8 完成'
+            : won
+              ? '今夜压轴，满堂喝彩'
+              : '锣声已止，再排一场'}
+        </h1>
         <span>
-          {won
-            ? '你把最后一手钉进朱砂印，百戏夜场为你亮到天明。'
-            : '牌已收拢，戏台仍在。换个种子，再来一手。'}
+          {isTutorial
+            ? '盲注、理牌、结算与夜市已经走完；下一场可以按自己的节奏登台。'
+            : won
+              ? '你把最后一手钉进朱砂印，百戏夜场为你亮到天明。'
+              : '牌已收拢，戏台仍在。换个种子，再来一手。'}
         </span>
       </div>
 
-      <div className={styles.setupIdentity}>
-        {deckRow ? (
-          <span>
-            牌组：{deckRow.definition.referenceIndex} · {deckRow.name}
-          </span>
-        ) : null}
-        {stakeRow ? (
-          <span>
-            筹码：{stakeRow.definition.referenceIndex} · {stakeRow.name}
-          </span>
-        ) : null}
-        {challengeRow ? (
-          <span>
-            挑战：{challengeRow.definition.referenceIndex} · {challengeRow.name}
-          </span>
-        ) : null}
-        <span>种子：{run.seed}</span>
-        <span>内容版本：{run.contentVersion}</span>
-      </div>
+      {!isTutorial ? (
+        <div className={styles.setupIdentity}>
+          {deckRow ? (
+            <span>
+              牌组：{deckRow.definition.referenceIndex} · {deckRow.name}
+            </span>
+          ) : null}
+          {stakeRow ? (
+            <span>
+              筹码：{stakeRow.definition.referenceIndex} · {stakeRow.name}
+            </span>
+          ) : null}
+          {challengeRow ? (
+            <span>
+              挑战：{challengeRow.definition.referenceIndex} · {challengeRow.name}
+            </span>
+          ) : null}
+          <span>种子：{run.seed}</span>
+          <span>内容版本：{run.contentVersion}</span>
+        </div>
+      ) : null}
 
       {seededShareCode ? (
         <div className={styles.seedCode}>
@@ -121,24 +132,45 @@ export function ResultScreen() {
         </div>
       ) : null}
 
-      <dl className={styles.summary}>
-        <div>
-          <dt>最终得分</dt>
-          <dd>{formatScore(run.result?.score ?? run.round?.score ?? 0)}</dd>
-        </div>
-        <div>
-          <dt>目标</dt>
-          <dd>{formatScore(run.round?.targetScore ?? 0)}</dd>
-        </div>
-        <div>
-          <dt>剩余出牌</dt>
-          <dd>{run.round?.handsRemaining ?? 0}</dd>
-        </div>
-        <div>
-          <dt>戏票</dt>
-          <dd>¥{run.economy.money}</dd>
-        </div>
-      </dl>
+      {isTutorial ? (
+        <section className={styles.learningRecap} aria-label="八步所学">
+          <article>
+            <h2>识幕</h2>
+            <p>选择盲注，读懂目标与奖励。</p>
+          </article>
+          <article>
+            <h2>理牌</h2>
+            <p>选牌、出牌、弃牌并整理手牌。</p>
+          </article>
+          <article>
+            <h2>结算</h2>
+            <p>观察筹码倍率，领取戏票。</p>
+          </article>
+          <article>
+            <h2>夜市</h2>
+            <p>购买奇牌，拆包并使用消耗牌。</p>
+          </article>
+        </section>
+      ) : (
+        <dl className={styles.summary}>
+          <div>
+            <dt>最终得分</dt>
+            <dd>{formatScore(run.result?.score ?? run.round?.score ?? 0)}</dd>
+          </div>
+          <div>
+            <dt>目标</dt>
+            <dd>{formatScore(run.round?.targetScore ?? 0)}</dd>
+          </div>
+          <div>
+            <dt>剩余出牌</dt>
+            <dd>{run.round?.handsRemaining ?? 0}</dd>
+          </div>
+          <div>
+            <dt>戏票</dt>
+            <dd>¥{run.economy.money}</dd>
+          </div>
+        </dl>
+      )}
 
       <div className={styles.lastHand}>
         <span>最后一手</span>
@@ -146,7 +178,12 @@ export function ResultScreen() {
         <em>{run.lastHand ? `+${run.lastHand.score}` : '—'}</em>
       </div>
 
-      {delta ? (
+      {isTutorial ? (
+        <section className={styles.delta}>
+          <h2>教程说明：不会写入普通进度</h2>
+          <p>本次练习不会改变普通解锁、收藏、成就与统计。</p>
+        </section>
+      ) : delta ? (
         <section className={styles.delta}>
           <h2>本局永久进度</h2>
           <div className={styles.deltaCounts}>
@@ -202,7 +239,7 @@ export function ResultScreen() {
             </dl>
           </details>
         </section>
-      ) : runClass === 'seeded' || runClass === 'tutorial' ? (
+      ) : runClass === 'seeded' ? (
         <section className={styles.delta}>
           <h2>本局永久进度</h2>
           <p>此模式不改变普通解锁、收藏、成就与统计。</p>

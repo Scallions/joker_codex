@@ -2,16 +2,18 @@ import type { DomainEventV2, RunCommandV2 } from '../game-core/commands/typesV2'
 import type { RunStateV7 } from '../game-core/model/runV7';
 import type { ProgressionFact } from '../progression/facts';
 import type { TutorialProgress } from '../progression/model';
-import { TUTORIAL_STEPS } from './script';
+import { TUTORIAL_STEPS, tutorialInstructionForPhase } from './script';
 
 export type TutorialGateResult =
   { readonly ok: true } | { readonly ok: false; readonly message: string };
 
-function rejection(stepId: string): TutorialGateResult {
+function rejection(run: RunStateV7, stepId: string): TutorialGateResult {
   const step = TUTORIAL_STEPS.find((candidate) => candidate.stepId === stepId);
   return {
     ok: false,
-    message: step ? `教程提示：${step.instruction}` : '教程步骤无效，请返回主菜单重试。',
+    message: step
+      ? `教程提示：${tutorialInstructionForPhase(step, run.phase.kind)}`
+      : '教程步骤无效，请返回主菜单重试。',
   };
 }
 
@@ -28,6 +30,27 @@ function packOptionIsConsumable(run: RunStateV7, command: RunCommandV2): boolean
     (run.pendingChoice?.current.kind === 'pack' &&
       run.pendingChoice.current.options.find(({ id }) => id === command.optionId)?.item
         .kind === 'consumable')
+  );
+}
+
+export function tutorialPackOfferSupportsConsumable(
+  run: RunStateV7,
+  offerId: string,
+): boolean {
+  const offer = run.shop?.packOffers.find(({ id }) => id === offerId);
+  if (!offer) return false;
+  return Boolean(
+    run.content.packs
+      .find(({ id }) => id === offer.packId)
+      ?.allowedItemKinds.includes('consumable'),
+  );
+}
+
+export function tutorialPackChoiceHasConsumable(run: RunStateV7): boolean {
+  const choice = run.pendingChoice?.current;
+  return Boolean(
+    choice?.kind === 'pack' &&
+    choice.options.some(({ consumed, item }) => !consumed && item.kind === 'consumable'),
   );
 }
 
@@ -58,9 +81,14 @@ export function gateTutorialCommand(
       case 'tutorial:step:06':
         return shopOfferIsJoker(run, command);
       case 'tutorial:step:07':
+        if (command.type === 'buy-pack') {
+          return tutorialPackOfferSupportsConsumable(run, command.offerId);
+        }
+        if (command.type === 'skip-pack') {
+          return !tutorialPackChoiceHasConsumable(run);
+        }
         return (
           [
-            'buy-pack',
             'choose-pack-option',
             'toggle-choice-target',
             'confirm-choice',
@@ -73,7 +101,7 @@ export function gateTutorialCommand(
         return false;
     }
   })();
-  return allowed ? { ok: true } : rejection(stepId);
+  return allowed ? { ok: true } : rejection(run, stepId);
 }
 
 function hasEvent(
@@ -134,7 +162,11 @@ export function deriveTutorialProgressionFacts(
           ? 'tutorial:step:07'
           : null;
       case 'tutorial:step:07':
-        return hasEvent(domainEvents, 'item-consumed') ? 'tutorial:step:08' : null;
+        return hasEvent(domainEvents, 'item-consumed') ||
+          (hasEvent(domainEvents, 'pack-skipped') &&
+            !tutorialPackChoiceHasConsumable(before))
+          ? 'tutorial:step:08'
+          : null;
       default:
         return null;
     }

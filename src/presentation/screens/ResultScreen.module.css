@@ -176,6 +176,45 @@
   color: #ee6857;
 }
 
+.learningRecap {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 38rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: 0.85rem 0 0.65rem;
+}
+
+.learningRecap article {
+  padding: 0.65rem 0.55rem;
+  border: 1px solid rgba(207, 159, 74, 0.28);
+  background: rgba(13, 17, 42, 0.72);
+}
+
+.learningRecap h2,
+.learningRecap p {
+  margin: 0;
+}
+
+.learningRecap h2 {
+  color: #e2c378;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: 0.95rem;
+  letter-spacing: 0.12em;
+}
+
+.learningRecap p {
+  margin-top: 0.32rem;
+  color: rgba(238, 221, 184, 0.65);
+  font-size: 0.5rem;
+  line-height: 1.45;
+}
+
+.tutorial .copy h1 {
+  font-size: 2.75rem;
+}
+
 .lastHand {
   position: relative;
   z-index: 2;

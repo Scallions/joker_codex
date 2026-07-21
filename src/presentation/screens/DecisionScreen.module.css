@@ -24,10 +24,98 @@
   border: 1px solid rgb(211 165 76 / 18%);
 }
 
+.blindSelectScreen {
+  height: auto;
+  max-height: calc(100% - var(--bx-playing-content-top) - 2.1rem);
+  overflow: hidden;
+}
+
 .targetChoiceScreen {
   display: flex;
   flex-direction: column;
   overflow: clip;
+}
+
+.packChoiceScreen {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+.packChoiceScreen .header {
+  flex: 0 0 auto;
+}
+
+.packChoiceScreen .header h1 {
+  font-size: clamp(28px, 2.8vw, 40px);
+}
+
+.packChoiceScreen .options {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 4px 6px 16px;
+  overflow: auto;
+}
+
+.packChoiceScreen .option {
+  display: flex;
+  min-width: 220px;
+  max-width: 292px;
+  flex: 1 1 240px;
+  flex-direction: column;
+  padding: 16px;
+}
+
+.packChoiceScreen .option h2 {
+  margin-block: 7px 5px;
+  font-size: 22px;
+}
+
+.packChoiceScreen .option p {
+  min-height: 0;
+  font-size: 13px;
+}
+
+.packChoiceScreen .option > button {
+  width: 100%;
+  margin-top: auto;
+}
+
+.packChoiceScreen .jokerOptionArtworkTrigger,
+.catalogOptionArtwork {
+  width: 100%;
+  height: clamp(6.625rem, calc(6.46vw + 2px), 7.875rem);
+  margin-bottom: 10px;
+}
+
+.catalogOptionArtwork {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid rgb(74 42 28 / 62%);
+  background: #111a34;
+  box-shadow: 0 8px 16px rgb(52 30 23 / 24%);
+}
+
+.catalogOptionArtwork > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.packChoiceScreen .footerActions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding-top: 10px;
+  border-top: 1px solid rgb(211 165 76 / 28%);
 }
 
 .targetChoiceScreen .header {
@@ -188,6 +276,14 @@
   font-family: 'STKaiti', 'KaiTi', serif;
   font-size: 13px;
   text-decoration: none;
+}
+
+.tutorialRestriction {
+  display: block;
+  margin-top: 10px;
+  color: #8b292d;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .stats {

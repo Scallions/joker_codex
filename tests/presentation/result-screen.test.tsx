@@ -10,6 +10,7 @@ import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
 import { createProductionRunV7 } from '../../src/content/runtime/runSetupV7';
 import type { RunStateV7 } from '../../src/game-core/model/runV7';
 import { createProfile } from '../../src/persistence/profiles';
+import { createTutorialRun } from '../../src/tutorial/script';
 import { createMemoryRepository } from '../helpers/memoryRepository';
 
 function completedFixture() {
@@ -125,5 +126,61 @@ describe('八幕落幕', () => {
       screen.getByText('BXQP1|progression-modes-1|RESULT01|D01|S01'),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '复制本局分享码' })).toBeInTheDocument();
+  });
+
+  it('教程谢幕只复盘八步所学，不展示普通局零值指标', async () => {
+    const baseProfile = createProfile(1, '八步谢幕人', 100);
+    const initial = createTutorialRun(PRODUCTION_CATALOG, baseProfile, 'RESULT02');
+    const run: RunStateV7 = {
+      ...initial,
+      phase: { kind: 'finished' },
+      result: {
+        kind: 'finished',
+        ante: 1,
+        score: 80,
+        reason: '完成八步教程',
+      },
+    };
+    const profile = {
+      ...baseProfile,
+      activeRunId: run.runId,
+      tutorial: {
+        ...baseProfile.tutorial,
+        status: 'completed' as const,
+        currentStepId: null,
+        startedAtEpochMs: 120,
+        completedAtEpochMs: 180,
+      },
+      currentRunProgress: {
+        ...baseProfile.currentRunProgress,
+        runId: run.runId,
+      },
+    };
+    render(
+      <App
+        store={createGameStore(
+          createMemoryRepository({
+            profiles: [profile],
+            runs: [[profile.id, run]],
+            activeProfileId: profile.id,
+          }),
+        )}
+      />,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: '八步入门 · 8/8 完成' }),
+    ).toBeInTheDocument();
+    for (const learned of ['识幕', '理牌', '结算', '夜市']) {
+      expect(screen.getByRole('heading', { name: learned })).toBeInTheDocument();
+    }
+    expect(
+      screen.getByRole('heading', { name: '教程说明：不会写入普通进度' }),
+    ).toBeInTheDocument();
+    for (const ordinaryMetric of ['最终得分', '目标', '剩余出牌', '戏票']) {
+      expect(screen.queryByText(ordinaryMetric)).not.toBeInTheDocument();
+    }
+    expect(screen.queryByRole('heading', { name: '本局永久进度' })).toBeNull();
+    expect(screen.queryByText('种子：RESULT02')).toBeNull();
   });
 });

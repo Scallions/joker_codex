@@ -212,11 +212,83 @@ describe('八步实机教程', () => {
       );
     });
     if (!pack) throw new Error('教程夜市缺少可购买补充包');
+    const incompatiblePack = state.shop?.packOffers.find((offer) => {
+      const definition = state.content.packs.find(
+        (candidate) => candidate.id === offer.packId,
+      );
+      return (
+        offer.price <= state.economy.money &&
+        definition !== undefined &&
+        !definition.allowedItemKinds.includes('consumable')
+      );
+    });
+    if (!incompatiblePack) throw new Error('教程夜市缺少不兼容补充包回归样本');
+    expect(
+      gateTutorialCommand(state, profile.tutorial, {
+        type: 'buy-pack',
+        checkpointId: state.checkpointId,
+        offerId: pack.id,
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      gateTutorialCommand(state, profile.tutorial, {
+        type: 'buy-pack',
+        checkpointId: state.checkpointId,
+        offerId: incompatiblePack.id,
+      }),
+    ).toMatchObject({ ok: false });
+
+    const openedIncompatible = executeCommandV2(state, {
+      type: 'buy-pack',
+      checkpointId: state.checkpointId,
+      offerId: incompatiblePack.id,
+    });
+    if (!openedIncompatible.ok || !isRunStateV7(openedIncompatible.state)) {
+      throw new Error(
+        openedIncompatible.ok
+          ? '旧教程补充包状态丢失 V7 身份'
+          : openedIncompatible.rejection.message,
+      );
+    }
+    const restoredChoice = openedIncompatible.state.pendingChoice?.current;
+    if (!restoredChoice || restoredChoice.kind !== 'pack') {
+      throw new Error('旧教程补充包未打开候选');
+    }
+    const recoveryCommand = {
+      type: 'skip-pack' as const,
+      checkpointId: openedIncompatible.state.checkpointId,
+      choiceId: restoredChoice.id,
+    };
+    expect(
+      gateTutorialCommand(openedIncompatible.state, profile.tutorial, recoveryCommand),
+    ).toEqual({ ok: true });
+    const recovered = executeCommandV2(openedIncompatible.state, recoveryCommand);
+    if (!recovered.ok || !isRunStateV7(recovered.state)) {
+      throw new Error(
+        recovered.ok ? '教程恢复状态丢失 V7 身份' : recovered.rejection.message,
+      );
+    }
+    expect(
+      deriveTutorialProgressionFacts(
+        openedIncompatible.state,
+        recovered.state,
+        recovered.domainEvents,
+        profile.tutorial,
+      ),
+    ).toEqual([{ type: 'tutorial-step-completed', stepId: 'tutorial:step:08' }]);
+
     await apply({ type: 'buy-pack', checkpointId: state.checkpointId, offerId: pack.id });
     const packChoice = state.pendingChoice?.current;
     if (!packChoice || packChoice.kind !== 'pack') {
       throw new Error('教程补充包未打开候选');
     }
+    expect(
+      gateTutorialCommand(state, profile.tutorial, {
+        type: 'skip-pack',
+        checkpointId: state.checkpointId,
+        choiceId: packChoice.id,
+      }),
+    ).toMatchObject({ ok: false });
     const consumable = packChoice.options.find(
       (option) => option.item.kind === 'consumable',
     );

@@ -2,18 +2,19 @@ import { useState } from 'react';
 
 import { skipActiveTutorial } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
-import { TUTORIAL_STEPS } from '../../tutorial/script';
+import { TUTORIAL_STEPS, tutorialInstructionForPhase } from '../../tutorial/script';
 import styles from './ProgressionScreens.module.css';
 
 export function TutorialCoach() {
   const dispatch = useAppDispatch();
   const [detailOpen, setDetailOpen] = useState(false);
-  const { profiles, activeProfileId, busy } = useAppSelector((state) => state.app);
+  const { profiles, activeProfileId, busy, run } = useAppSelector((state) => state.app);
   const profile = profiles.find((item) => item.id === activeProfileId);
   const step = TUTORIAL_STEPS.find(
     ({ stepId }) => stepId === profile?.tutorial.currentStepId,
   );
   if (!profile || !step) return null;
+  const instruction = tutorialInstructionForPhase(step, run?.phase.kind ?? null);
 
   const skipTutorial = () => {
     if (window.confirm('跳过教程并返回主菜单？普通进度不会改变。')) {
@@ -28,7 +29,7 @@ export function TutorialCoach() {
           <small>入门 · {step.ordinal}/8</small>
           <h2>{step.title}</h2>
         </div>
-        <p>{step.instruction}</p>
+        <p>{instruction}</p>
         <div className={styles.coachActions}>
           <button type="button" onClick={() => setDetailOpen(true)}>
             查看讲解
@@ -48,7 +49,7 @@ export function TutorialCoach() {
           >
             <small>入门教程 · 第 {step.ordinal} / 8 步</small>
             <h2 id="tutorial-detail-title">{step.title}</h2>
-            <p>{step.instruction}</p>
+            <p>{instruction}</p>
             <p>{step.explanation}</p>
             <div className={styles.tutorialDetailActions}>
               <button

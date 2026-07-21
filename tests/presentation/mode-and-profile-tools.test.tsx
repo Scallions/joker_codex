@@ -59,12 +59,49 @@ describe('模式设置与档案工具', () => {
     expect(
       screen.getByText('BXQP1|progression-modes-1|ABCD1234|D01|S01'),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '种子牌局设置' }).closest('section'),
+    ).toHaveAttribute('data-layout-size', 'content');
     await user.click(screen.getByRole('button', { name: '开始种子牌局' }));
 
     await waitFor(() => expect(store.getState().app.status).toBe('playing'));
     const run = store.getState().app.run;
     expect(run?.seed).toBe('ABCD1234');
     expect(run && isRunStateV7(run) ? run.sessionV7.runClass : null).toBe('seeded');
+  });
+
+  it('分享码只在剪贴板写入成功后原位确认，并在码变化或失败时如实复位', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const profile = projectTutorialSkip(createProfile(1, '抄码人', 100), 120);
+    const store = createGameStore(
+      createMemoryRepository({ profiles: [profile], activeProfileId: profile.id }),
+      () => 200,
+    );
+    render(<App store={store} />);
+
+    await user.click(await screen.findByRole('button', { name: '种子牌局' }));
+    const input = screen.getByLabelText('种子或分享码');
+    await user.clear(input);
+    await user.type(input, 'copy0001');
+    await user.click(screen.getByRole('button', { name: '复制分享码' }));
+    expect(await screen.findByRole('button', { name: '已复制 ✓' })).toBeVisible();
+    expect(screen.getByText('分享码已复制')).toBeVisible();
+    expect(writeText).toHaveBeenCalledWith('BXQP1|progression-modes-1|COPY0001|D01|S01');
+
+    await user.clear(input);
+    await user.type(input, 'copy0002');
+    expect(screen.getByRole('button', { name: '复制分享码' })).toBeVisible();
+    expect(screen.queryByText('分享码已复制')).not.toBeInTheDocument();
+
+    writeText.mockRejectedValueOnce(new Error('clipboard denied'));
+    await user.click(screen.getByRole('button', { name: '复制分享码' }));
+    expect(await screen.findByText('复制失败，请手动选择分享码')).toBeVisible();
+    expect(screen.getByRole('button', { name: '复制分享码' })).toBeVisible();
   });
 
   it('完整分享码预览并启动码内指定的已解锁牌组与筹码', async () => {
@@ -214,6 +251,9 @@ describe('模式设置与档案工具', () => {
     await waitFor(() =>
       expect(store.getState().app.profiles[0]?.unreadNotices).toEqual([]),
     );
+    expect(
+      screen.getByRole('heading', { name: '戏报' }).closest('section'),
+    ).toHaveAttribute('data-layout-size', 'content');
   });
 
   it('教程显示当前脚本步骤并允许跳过', async () => {
@@ -250,6 +290,9 @@ describe('模式设置与档案工具', () => {
 
     await user.click(await screen.findByRole('button', { name: '档案维护' }));
     expect(screen.getByRole('heading', { name: '档案维护' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '档案维护' }).closest('section'),
+    ).toHaveAttribute('data-layout-size', 'content');
     await user.click(screen.getByRole('button', { name: '重置当前档案' }));
     await waitFor(() =>
       expect(store.getState().app.profiles[0]?.statistics.campaignWins).toBe(0),

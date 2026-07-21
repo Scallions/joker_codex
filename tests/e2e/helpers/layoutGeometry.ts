@@ -59,6 +59,94 @@ export async function expectSeparated(
   ).toBeGreaterThanOrEqual(minimumGap);
 }
 
+export async function expectContained(container: Locator, child: Locator, label: string) {
+  const containerBox = await container.boundingBox();
+  const childBox = await child.boundingBox();
+  expect(containerBox, `${label} 的容器不可见`).not.toBeNull();
+  expect(childBox, `${label} 的内容不可见`).not.toBeNull();
+  if (!containerBox || !childBox) return;
+
+  expect(childBox.x, `${label} 越过容器左边界`).toBeGreaterThanOrEqual(containerBox.x);
+  expect(childBox.y, `${label} 越过容器上边界`).toBeGreaterThanOrEqual(containerBox.y);
+  expect(childBox.x + childBox.width, `${label} 越过容器右边界`).toBeLessThanOrEqual(
+    containerBox.x + containerBox.width,
+  );
+  expect(childBox.y + childBox.height, `${label} 越过容器下边界`).toBeLessThanOrEqual(
+    containerBox.y + containerBox.height,
+  );
+}
+
+export async function expectStackedAbove(
+  upper: Locator,
+  lower: Locator,
+  label: string,
+  minimumGap = 4,
+) {
+  const upperBox = await upper.boundingBox();
+  const lowerBox = await lower.boundingBox();
+  expect(upperBox, `${label} 的上方区域不可见`).not.toBeNull();
+  expect(lowerBox, `${label} 的下方区域不可见`).not.toBeNull();
+  if (!upperBox || !lowerBox) return;
+
+  expect(
+    lowerBox.y - (upperBox.y + upperBox.height),
+    `${label} 的垂直间距不足`,
+  ).toBeGreaterThanOrEqual(minimumGap);
+}
+
+export async function expectCenteredHorizontally(
+  container: Locator,
+  items: Locator,
+  label: string,
+  tolerance = 20,
+) {
+  const containerBox = await container.boundingBox();
+  const boxes = await items.evaluateAll((elements) =>
+    elements.map((element) => {
+      const box = element.getBoundingClientRect();
+      return { left: box.left, right: box.right };
+    }),
+  );
+  expect(containerBox, `${label} 的容器不可见`).not.toBeNull();
+  expect(boxes.length, `${label} 没有可见项目`).toBeGreaterThan(0);
+  if (!containerBox || boxes.length === 0) return;
+
+  const contentLeft = Math.min(...boxes.map(({ left }) => left));
+  const contentRight = Math.max(...boxes.map(({ right }) => right));
+  const leftGap = contentLeft - containerBox.x;
+  const rightGap = containerBox.x + containerBox.width - contentRight;
+  expect(Math.abs(leftGap - rightGap), `${label} 没有水平居中`).toBeLessThanOrEqual(
+    tolerance,
+  );
+}
+
+export async function expectLoadedLocalArtwork(
+  artwork: Locator,
+  label: string,
+  minimumWidth: number,
+  minimumHeight: number,
+) {
+  await expect(artwork, `${label} 不可见`).toBeVisible();
+  const details = await artwork.evaluate((image) => {
+    if (!(image instanceof HTMLImageElement)) throw new Error('素材目标不是图片');
+    const box = image.getBoundingClientRect();
+    return {
+      src: image.getAttribute('src') ?? '',
+      width: box.width,
+      height: box.height,
+      naturalWidth: image.naturalWidth,
+      naturalHeight: image.naturalHeight,
+      complete: image.complete,
+    };
+  });
+  expect(details.src, `${label} 不是本地素材`).toMatch(/^\/assets\//);
+  expect(details.complete, `${label} 尚未完成加载`).toBe(true);
+  expect(details.naturalWidth, `${label} 解码失败`).toBeGreaterThan(0);
+  expect(details.naturalHeight, `${label} 解码失败`).toBeGreaterThan(0);
+  expect(details.width, `${label} 宽度不足`).toBeGreaterThanOrEqual(minimumWidth);
+  expect(details.height, `${label} 高度不足`).toBeGreaterThanOrEqual(minimumHeight);
+}
+
 export async function expectNoOuterScroll(page: Page) {
   const scroll = await page.evaluate(() => ({
     width: document.documentElement.scrollWidth,

@@ -189,18 +189,28 @@
 .offers {
   display: grid;
   min-height: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 27rem));
+  grid-auto-rows: clamp(8.25rem, 18vh, 11rem);
   gap: 0.55rem;
-  overflow: clip;
+  align-content: center;
+  justify-content: center;
+  overflow: auto;
   padding: 0.05rem 0;
+}
+
+.offers[data-offer-count='1'] {
+  grid-template-columns: minmax(0, 30rem);
+}
+
+.offers[data-offer-count='2'] {
+  grid-template-columns: repeat(2, minmax(0, 26rem));
 }
 
 .offer {
   position: relative;
   display: grid;
   min-height: 0;
-  grid-template-columns: 4.8rem minmax(0, 1fr);
+  grid-template-columns: clamp(5.125rem, calc(5vw + 2px), 6.125rem) minmax(0, 1fr);
   grid-template-rows: auto auto minmax(1.4rem, 1fr) auto auto auto;
   grid-template-areas:
     'kind kind'
@@ -250,6 +260,29 @@
   letter-spacing: 0.2em;
 }
 
+.tutorialCompatible {
+  position: absolute;
+  top: 0.42rem;
+  right: 0.55rem;
+  z-index: 2;
+  padding: 0.2rem 0.38rem;
+  border: 1px solid rgba(119, 51, 37, 0.45);
+  color: #fff3cd;
+  background: #8d2931;
+  font-size: 0.48rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  transform: rotate(1.5deg);
+}
+
+.tutorialRestriction {
+  grid-area: current;
+  justify-self: start;
+  color: #8d2931;
+  font-size: 0.52rem;
+  font-weight: 900;
+}
+
 .offerIcon {
   grid-area: art;
   justify-self: center;
@@ -267,8 +300,8 @@
 
 .offerArtworkTrigger {
   grid-area: art;
-  width: 4.45rem;
-  height: 5.93rem;
+  width: clamp(5.125rem, calc(5vw + 2px), 6.125rem);
+  height: clamp(6.625rem, calc(6.46vw + 2px), 7.875rem);
   justify-self: center;
   border: 1px solid rgba(87, 31, 31, 0.58);
   border-radius: 0.2rem;
@@ -276,6 +309,28 @@
 }
 
 .offerArtwork {
+  object-fit: cover;
+}
+
+.catalogArtworkFrame {
+  position: relative;
+  display: grid;
+  width: clamp(5.125rem, calc(5vw + 2px), 6.125rem);
+  height: clamp(6.625rem, calc(6.46vw + 2px), 7.875rem);
+  grid-area: art;
+  justify-self: center;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid rgba(87, 31, 31, 0.58);
+  border-radius: 0.2rem;
+  background: #111a34;
+  box-shadow: 0 0.28rem 0.55rem rgba(42, 18, 21, 0.3);
+}
+
+.catalogArtworkFrame > img {
+  display: block;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 

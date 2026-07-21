@@ -3,7 +3,11 @@ import { motion } from 'motion/react';
 import { submitRunCommand } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import type { Rank, Suit } from '../../game-core/model/cards';
+import { isRunStateV7 } from '../../game-core/model/runV7';
+import { tutorialPackChoiceHasConsumable } from '../../tutorial/gate';
+import { CatalogEmblem } from '../catalog/CatalogEmblem';
 import { JokerArtworkTrigger } from '../components/JokerArtworkInspector';
+import { selectCatalogArtwork } from '../selectors/catalogArtwork';
 import { selectJokerPresentation } from '../selectors/jokerPresentation';
 import styles from './DecisionScreen.module.css';
 
@@ -31,16 +35,24 @@ const RANK: Record<Rank, string> = {
 
 export function ChoiceScreen() {
   const dispatch = useAppDispatch();
-  const { run, busy } = useAppSelector((state) => state.app);
+  const { run, busy, profiles, activeProfileId } = useAppSelector((state) => state.app);
   if (!run || run.phase.kind !== 'choice' || !run.pendingChoice) return null;
   const choice = run.pendingChoice.current;
+  const activeProfile = profiles.find(({ id }) => id === activeProfileId);
+  const isTutorialPackStep =
+    isRunStateV7(run) &&
+    run.sessionV7.runClass === 'tutorial' &&
+    activeProfile?.tutorial.currentStepId === 'tutorial:step:07';
+  const tutorialChoiceCanComplete =
+    isTutorialPackStep && isRunStateV7(run) ? tutorialPackChoiceHasConsumable(run) : true;
   const command = <T extends Parameters<typeof submitRunCommand>[0]>(value: T) =>
     void dispatch(submitRunCommand(value));
 
   if (choice.kind === 'pack') {
     return (
       <motion.div
-        className={styles.screen}
+        className={`${styles.screen} ${styles.packChoiceScreen}`}
+        data-layout-zone="pack-choice-screen"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
@@ -54,12 +66,21 @@ export function ChoiceScreen() {
             <strong>¥{run.economy.money}</strong>
           </div>
         </header>
-        <section className={styles.options}>
+        <section
+          className={styles.options}
+          data-layout-zone="pack-choice-options"
+          data-option-count={choice.options.length}
+        >
           {choice.options.map((option) => {
             const presentation =
               option.item.kind === 'joker'
                 ? selectJokerPresentation(option.item.contentId)
                 : undefined;
+            const artwork = presentation
+              ? null
+              : selectCatalogArtwork(option.item.contentId);
+            const tutorialOptionUnavailable =
+              isTutorialPackStep && option.item.kind !== 'consumable';
             return (
               <article
                 className={styles.option}
@@ -73,6 +94,18 @@ export function ChoiceScreen() {
                     className={styles.jokerOptionArtworkTrigger}
                     imageClassName={styles.jokerOptionArtwork}
                   />
+                ) : artwork ? (
+                  <div
+                    className={styles.catalogOptionArtwork}
+                    data-testid={`catalog-art-${artwork.contentId}`}
+                  >
+                    <CatalogEmblem
+                      family={artwork.family}
+                      assetPath={artwork.assetPath}
+                      focalKey={artwork.focalKey}
+                      alt=""
+                    />
+                  </div>
                 ) : null}
                 <small>
                   {option.item.kind === 'joker'
@@ -99,9 +132,12 @@ export function ChoiceScreen() {
                     {RANK[option.item.generatedCard.rank]}
                   </span>
                 ) : null}
+                {tutorialOptionUnavailable ? (
+                  <span className={styles.tutorialRestriction}>本步需选择消耗牌</span>
+                ) : null}
                 <button
                   type="button"
-                  disabled={busy || option.consumed}
+                  disabled={busy || option.consumed || tutorialOptionUnavailable}
                   onClick={() =>
                     command({
                       type: 'choose-pack-option',
@@ -117,10 +153,10 @@ export function ChoiceScreen() {
             );
           })}
         </section>
-        <div className={styles.footerActions}>
+        <div className={styles.footerActions} data-layout-zone="pack-choice-actions">
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || (isTutorialPackStep && tutorialChoiceCanComplete)}
             onClick={() =>
               command({
                 type: 'skip-pack',
@@ -129,7 +165,11 @@ export function ChoiceScreen() {
               })
             }
           >
-            放弃余项
+            {isTutorialPackStep
+              ? tutorialChoiceCanComplete
+                ? '请先使用消耗牌'
+                : '返回夜市并跳过本步'
+              : '放弃余项'}
           </button>
         </div>
       </motion.div>

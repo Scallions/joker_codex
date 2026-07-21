@@ -104,7 +104,10 @@ export function ProfileMaintenanceScreen() {
     normalizedName(deleteName) === normalizedName(profile.displayName);
 
   return (
-    <PaperLedger className={styles.screen}>
+    <PaperLedger
+      className={`${styles.screen} ${styles.contentHeightScreen}`}
+      data-layout-size="content"
+    >
       <header className={styles.header}>
         <div>
           <p>

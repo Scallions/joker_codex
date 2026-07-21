@@ -266,7 +266,7 @@
   position: absolute;
   top: 10.5rem;
   right: 15.2rem;
-  bottom: 17rem;
+  bottom: 17.3rem;
   left: 14.5rem;
   display: grid;
   justify-items: center;
@@ -362,59 +362,77 @@
 
 .handArea {
   position: absolute;
-  right: 12rem;
-  bottom: 0.8rem;
+  right: var(--bx-playing-content-edge);
+  bottom: 0.72rem;
   left: 14.5rem;
-  height: 15.6rem;
-}
-
-.handMeta {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  margin: 0 0 0.4rem;
-  color: rgba(235, 217, 176, 0.55);
-  font-size: 0.6rem;
-}
-
-.handMeta > div {
-  display: flex;
+  height: 16.05rem;
+  grid-template-rows: minmax(0, 1fr) 3.45rem;
   gap: 0.35rem;
 }
 
-.handMeta button {
+.handFan {
+  display: flex;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  perspective: 900px;
+}
+
+.actionRail {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(11rem, 1fr) auto 7rem 7rem;
+  gap: 0.45rem;
+  align-items: stretch;
+  padding: 0.3rem 0.38rem;
+  border: 1px solid rgba(202, 160, 82, 0.2);
+  background: rgba(7, 11, 31, 0.78);
+  box-shadow: 0 0.5rem 1.4rem rgba(0, 0, 0, 0.28);
+}
+
+.sortControls {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.sortControls button {
+  min-height: 2.25rem;
   padding: 0.32rem 0.55rem;
   border: 1px solid rgba(202, 160, 82, 0.23);
-  background: rgba(11, 16, 42, 0.65);
+  background: rgba(18, 24, 56, 0.8);
   color: #c7a96e;
   font-size: 0.56rem;
   cursor: pointer;
 }
 
-.handMeta p {
+.handMeta {
   display: flex;
-  gap: 1rem;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
   margin: 0;
+  font-size: 0.6rem;
   color: #e0c994;
   letter-spacing: 0.08em;
+  text-align: center;
 }
 
-.handMeta p span {
+.handMeta span {
+  flex: 0 0 auto;
   color: #e56b57;
   font-weight: 900;
 }
 
-.handMeta > span {
-  justify-self: end;
-}
-
-.handFan {
+.deckMeta {
   display: flex;
-  height: 13.5rem;
-  align-items: end;
-  justify-content: center;
-  gap: 0.45rem;
-  perspective: 900px;
+  align-items: center;
+  color: rgba(235, 217, 176, 0.55);
+  font-size: 0.6rem;
+  white-space: nowrap;
 }
 
 .card {
@@ -501,36 +519,30 @@
   font-size: 0.48rem;
 }
 
-.actionRail {
-  position: absolute;
-  right: 2.5rem;
-  bottom: 5.6rem;
-  display: grid;
-  width: 8.5rem;
-  gap: 0.85rem;
-}
-
-.actionRail button {
+.actionRail > button {
   position: relative;
-  display: grid;
-  min-height: 5rem;
-  align-content: center;
+  display: flex;
+  min-width: 0;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
   border: 0;
   clip-path: polygon(0 8%, 92% 0, 100% 92%, 8% 100%);
   cursor: pointer;
   filter: drop-shadow(0 8px 8px rgba(0, 0, 0, 0.35));
 }
 
-.actionRail button span {
+.actionRail > button span {
   font-size: 0.52rem;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.08em;
   opacity: 0.65;
 }
 
-.actionRail button strong {
+.actionRail > button strong {
   font-family: 'STKaiti', 'KaiTi', serif;
-  font-size: 1.35rem;
-  letter-spacing: 0.15em;
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
 }
 
 .playButton {
@@ -543,9 +555,9 @@
   color: #fff2cf;
 }
 
-.actionRail button:disabled,
+.actionRail > button:disabled,
 .consumable:disabled,
-.handMeta button:disabled {
+.sortControls button:disabled {
   cursor: default;
   filter: grayscale(0.75);
   opacity: 0.42;

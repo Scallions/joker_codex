@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import type { RunStateV7 } from '../../src/game-core/model/runV7';
 import { createProfile } from '../../src/persistence/profiles';
 import { exportProfileToJson } from '../../src/persistence/profileTransfer';
+import { expectInsideStage, expectNoOuterScroll } from './helpers/layoutGeometry';
 
 async function readActiveRunV7(page: Page): Promise<RunStateV7 | null> {
   return page.evaluate(async () => {
@@ -48,6 +49,31 @@ async function createSkippedProfile(page: Page, name: string) {
   await page.getByRole('button', { name: '落印建档' }).click();
   await page.getByRole('button', { name: '暂时跳过教程' }).click();
   await expect(page.getByRole('button', { name: '普通战役' })).toBeEnabled();
+}
+
+async function expectContentHeightSurface(page: Page, headingName: string) {
+  const surface = page
+    .getByRole('heading', { name: headingName })
+    .locator('xpath=ancestor::*[@data-layout-size][1]');
+  await expect(surface).toHaveAttribute('data-layout-size', 'content');
+
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1920, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(100);
+    await expectInsideStage(page, surface, headingName);
+    const stage = await page.getByRole('region', { name: '午夜百戏舞台' }).boundingBox();
+    const panel = await surface.boundingBox();
+    expect(stage).not.toBeNull();
+    expect(panel).not.toBeNull();
+    if (stage && panel) {
+      const lowerSceneGap = stage.y + stage.height - (panel.y + panel.height);
+      expect(lowerSceneGap).toBeGreaterThanOrEqual(viewport.width === 1920 ? 96 : 16);
+    }
+    await expectNoOuterScroll(page);
+  }
 }
 
 test('图鉴、成就、帮助、统计与种子分享组成可刷新本地闭环', async ({ page }, testInfo) => {
@@ -96,6 +122,7 @@ test('图鉴、成就、帮助、统计与种子分享组成可刷新本地闭�
   await page.getByRole('button', { name: '百戏成就簿' }).click();
   await expect(page.locator('[data-achievement-row]')).toHaveCount(31);
   await expect(page.getByText('公开成就 · 已完成 0 / 31')).toBeVisible();
+  await expect(page.getByText(/^bxqp:achievement:/)).toHaveCount(0);
 
   await page.getByRole('button', { name: '返回主菜单' }).click();
   await page.getByRole('button', { name: '牌型与术语' }).click();
@@ -116,6 +143,7 @@ test('图鉴、成就、帮助、统计与种子分享组成可刷新本地闭�
     contentType: 'image/png',
   });
   await page.getByRole('button', { name: '复制分享码' }).click();
+  await expect(page.getByRole('button', { name: '已复制 ✓' })).toBeVisible();
   await expect(page.getByText('分享码已复制')).toBeVisible();
   expect(
     await page.evaluate(
@@ -124,6 +152,19 @@ test('图鉴、成就、帮助、统计与种子分享组成可刷新本地闭�
           .__copiedSeedCode,
     ),
   ).toBe(canonical);
+  await page.getByLabel('种子或分享码').fill('abcd1235');
+  await expect(page.getByRole('button', { name: '复制分享码' })).toBeVisible();
+  await expect(page.getByText('分享码已复制')).toHaveCount(0);
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = async () => {
+      throw new Error('clipboard denied');
+    };
+  });
+  await page.getByRole('button', { name: '复制分享码' }).click();
+  await expect(page.getByText('复制失败，请手动选择分享码')).toBeVisible();
+  await expect(page.getByRole('button', { name: '复制分享码' })).toBeVisible();
+  await page.getByLabel('种子或分享码').fill('abcd1234');
+  await expect(page.getByText('复制失败，请手动选择分享码')).toHaveCount(0);
   await page.getByRole('button', { name: '开始种子牌局' }).click();
   await expect(page.getByRole('heading', { name: '第 1 幕 · 择幕登台' })).toBeVisible();
 
@@ -141,6 +182,30 @@ test('图鉴、成就、帮助、统计与种子分享组成可刷新本地闭�
   await expect(page.getByRole('heading', { name: '今晚演哪一出' })).toBeVisible();
   await expect(page.getByRole('button', { name: '继续牌局' })).toHaveCount(0);
   expect(remoteRequests).toEqual([]);
+});
+
+test('大舞台短内容页面收束到内容并露出既有戏台背景', async ({ page }) => {
+  await createSkippedProfile(page, '大舞台验收人');
+
+  await expectContentHeightSurface(page, '今晚演哪一出');
+  await page.getByRole('button', { name: '戏报 0' }).click();
+  await expectContentHeightSurface(page, '戏报');
+  await page.getByRole('button', { name: '返回主菜单' }).click();
+
+  await page.getByRole('button', { name: '种子牌局' }).click();
+  await expectContentHeightSurface(page, '种子牌局设置');
+  await page.getByRole('button', { name: '返回主菜单' }).click();
+
+  await page.getByRole('button', { name: '档案维护' }).click();
+  await expectContentHeightSurface(page, '档案维护');
+  await page.getByRole('button', { name: '返回主菜单' }).click();
+
+  await page.getByRole('button', { name: '普通战役' }).click();
+  await expectContentHeightSurface(page, '普通战役设置');
+  await expect(page.getByRole('button', { name: '开始普通战役' })).toBeEnabled();
+  await page.getByRole('button', { name: '开始普通战役' }).click();
+  await expect(page.getByRole('heading', { name: '第 1 幕 · 择幕登台' })).toBeVisible();
+  await expectContentHeightSurface(page, '第 1 幕 · 择幕登台');
 });
 
 test('导入已开放挑战的档案后可开局、刷新、弃局并保留挑战尝试', async ({

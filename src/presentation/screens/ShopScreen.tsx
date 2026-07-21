@@ -5,7 +5,10 @@ import { submitRunCommand } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import { saleValue } from '../../game-core/economy/pricing';
 import { isRunStateV7 } from '../../game-core/model/runV7';
+import { tutorialPackOfferSupportsConsumable } from '../../tutorial/gate';
+import { CatalogEmblem } from '../catalog/CatalogEmblem';
 import { JokerArtworkTrigger } from '../components/JokerArtworkInspector';
+import { selectCatalogArtwork } from '../selectors/catalogArtwork';
 import {
   selectJokerPresentation,
   selectOwnedJokerPresentation,
@@ -136,6 +139,9 @@ export function ShopScreen() {
             className={styles.offers}
             data-layout-zone="shop-offer-grid"
             data-offer-group={offerGroup}
+            data-offer-count={
+              offerGroup === 'items' ? shop.cardOffers.length : shop.packOffers.length
+            }
           >
             {offerGroup === 'items'
               ? shop.cardOffers.map((offer, index) => {
@@ -143,6 +149,9 @@ export function ShopScreen() {
                     offer.item.kind === 'joker'
                       ? selectJokerPresentation(offer.item.contentId)
                       : undefined;
+                  const artwork = presentation
+                    ? null
+                    : selectCatalogArtwork(offer.item.contentId);
                   return (
                     <motion.article
                       className={`${styles.offer} ${offer.item.kind === 'joker' ? styles.jokerOffer : styles.consumableOffer}`}
@@ -171,6 +180,18 @@ export function ShopScreen() {
                           className={styles.offerArtworkTrigger}
                           imageClassName={styles.offerArtwork}
                         />
+                      ) : artwork ? (
+                        <div
+                          className={styles.catalogArtworkFrame}
+                          data-testid={`catalog-art-${artwork.contentId}`}
+                        >
+                          <CatalogEmblem
+                            family={artwork.family}
+                            assetPath={artwork.assetPath}
+                            focalKey={artwork.focalKey}
+                            alt=""
+                          />
+                        </div>
                       ) : (
                         <div className={styles.offerIcon} aria-hidden="true">
                           {offer.item.kind === 'joker'
@@ -213,43 +234,79 @@ export function ShopScreen() {
                     </motion.article>
                   );
                 })
-              : shop.packOffers.map((offer, index) => (
-                  <motion.article
-                    className={`${styles.offer} ${styles.packOffer}`}
-                    key={offer.id}
-                    initial={{ y: 18, opacity: 0, rotate: index === 0 ? -1 : 1 }}
-                    animate={{ y: 0, opacity: 1, rotate: 0 }}
-                    transition={{
-                      delay: (index * motionProfile.staggerMs) / 1_000,
-                      duration: motionProfile.routineMs / 1_000,
-                    }}
-                  >
-                    <span className={styles.offerKind}>密封卡包</span>
-                    <div className={styles.offerIcon} aria-hidden="true">
-                      封
-                    </div>
-                    <h2>{offer.name}</h2>
-                    <p>{offer.description}</p>
-                    <button
-                      type="button"
-                      className={styles.purchaseButton}
-                      aria-label={`购买 ${offer.name}`}
-                      disabled={busy || available < offer.price}
-                      onClick={() =>
-                        void dispatch(
-                          submitRunCommand({
-                            type: 'buy-pack',
-                            checkpointId,
-                            offerId: offer.id,
-                          }),
-                        )
+              : shop.packOffers.map((offer, index) => {
+                  const artwork = selectCatalogArtwork(offer.packId);
+                  const tutorialCompatible =
+                    tutorialStepId === 'tutorial:step:07' && isRunStateV7(run)
+                      ? tutorialPackOfferSupportsConsumable(run, offer.id)
+                      : null;
+                  return (
+                    <motion.article
+                      className={`${styles.offer} ${styles.packOffer}`}
+                      key={offer.id}
+                      initial={{ y: 18, opacity: 0, rotate: index === 0 ? -1 : 1 }}
+                      animate={{ y: 0, opacity: 1, rotate: 0 }}
+                      transition={{
+                        delay: (index * motionProfile.staggerMs) / 1_000,
+                        duration: motionProfile.routineMs / 1_000,
+                      }}
+                      data-tutorial-compatible={
+                        tutorialCompatible === null
+                          ? undefined
+                          : String(tutorialCompatible)
                       }
                     >
-                      <span>当场拆封</span>
-                      <strong>{offer.price === 0 ? '赠' : `¥${offer.price}`}</strong>
-                    </button>
-                  </motion.article>
-                ))}
+                      <span className={styles.offerKind}>密封卡包</span>
+                      {tutorialCompatible ? (
+                        <span className={styles.tutorialCompatible}>教程可用</span>
+                      ) : null}
+                      {artwork ? (
+                        <div
+                          className={styles.catalogArtworkFrame}
+                          data-testid={`catalog-art-${artwork.contentId}`}
+                        >
+                          <CatalogEmblem
+                            family={artwork.family}
+                            assetPath={artwork.assetPath}
+                            focalKey={artwork.focalKey}
+                            alt=""
+                          />
+                        </div>
+                      ) : (
+                        <div className={styles.offerIcon} aria-hidden="true">
+                          封
+                        </div>
+                      )}
+                      <h2>{offer.name}</h2>
+                      <p>{offer.description}</p>
+                      {tutorialCompatible === false ? (
+                        <span className={styles.tutorialRestriction}>
+                          本步不可用：不会产出消耗牌
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        className={styles.purchaseButton}
+                        aria-label={`购买 ${offer.name}`}
+                        disabled={
+                          busy || available < offer.price || tutorialCompatible === false
+                        }
+                        onClick={() =>
+                          void dispatch(
+                            submitRunCommand({
+                              type: 'buy-pack',
+                              checkpointId,
+                              offerId: offer.id,
+                            }),
+                          )
+                        }
+                      >
+                        <span>当场拆封</span>
+                        <strong>{offer.price === 0 ? '赠' : `¥${offer.price}`}</strong>
+                      </button>
+                    </motion.article>
+                  );
+                })}
             {(offerGroup === 'items'
               ? shop.cardOffers.length
               : shop.packOffers.length) === 0 ? (

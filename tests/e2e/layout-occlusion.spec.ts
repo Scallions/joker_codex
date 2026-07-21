@@ -1,9 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import {
+  expectContained,
   expectInsideStage,
   expectNoOuterScroll,
   expectSeparated,
+  expectStackedAbove,
   layoutZone,
 } from './helpers/layoutGeometry';
 
@@ -40,6 +42,7 @@ async function assertTableGeometry(page: Page) {
   const ledger = layoutZone(page, 'table-ledger');
   const center = layoutZone(page, 'table-center');
   const hand = layoutZone(page, 'table-hand');
+  const handCards = layoutZone(page, 'table-hand-cards');
   const actions = layoutZone(page, 'table-actions');
 
   for (const [label, locator] of [
@@ -50,6 +53,7 @@ async function assertTableGeometry(page: Page) {
     ['八幕账簿', ledger],
     ['中央戏台', center],
     ['手牌区', hand],
+    ['手牌牌扇', handCards],
     ['出弃牌区', actions],
   ] as const) {
     await expectInsideStage(page, locator, label);
@@ -67,7 +71,9 @@ async function assertTableGeometry(page: Page) {
     page.locator('[data-hand-meta="true"]'),
     '计分印章文案 / 手牌提示',
   );
-  await expectSeparated(hand, actions, '手牌区 / 出弃牌区');
+  await expectContained(hand, handCards, '手牌区 / 手牌牌扇');
+  await expectContained(hand, actions, '手牌区 / 操作条');
+  await expectStackedAbove(handCards, actions, '手牌牌扇 / 操作条');
   await expectSeparated(
     ledger,
     page.getByRole('button', { name: '按点数' }),

@@ -8,12 +8,16 @@ export function NoticesScreen() {
   const { profiles, activeProfileId, busy } = useAppSelector((state) => state.app);
   const profile = profiles.find((item) => item.id === activeProfileId);
   if (!profile) return null;
+  const empty = profile.unreadNotices.length === 0;
 
   const acknowledge = (noticeIds: readonly string[]) =>
     dispatch(acknowledgeProgressionNotices({ noticeIds }));
 
   return (
-    <PaperLedger className={styles.screen}>
+    <PaperLedger
+      className={`${styles.screen} ${empty ? styles.contentHeightScreen : ''}`}
+      data-layout-size={empty ? 'content' : 'full'}
+    >
       <header className={styles.header}>
         <div>
           <p>最多保留 50 条未读进度摘要</p>
@@ -36,7 +40,7 @@ export function NoticesScreen() {
       </header>
 
       <div className={styles.scrollArea}>
-        {profile.unreadNotices.length === 0 ? (
+        {empty ? (
           <div className={styles.emptyState}>
             <h2>暂无新戏报</h2>
             <p>新解锁、发现、成就与胜幕印记会在这里汇总。</p>

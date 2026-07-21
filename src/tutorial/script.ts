@@ -1,6 +1,7 @@
 import { createProductionRunV7 } from '../content/runtime/runSetupV7';
 import type { ProductionCatalog } from '../content/schema/catalog';
 import { validateRunStateV7 } from '../game-core/invariants/validateRunStateV7';
+import type { RunStateV2 } from '../game-core/model/runV2';
 import type { RunStateV7 } from '../game-core/model/runV7';
 import type { ProfileRecord } from '../persistence/profiles';
 import { TUTORIAL_SCRIPT_VERSION } from '../progression/definitions';
@@ -76,6 +77,16 @@ export const TUTORIAL_STEPS: readonly TutorialStepDefinition[] = [
     explanation: '之后可随时从帮助页查看牌型表和术语。',
   },
 ];
+
+export function tutorialInstructionForPhase(
+  step: TutorialStepDefinition,
+  phaseKind: RunStateV2['phase']['kind'] | null,
+): string {
+  if (step.stepId === 'tutorial:step:05' && phaseKind === 'round-reward') {
+    return '点击“收赏入夜市”，领取戏票奖励。';
+  }
+  return step.instruction;
+}
 
 export function validateTutorialScript(catalog: ProductionCatalog): void {
   if (TUTORIAL_STEPS.length !== 8) throw new Error('教程必须恰好包含八步');

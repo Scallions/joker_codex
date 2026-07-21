@@ -996,7 +996,8 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
 - `PlayingStageChrome` owns the shared `playing-status` and
   `playing-navigation` zones. `SoundStageDrawer` owns `audio-controls`.
 - Table geometry exposes `table-inventory`, `table-ledger`, `table-center`,
-  `table-hand`, and `table-actions` through stable `data-layout-zone` values.
+  `table-hand`, `table-hand-cards`, and `table-actions` through stable
+  `data-layout-zone` values.
 
 ### 3. Contracts
 
@@ -1011,9 +1012,11 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
 - New hand-card motion uses stable card IDs and transient presentation state only.
   Sequence completion, skip, hidden-tab completion, or performer failure releases
   the same committed cards without dispatching another gameplay command.
-- The fixed 16:9 stage groups navigation into one flex-owned zone and keeps the
-  named audio, status, inventory, ledger, center, hand, and action zones contained
-  and separated by at least 8 CSS pixels at 1280x720 and 1920x1080.
+- The fixed 16:9 stage groups navigation into one flex-owned zone. Audio, status,
+  inventory, ledger, center, and the complete hand assembly stay contained and
+  separated by at least 8 CSS pixels at 1280x720 and 1920x1080. Inside the hand
+  assembly, `table-hand-cards` and `table-actions` are both contained, and the card
+  fan is stacked above the action rail without overlap.
 - Tutorial guidance has priority in the shared status slot. Its long copy opens as
   an explicit `tutorial-detail` overlay; progression notices remain compact.
 - `full` and `brisk` motion profiles share endpoints and stable IDs. `brisk` changes
@@ -1028,7 +1031,8 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
 | Command is rejected | Preserve exact state, card order, checkpoint, events, and RNG |
 | Active hand is already ordered or no round is active | Preserve the original state object |
 | Tutorial and unread notice both exist | Render tutorial in `playing-status`; keep notice durable for later display |
-| Named fixed-stage zones intersect or have less than 8px separation | Browser geometry gate fails |
+| Independent fixed-stage zones intersect or have less than 8px separation | Browser geometry gate fails |
+| `table-hand-cards` or `table-actions` escapes `table-hand`, or the fan overlaps the rail | Browser geometry gate fails |
 | Full tutorial copy is requested | Open the named modal overlay without advancing tutorial state |
 | Presentation completes, skips, hides, or fails | Release transient cards; keep the saved run byte-equivalent |
 
@@ -1038,7 +1042,9 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
   hand is suit-sorted with identical card sets, draw pile, RNG, events, and one
   accepted checkpoint.
 - Good: audio controls, compact tutorial status, grouped navigation, Joker
-  inventory, ledger, hand, and actions remain visibly separated in both browsers.
+  inventory, ledger, center, and the hand assembly remain visibly separated in
+  both browsers; the card fan and its owned action rail remain stacked inside the
+  hand assembly.
 - Base: a legacy unsorted active save remains unchanged when a command rejects and
   normalizes on the next accepted round command.
 - Bad: a component sorts a copy of the hand, an automatic sort emits a domain
@@ -1052,9 +1058,11 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
 - Component tests cover the single navigation zone, tutorial/notice priority,
   explicit tutorial modal, always-visible skip, card hold/release, bounded score
   impact nodes, and `StageShell` full/brisk propagation.
-- Playwright runs Chromium and WebKit at 1280x720 and 1920x1080, checks containment,
-  the explicit minimum-gap matrix, no outer scroll, and intentional modal overlap.
-  Changed snapshots are accepted only after those geometry assertions pass.
+- Playwright runs Chromium and WebKit at 1280x720 and 1920x1080, checks independent
+  zone containment and the explicit minimum-gap matrix, checks fan/rail containment
+  and stacking inside the hand assembly, and checks no outer scroll plus intentional
+  modal overlap. Changed snapshots are accepted only after those geometry
+  assertions pass.
 - The motion performance probe retains frame-gap P95 at or below 50 ms and zero
   repeated Long Task or timer-drift violations above 50 ms.
 
@@ -1063,9 +1071,14 @@ motionProfileForSpeed(speed: PresentationSpeed): MotionProfile;
 #### Wrong
 
 ```ts
-// React invents a second order and a separate button owns a competing offset.
+// React invents a second order and detaches actions from their hand assembly.
 const visibleHand = [...run.round.handIds].sort(componentComparator);
-return <button style={{ position: "absolute", top: 16, right: 200 }}>帮助</button>;
+return (
+  <>
+    <section data-layout-zone="table-hand">{visibleHand.map(renderCard)}</section>
+    <aside data-layout-zone="table-actions">...</aside>
+  </>
+);
 ```
 
 #### Correct
@@ -1076,5 +1089,13 @@ return accept(normalized, domainEvents, presentationEvents);
 
 // Presentation consumes the committed order and shared geometry ownership.
 const visibleHand = run.round.handIds;
-return <PlayingStageChrome />;
+return (
+  <>
+    <PlayingStageChrome />
+    <section data-layout-zone="table-hand">
+      <div data-layout-zone="table-hand-cards">{visibleHand.map(renderCard)}</div>
+      <div data-layout-zone="table-actions">...</div>
+    </section>
+  </>
+);
 ```

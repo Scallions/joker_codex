@@ -43,7 +43,8 @@ export function BlindSelectScreen() {
 
   return (
     <motion.div
-      className={styles.screen}
+      className={`${styles.screen} ${styles.blindSelectScreen}`}
+      data-layout-size="content"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >

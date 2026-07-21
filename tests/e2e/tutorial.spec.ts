@@ -1,11 +1,24 @@
 import { expect, test, type Page } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
 
+import { commitRunCommand } from '../../src/app/commitRunCommand';
+import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
+import { executeCommandV2 } from '../../src/game-core/commands/executeCommandV2';
+import type { RunCommandV2 } from '../../src/game-core/commands/typesV2';
 import type { RunStateV2 } from '../../src/game-core/model/runV2';
-import type { ProfileRecord } from '../../src/persistence/profiles';
+import { isRunStateV7, type RunStateV7 } from '../../src/game-core/model/runV7';
+import { exportProfileToJson } from '../../src/persistence/profileTransfer';
+import { createProfile, type ProfileRecord } from '../../src/persistence/profiles';
+import { projectRunStart } from '../../src/progression/reducer';
+import { createTutorialRun } from '../../src/tutorial/script';
 import {
+  expectCenteredHorizontally,
+  expectContained,
   expectDirectHitTarget,
+  expectLoadedLocalArtwork,
   expectNoOuterScroll,
   expectPairwiseNonOverlapping,
+  expectStackedAbove,
   layoutZone,
 } from './helpers/layoutGeometry';
 
@@ -93,6 +106,90 @@ async function createFreshProfile(page: Page) {
   await page.getByRole('button', { name: '落印建档' }).click();
 }
 
+async function createIncompatiblePackRecoveryFixture(): Promise<{
+  readonly profile: ProfileRecord;
+  readonly run: RunStateV7;
+}> {
+  const base = createProfile(1, '断场恢复人', 100);
+  let run = createTutorialRun(PRODUCTION_CATALOG, base);
+  let profile = projectRunStart(base, run, 110);
+  let nowEpochMs = 120;
+  const repository = { commitCheckpoint: async () => undefined };
+  const apply = async (command: RunCommandV2) => {
+    const result = await commitRunCommand(
+      repository,
+      profile,
+      run,
+      command,
+      nowEpochMs++,
+    );
+    if (!result.ok) throw new Error(result.message);
+    if (!isRunStateV7(result.state)) throw new Error('恢复夹具丢失 V7 身份');
+    profile = result.profile;
+    run = result.state;
+  };
+
+  await apply({
+    type: 'select-blind',
+    checkpointId: run.checkpointId,
+    position: 'small',
+  });
+  await apply({
+    type: 'toggle-card',
+    checkpointId: run.checkpointId,
+    cardId: run.round!.handIds[0]!,
+  });
+  await apply({ type: 'play-selected', checkpointId: run.checkpointId });
+  for (const cardId of run.round!.handIds.slice(0, 3)) {
+    await apply({ type: 'toggle-card', checkpointId: run.checkpointId, cardId });
+  }
+  await apply({ type: 'discard-selected', checkpointId: run.checkpointId });
+  while (run.phase.kind === 'round') {
+    for (const cardId of run.round!.handIds.slice(0, 5)) {
+      await apply({ type: 'toggle-card', checkpointId: run.checkpointId, cardId });
+    }
+    await apply({ type: 'play-selected', checkpointId: run.checkpointId });
+  }
+  await apply({ type: 'claim-round-reward', checkpointId: run.checkpointId });
+
+  const joker = run.shop?.cardOffers.find(
+    (offer) => offer.item.kind === 'joker' && offer.price <= run.economy.money,
+  );
+  if (!joker) throw new Error('恢复夹具缺少可购买奇牌');
+  await apply({
+    type: 'buy-shop-offer',
+    checkpointId: run.checkpointId,
+    offerId: joker.id,
+  });
+  const incompatible = run.shop?.packOffers.find((offer) => {
+    const definition = run.content.packs.find(({ id }) => id === offer.packId);
+    return (
+      offer.price <= run.economy.money &&
+      definition !== undefined &&
+      !definition.allowedItemKinds.includes('consumable')
+    );
+  });
+  if (!incompatible) throw new Error('恢复夹具缺少不兼容补充包');
+  const opened = executeCommandV2(run, {
+    type: 'buy-pack',
+    checkpointId: run.checkpointId,
+    offerId: incompatible.id,
+  });
+  if (!opened.ok || !isRunStateV7(opened.state)) {
+    throw new Error(opened.ok ? '恢复夹具丢失 V7 身份' : opened.rejection.message);
+  }
+  return {
+    profile: {
+      ...profile,
+      activeProjectionCursor: {
+        runId: opened.state.runId,
+        checkpointId: opened.state.checkpointId,
+      },
+    },
+    run: opened.state,
+  };
+}
+
 test('新档提示可跳过、重温并在刷新后恢复教程步骤', async ({ page }) => {
   await createFreshProfile(page);
   await expect(
@@ -119,6 +216,44 @@ test('新档提示可跳过、重温并在刷新后恢复教程步骤', async ({
   expect((await readActiveProfile(page)).tutorial).toMatchObject({
     status: 'skipped',
     replayCount: 1,
+  });
+});
+
+test('导入旧版不兼容补充包选择后可以返回夜市并完成教程', async ({ page }, testInfo) => {
+  const fixture = await createIncompatiblePackRecoveryFixture();
+  const fixturePath = testInfo.outputPath('tutorial-incompatible-pack.json');
+  await writeFile(fixturePath, exportProfileToJson(fixture.profile, fixture.run), 'utf8');
+
+  await page.goto('/');
+  await page.locator('input[type="file"]').setInputFiles(fixturePath);
+  await expect(page.getByText('档案导入预览')).toBeVisible();
+  await expect(page.getByText('含活动牌局')).toBeVisible();
+  await page.getByRole('button', { name: '确认导入' }).click();
+
+  await expect(page.getByRole('heading', { name: /还可挑选 \d+ 件/ })).toBeVisible();
+  const recovery = page.getByRole('button', { name: '返回夜市并跳过本步' });
+  await expect(recovery).toBeEnabled();
+  const optionButtons = page.getByRole('button', { name: '选此件' });
+  expect(await optionButtons.count()).toBeGreaterThan(0);
+  for (let index = 0; index < (await optionButtons.count()); index += 1) {
+    await expect(optionButtons.nth(index)).toBeDisabled();
+  }
+
+  const beforeRecovery = await readActiveRun(page);
+  if (!beforeRecovery) throw new Error('导入后缺少活动教程');
+  await recovery.click();
+  await waitForCheckpoint(page, beforeRecovery.checkpointId + 1);
+  await expect(page.getByRole('heading', { name: '离开夜市' })).toBeVisible();
+  await page.getByRole('button', { name: '收摊 · 前往下一幕' }).click();
+  await expect(page.getByText('八步入门 · 8/8 完成')).toBeVisible();
+
+  const profile = await readActiveProfile(page);
+  expect(profile.tutorial.status).toBe('completed');
+  expect(profile.statistics).toMatchObject({
+    campaignStarts: 0,
+    campaignWins: 0,
+    handsPlayed: 0,
+    itemsPurchased: 0,
   });
 });
 
@@ -263,14 +398,27 @@ test('八步教程通过真实界面完成且不写入普通进度', async ({ pa
   ]) {
     await page.setViewportSize(viewport);
     await page.waitForTimeout(120);
+    const offerGrid = layoutZone(page, 'shop-offer-grid');
+    const offerCards = offerGrid.locator('article');
     await expectPairwiseNonOverlapping(
-      layoutZone(page, 'shop-offer-grid').locator('article'),
+      offerCards,
       `教程补充包 ${String(viewport.width)}x${String(viewport.height)}`,
+    );
+    await expectCenteredHorizontally(
+      offerGrid,
+      offerCards,
+      `教程补充包居中 ${String(viewport.width)}x${String(viewport.height)}`,
     );
     for (const offer of packShop.packOffers) {
       await expectDirectHitTarget(
         page.getByRole('button', { name: `购买 ${offer.name}` }),
         `购买 ${offer.name}`,
+      );
+      await expectLoadedLocalArtwork(
+        page.getByTestId(`catalog-art-${offer.packId}`).locator('img'),
+        `${offer.name} 目录画幅`,
+        viewport.width === 1920 ? 96 : 80,
+        viewport.width === 1920 ? 124 : 104,
       );
     }
     await expectNoOuterScroll(page);
@@ -306,9 +454,31 @@ test('八步教程通过真实界面完成且不写入普通进度', async ({ pa
   ]) {
     await page.setViewportSize(viewport);
     await page.waitForTimeout(120);
+    const packScreen = layoutZone(page, 'pack-choice-screen');
+    const packOptions = layoutZone(page, 'pack-choice-options');
+    const packActions = layoutZone(page, 'pack-choice-actions');
+    const optionCards = packOptions.locator('article');
+    await expectContained(packScreen, packOptions, '补充包选择 / 候选区');
+    await expectContained(packScreen, packActions, '补充包选择 / 动作区');
+    await expectStackedAbove(packOptions, packActions, '补充包候选区 / 动作区', 0);
+    await expectPairwiseNonOverlapping(
+      optionCards,
+      `补充包候选 ${String(viewport.width)}x${String(viewport.height)}`,
+    );
+    await expectCenteredHorizontally(
+      packOptions,
+      optionCards,
+      `补充包候选居中 ${String(viewport.width)}x${String(viewport.height)}`,
+    );
     await expectDirectHitTarget(
       consumableChoice,
       `补充包消耗牌 ${String(viewport.width)}x${String(viewport.height)}`,
+    );
+    await expectLoadedLocalArtwork(
+      page.getByTestId(`catalog-art-${consumable.item.contentId}`).locator('img'),
+      `${consumable.item.name} 目录画幅`,
+      viewport.width === 1920 ? 96 : 80,
+      viewport.width === 1920 ? 124 : 104,
     );
     await expectNoOuterScroll(page);
   }

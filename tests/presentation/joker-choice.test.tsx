@@ -13,6 +13,73 @@ import { createProfile } from '../../src/persistence/profiles';
 import { createMemoryRepository } from '../helpers/memoryRepository';
 
 describe('百戏包奇牌选项', () => {
+  it('消耗牌候选使用本地目录画幅，并把选项与放弃动作分区', async () => {
+    const initial = createProductionRunV4(PRODUCTION_CATALOG, {
+      seed: 'choice-consumable-art',
+    });
+    const definition = initial.content.items.find(
+      (item) => item.kind === 'consumable' && item.contentId.startsWith('bxqp:'),
+    );
+    const pack = initial.content.packs.find(({ family }) => family === 'arcana');
+    if (!definition || !pack) throw new Error('缺少生产消耗牌或秘法包');
+    const item = materializeItemV2(
+      definition,
+      'choice-consumable-art-option',
+      initial.rngState,
+    ).item;
+    const choiceId = stableId<'choice'>('choice:consumable-art');
+    const run = {
+      ...initial,
+      phase: { kind: 'choice', choiceId } as const,
+      pendingChoice: {
+        current: {
+          id: choiceId,
+          kind: 'pack' as const,
+          optional: true as const,
+          returnPhase: 'blind-select' as const,
+          packId: pack.id,
+          packOfferId: stableId<'pack-offer'>('pack-offer:consumable-art'),
+          options: [{ id: 'option:consumable-art', item, consumed: false }],
+          remainingPicks: 1,
+          temporaryJokerSlots: pack.temporaryJokerSlots,
+          temporaryConsumableSlots: pack.temporaryConsumableSlots,
+        },
+        suspended: [],
+      },
+    };
+    const profile = {
+      ...createProfile(1, '拆包画师', 100),
+      activeRunId: run.runId,
+    };
+    const { container } = render(
+      <App
+        store={createGameStore(
+          createMemoryRepository({
+            profiles: [profile],
+            runs: [[profile.id, run]],
+            activeProfileId: profile.id,
+          }),
+        )}
+      />,
+    );
+
+    const art = await screen.findByTestId(`catalog-art-${definition.contentId}`);
+    expect(art.querySelector('img')).toHaveAttribute(
+      'src',
+      expect.stringMatching(/^\/assets\/catalog\//),
+    );
+    const packScreen = container.querySelector<HTMLElement>(
+      '[data-layout-zone="pack-choice-screen"]',
+    );
+    expect(packScreen).toContainElement(
+      container.querySelector<HTMLElement>('[data-layout-zone="pack-choice-options"]'),
+    );
+    expect(packScreen).toContainElement(
+      container.querySelector<HTMLElement>('[data-layout-zone="pack-choice-actions"]'),
+    );
+    expect(screen.getByRole('button', { name: '放弃余项' })).toBeEnabled();
+  });
+
   it('用目录插画和初始当前值展示已物化的奇牌选项', async () => {
     const user = userEvent.setup();
     const initial = createProductionRunV4(PRODUCTION_CATALOG, {

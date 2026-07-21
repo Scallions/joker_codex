@@ -376,8 +376,44 @@ export function GameTableScreen() {
       </section>
 
       <section className={styles.handArea} data-layout-zone="table-hand">
-        <div className={styles.handMeta} data-hand-meta="true">
-          <div>
+        <div
+          className={styles.handFan}
+          data-card-exit-kind={exitKind}
+          data-layout-zone="table-hand-cards"
+        >
+          <AnimatePresence initial={false}>
+            {hand.map((card, index) => (
+              <CardButton
+                card={card}
+                index={index}
+                count={hand.length}
+                selected={round.selectedCardIds.includes(card.id)}
+                forced={round.forcedSelectedCardIds.includes(card.id)}
+                faceDown={round.faceDownCardIds.includes(card.id)}
+                disabled={busy}
+                exitKind={exitKind}
+                entering={!presentedHandIds.has(card.id)}
+                entryHeld={
+                  Boolean(presentationSequence) && !presentedHandIds.has(card.id)
+                }
+                motionProfile={motionProfile}
+                onSelect={() =>
+                  void dispatch(
+                    submitRunCommand({
+                      type: 'toggle-card',
+                      checkpointId: run.checkpointId,
+                      cardId: card.id,
+                    }),
+                  )
+                }
+                key={card.id}
+              />
+            ))}
+          </AnimatePresence>
+        </div>
+
+        <div className={styles.actionRail} data-layout-zone="table-actions">
+          <div className={styles.sortControls}>
             <button
               type="button"
               disabled={busy}
@@ -409,7 +445,8 @@ export function GameTableScreen() {
               按花色
             </button>
           </div>
-          <p>
+
+          <p className={styles.handMeta} data-hand-meta="true">
             {preview
               ? `预判 · ${preview.name} Lv.${preview.level}`
               : '请选择 1 至 5 张牌'}
@@ -417,84 +454,55 @@ export function GameTableScreen() {
               已选 {selectedCount} / {run.rules.maximumSelectedCards}
             </span>
           </p>
-          <span>牌堆余 {round.drawPileIds.length}</span>
-        </div>
-        <div className={styles.handFan} data-card-exit-kind={exitKind}>
-          <AnimatePresence initial={false}>
-            {hand.map((card, index) => (
-              <CardButton
-                card={card}
-                index={index}
-                count={hand.length}
-                selected={round.selectedCardIds.includes(card.id)}
-                forced={round.forcedSelectedCardIds.includes(card.id)}
-                faceDown={round.faceDownCardIds.includes(card.id)}
-                disabled={busy}
-                exitKind={exitKind}
-                entering={!presentedHandIds.has(card.id)}
-                entryHeld={
-                  Boolean(presentationSequence) && !presentedHandIds.has(card.id)
-                }
-                motionProfile={motionProfile}
-                onSelect={() =>
-                  void dispatch(
-                    submitRunCommand({
-                      type: 'toggle-card',
-                      checkpointId: run.checkpointId,
-                      cardId: card.id,
-                    }),
-                  )
-                }
-                key={card.id}
-              />
-            ))}
-          </AnimatePresence>
+
+          <span className={styles.deckMeta}>牌堆余 {round.drawPileIds.length}</span>
+
+          <button
+            type="button"
+            aria-label="出牌"
+            className={styles.playButton}
+            disabled={busy || selectedCount === 0}
+            onClick={() => {
+              setExitKind('play');
+              void dispatch(
+                submitRunCommand({
+                  type: 'play-selected',
+                  checkpointId: run.checkpointId,
+                }),
+              );
+            }}
+          >
+            <span>落牌成章</span>
+            <strong>出牌</strong>
+          </button>
+          <button
+            type="button"
+            aria-label="弃牌"
+            className={styles.discardButton}
+            disabled={
+              busy ||
+              selectedCount === 0 ||
+              round.discardsRemaining === 0 ||
+              (!canDiscardForced &&
+                round.forcedSelectedCardIds.some((id) =>
+                  round.selectedCardIds.includes(id),
+                ))
+            }
+            onClick={() => {
+              setExitKind('discard');
+              void dispatch(
+                submitRunCommand({
+                  type: 'discard-selected',
+                  checkpointId: run.checkpointId,
+                }),
+              );
+            }}
+          >
+            <span>另起一手</span>
+            <strong>弃牌</strong>
+          </button>
         </div>
       </section>
-
-      <aside className={styles.actionRail} data-layout-zone="table-actions">
-        <button
-          type="button"
-          aria-label="出牌"
-          className={styles.playButton}
-          disabled={busy || selectedCount === 0}
-          onClick={() => {
-            setExitKind('play');
-            void dispatch(
-              submitRunCommand({ type: 'play-selected', checkpointId: run.checkpointId }),
-            );
-          }}
-        >
-          <span>落牌成章</span>
-          <strong>出牌</strong>
-        </button>
-        <button
-          type="button"
-          aria-label="弃牌"
-          className={styles.discardButton}
-          disabled={
-            busy ||
-            selectedCount === 0 ||
-            round.discardsRemaining === 0 ||
-            (!canDiscardForced &&
-              round.forcedSelectedCardIds.some((id) =>
-                round.selectedCardIds.includes(id),
-              ))
-          }
-          onClick={() => {
-            setExitKind('discard');
-            void dispatch(
-              submitRunCommand({
-                type: 'discard-selected',
-                checkpointId: run.checkpointId,
-              }),
-            );
-          }}
-        >
-          <span>另起一手</span>
-          <strong>弃牌</strong>
-        </button>
-      </aside>
     </motion.div>
   );
 }

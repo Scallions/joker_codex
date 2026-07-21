@@ -31,6 +31,9 @@ describe('局外功能页面', () => {
     expect(
       await screen.findByRole('heading', { name: '今晚演哪一出' }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '今晚演哪一出' }).closest('section'),
+    ).toHaveAttribute('data-layout-size', 'content');
     expect(screen.getByRole('button', { name: '普通战役' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '种子牌局' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '挑战模式' })).toBeDisabled();
@@ -64,7 +67,7 @@ describe('局外功能页面', () => {
     await user.click(screen.getByRole('button', { name: '百戏成就簿' }));
     expect(container.querySelectorAll('[data-achievement-row]')).toHaveLength(31);
     expect(container.querySelectorAll('[data-achievement-icon]')).toHaveLength(31);
-    expect(screen.getByText('bxqp:achievement:001')).toBeInTheDocument();
+    expect(container).not.toHaveTextContent('bxqp:achievement:');
     expect(screen.getByText('首次完成：1970-01-01 00:00:00 UTC')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '返回主菜单' }));

@@ -57,6 +57,16 @@ describe('牌局舞台分区', () => {
     ]) {
       expect(container.querySelector(`[data-layout-zone="${zone}"]`)).toBeTruthy();
     }
+
+    const hand = container.querySelector<HTMLElement>('[data-layout-zone="table-hand"]');
+    const handCards = container.querySelector<HTMLElement>(
+      '[data-layout-zone="table-hand-cards"]',
+    );
+    const actions = container.querySelector<HTMLElement>(
+      '[data-layout-zone="table-actions"]',
+    );
+    expect(hand).toContainElement(handCards);
+    expect(hand).toContainElement(actions);
   });
 
   it('演出覆盖期间暂存新手牌并在跳过后释放同一批已提交卡牌', async () => {

@@ -20,6 +20,7 @@ import { isRunStateV7, type RunStateV7 } from '../../src/game-core/model/runV7';
 import { createProfile, type ProfileRecord } from '../../src/persistence/profiles';
 import { projectRunStart } from '../../src/progression/reducer';
 import { selectJokerPresentation } from '../../src/presentation/selectors/jokerPresentation';
+import { selectCatalogArtwork } from '../../src/presentation/selectors/catalogArtwork';
 import { createTutorialRun } from '../../src/tutorial/script';
 import { createMemoryRepository } from '../helpers/memoryRepository';
 
@@ -104,6 +105,42 @@ async function tutorialShopFixture(): Promise<{
 }
 
 describe('百戏夜市', () => {
+  it('生产非奇牌单品与补充包使用各自的本地目录画幅', async () => {
+    const user = userEvent.setup();
+    const { profile, run } = await tutorialShopFixture();
+    const shop = run.shop;
+    if (!shop) throw new Error('教程夜市状态缺失');
+    render(
+      <App
+        store={createGameStore(
+          createMemoryRepository({
+            profiles: [profile],
+            runs: [[profile.id, run]],
+            activeProfileId: profile.id,
+          }),
+        )}
+      />,
+    );
+
+    await screen.findByText('百戏夜市 · 幕间奇货');
+    for (const offer of shop.cardOffers) {
+      const artwork = selectCatalogArtwork(offer.item.contentId);
+      if (!artwork) continue;
+      const frame = screen.getByTestId(`catalog-art-${offer.item.contentId}`);
+      expect(frame.querySelector('img')).toHaveAttribute('src', artwork.assetPath);
+    }
+
+    await user.click(
+      screen.getByRole('button', { name: `补充包 ${shop.packOffers.length}` }),
+    );
+    for (const offer of shop.packOffers) {
+      const artwork = selectCatalogArtwork(offer.packId);
+      if (!artwork) throw new Error(`生产补充包缺少目录素材：${offer.packId}`);
+      const frame = screen.getByTestId(`catalog-art-${offer.packId}`);
+      expect(frame.querySelector('img')).toHaveAttribute('src', artwork.assetPath);
+    }
+  });
+
   it('用明确分组展示商品与补充包，切换分组不写入检查点', async () => {
     const user = userEvent.setup();
     const { profile, run } = shopFixture();
@@ -179,6 +216,59 @@ describe('百戏夜市', () => {
     expect(
       screen.getByRole('button', { name: `补充包 ${run.shop!.packOffers.length}` }),
     ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('教程补充包全部保留展示，只允许能产出消耗牌的商品购买', async () => {
+    const { profile, run } = await tutorialShopFixture();
+    const joker = run.shop!.cardOffers.find(
+      (offer) => offer.item.kind === 'joker' && offer.price <= run.economy.money,
+    );
+    if (!joker) throw new Error('教程夜市没有可购买奇牌');
+    const committed = await commitRunCommand(
+      { commitCheckpoint: async () => undefined },
+      profile,
+      run,
+      {
+        type: 'buy-shop-offer',
+        checkpointId: run.checkpointId,
+        offerId: joker.id,
+      },
+      500,
+    );
+    if (!committed.ok || !isRunStateV7(committed.state) || !committed.state.shop) {
+      throw new Error(committed.ok ? '教程夜市状态无效' : committed.message);
+    }
+    render(
+      <App
+        store={createGameStore(
+          createMemoryRepository({
+            profiles: [committed.profile],
+            runs: [[committed.profile.id, committed.state]],
+            activeProfileId: committed.profile.id,
+          }),
+        )}
+      />,
+    );
+
+    await screen.findByText('百戏夜市 · 幕间奇货');
+    for (const offer of committed.state.shop.packOffers) {
+      const definition = committed.state.content.packs.find(
+        ({ id }) => id === offer.packId,
+      );
+      if (!definition) throw new Error(`补充包定义缺失：${offer.packId}`);
+      const purchase = screen.getByRole('button', { name: `购买 ${offer.name}` });
+      const card = purchase.closest('article');
+      if (!card) throw new Error(`补充包卡片缺失：${offer.name}`);
+      if (definition.allowedItemKinds.includes('consumable')) {
+        expect(purchase).toBeEnabled();
+        await waitFor(() => expect(within(card).getByText('教程可用')).toBeVisible());
+      } else {
+        expect(purchase).toBeDisabled();
+        await waitFor(() =>
+          expect(within(card).getByText('本步不可用：不会产出消耗牌')).toBeVisible(),
+        );
+      }
+    }
   });
 
   it('教程奇牌购买写入失败时保留步骤、牌局和单品分组', async () => {

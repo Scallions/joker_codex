@@ -40,7 +40,10 @@ export function MainMenuScreen() {
     );
 
   return (
-    <LacquerPanel className={styles.screen}>
+    <LacquerPanel
+      className={`${styles.screen} ${styles.contentHeightScreen}`}
+      data-layout-size="content"
+    >
       <header className={styles.header}>
         <div>
           <p>

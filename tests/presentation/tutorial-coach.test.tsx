@@ -6,9 +6,12 @@ import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
 
 import { appReducer, type AppState } from '../../src/app/store/appSlice';
+import { PRODUCTION_CATALOG } from '../../src/content/productionCatalog';
+import { stableId } from '../../src/game-core/model/ids';
 import { DEFAULT_DEVICE_SETTINGS } from '../../src/persistence/deviceSettings';
 import { createProfile } from '../../src/persistence/profiles';
 import { TutorialCoach } from '../../src/presentation/progression/TutorialCoach';
+import { createTutorialRun } from '../../src/tutorial/script';
 
 describe('紧凑教程提示', () => {
   it('只在主动打开讲解时显示完整说明并始终保留跳过入口', async () => {
@@ -61,5 +64,54 @@ describe('紧凑教程提示', () => {
 
     await user.click(screen.getByRole('button', { name: '关闭讲解' }));
     expect(screen.queryByRole('dialog', { name: '先看盲注' })).not.toBeInTheDocument();
+  });
+
+  it('奖励阶段就地提示领取戏票，而不是继续要求出牌', () => {
+    const base = createProfile(1, '收赏人', 100);
+    const run = createTutorialRun(PRODUCTION_CATALOG, base, 'REWARD01');
+    const profile = {
+      ...base,
+      activeRunId: run.runId,
+      tutorial: {
+        ...base.tutorial,
+        status: 'in-progress' as const,
+        currentStepId: 'tutorial:step:05',
+      },
+    };
+    const app: AppState = {
+      status: 'playing',
+      busy: false,
+      error: null,
+      profiles: [profile],
+      activeProfileId: profile.id,
+      run: {
+        ...run,
+        phase: {
+          kind: 'round-reward',
+          receiptId: stableId<'reward-receipt'>('tutorial:test:reward'),
+        },
+      },
+      presentationSequence: null,
+      setupMode: null,
+      setupSeed: null,
+      settings: DEFAULT_DEVICE_SETTINGS,
+      settingsOpen: false,
+      settingsBusy: false,
+      settingsError: null,
+      settingsRollback: null,
+    };
+    const store = configureStore({
+      reducer: { app: appReducer },
+      preloadedState: { app },
+    });
+
+    render(
+      <Provider store={store}>
+        <TutorialCoach />
+      </Provider>,
+    );
+
+    expect(screen.getByText('点击“收赏入夜市”，领取戏票奖励。')).toBeVisible();
+    expect(screen.queryByText(/继续选牌并出手/)).not.toBeInTheDocument();
   });
 });
