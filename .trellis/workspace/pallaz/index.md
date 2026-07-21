@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-07-21
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~372 | Active |
+| `journal-1.md` | ~405 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-07-21 | Repair tutorial shop and Joker artwork presentation | `c619e09` | `main` |
 | 11 | 2026-07-21 | Polish UI layout, playability, and motion | `7818789`, `88d2d43`, `31d7625` | `main` |
 | 10 | 2026-07-21 | 百戏奇牌 parent acceptance | `3822930` | `main` |
 | 9 | 2026-07-20 | Full integration quality gate | `3822930` | `main` |

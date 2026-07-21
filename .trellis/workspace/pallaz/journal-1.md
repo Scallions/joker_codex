@@ -370,3 +370,36 @@ Fixed desktop layout collisions, made accepted hand ordering authoritative, adde
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Repair tutorial shop and Joker artwork presentation
+
+**Date**: 2026-07-21
+**Task**: Repair tutorial shop and Joker artwork presentation
+**Branch**: `main`
+
+### Summary
+
+Repaired tutorial item and booster-pack purchase flow plus target confirmation geometry, added a shared read-only Joker artwork inspector across player surfaces, and passed the full dual-browser release gate.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c619e09` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
