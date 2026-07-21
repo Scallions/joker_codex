@@ -403,3 +403,36 @@ Repaired tutorial item and booster-pack purchase flow plus target confirmation g
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: UI experience playtest audit
+
+**Date**: 2026-07-21
+**Task**: UI experience playtest audit
+**Branch**: `main`
+
+### Summary
+
+Completed a Chinese desktop UI and player-experience audit with Chromium and WebKit evidence, prioritized findings, annotated screenshots, and structural wireframes; no product code or gameplay changes.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3672bdf` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
