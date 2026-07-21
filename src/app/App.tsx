@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Provider } from 'react-redux';
 
 import { IndexedDbGameRepository } from '../persistence/indexedDbRepository';
-import { SealButton } from '../presentation/components/StagePrimitives';
+import { PlayingStageChrome } from '../presentation/components/PlayingStageChrome';
 import { StageShell } from '../presentation/components/StageShell';
 import { AchievementBookScreen } from '../presentation/progression/AchievementBookScreen';
 import { CollectionScreen } from '../presentation/progression/CollectionScreen';
@@ -11,21 +11,12 @@ import { MainMenuScreen } from '../presentation/progression/MainMenuScreen';
 import { ModeSetupScreen } from '../presentation/progression/ModeSetupScreen';
 import { NoticesScreen } from '../presentation/progression/NoticesScreen';
 import { ProfileMaintenanceScreen } from '../presentation/progression/ProfileMaintenanceScreen';
-import { ProgressionNoticeBanners } from '../presentation/progression/ProgressionNoticeBanners';
 import { StatisticsScreen } from '../presentation/progression/StatisticsScreen';
-import { TutorialCoach } from '../presentation/progression/TutorialCoach';
-import { isRunStateV7 } from '../game-core/model/runV7';
 import { ApplicationErrorBoundary } from './ApplicationErrorBoundary';
 import { readBrowserRoute, replaceBrowserRoute } from './routeState';
 import { selectStageScene } from './selectStageScene';
 import { createGameStore, type GameStore } from './store';
-import {
-  initializeApplication,
-  showHelp,
-  showMaintenance,
-  showMenu,
-  showProfiles,
-} from './store/appSlice';
+import { initializeApplication } from './store/appSlice';
 import { useAppDispatch, useAppSelector } from './store/hooks';
 import styles from './App.module.css';
 
@@ -91,7 +82,9 @@ function WelcomeStage() {
 function GameApplication() {
   const dispatch = useAppDispatch();
   const initialized = useRef(false);
-  const { status, error, run, setupMode } = useAppSelector((state) => state.app);
+  const { status, error, run, settings, setupMode } = useAppSelector(
+    (state) => state.app,
+  );
   const catalogAuditMode =
     typeof window === 'undefined'
       ? null
@@ -117,7 +110,11 @@ function GameApplication() {
   }, [catalogAudit, setupMode, status]);
 
   return (
-    <StageShell sceneId={sceneId} showGlobalControls={!catalogAudit}>
+    <StageShell
+      sceneId={sceneId}
+      showGlobalControls={!catalogAudit}
+      presentationSpeed={settings.presentationSpeed}
+    >
       <Suspense fallback={null}>{!catalogAudit ? <AudioDirector /> : null}</Suspense>
       {status === 'loading' ? <WelcomeStage /> : null}
       <Suspense fallback={<WelcomeStage />}>
@@ -160,47 +157,7 @@ function GameApplication() {
           <ResultScreen />
         ) : null}
       </Suspense>
-      {!catalogAudit && status === 'playing' ? (
-        <>
-          <SealButton
-            className={styles.menuNav}
-            tone="jade"
-            onClick={() => dispatch(showMenu())}
-          >
-            主菜单
-          </SealButton>
-          <SealButton
-            className={styles.helpNav}
-            tone="jade"
-            onClick={() => dispatch(showHelp())}
-          >
-            牌型帮助
-          </SealButton>
-          <SealButton
-            className={styles.maintenanceNav}
-            tone="jade"
-            onClick={() => dispatch(showMaintenance())}
-          >
-            档案维护
-          </SealButton>
-          <SealButton
-            className={styles.profileNav}
-            tone="jade"
-            aria-label="返回戏主名簿"
-            onClick={() => dispatch(showProfiles())}
-          >
-            戏主名簿
-          </SealButton>
-        </>
-      ) : null}
-      {!catalogAudit &&
-      status === 'playing' &&
-      run &&
-      isRunStateV7(run) &&
-      run.sessionV7.runClass === 'tutorial' ? (
-        <TutorialCoach />
-      ) : null}
-      {!catalogAudit && status === 'playing' ? <ProgressionNoticeBanners /> : null}
+      {!catalogAudit && status === 'playing' ? <PlayingStageChrome /> : null}
       <Suspense fallback={null}>
         <PresentationQueue />
       </Suspense>

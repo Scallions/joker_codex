@@ -6,6 +6,25 @@
   pointer-events: none;
 }
 
+.transition::after {
+  position: absolute;
+  top: -18%;
+  bottom: -18%;
+  left: -28%;
+  width: 22%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 226 154 / 16%),
+    rgb(255 245 214 / 28%),
+    transparent
+  );
+  content: '';
+  opacity: 0;
+  transform: skewX(-12deg);
+  animation: stage-light-sweep var(--bx-duration-curtain) var(--bx-ease-stage) both;
+}
+
 .transition i,
 .transition span {
   position: absolute;
@@ -46,7 +65,7 @@
     linear-gradient(145deg, #f3e3bd, #cdb98c);
   box-shadow: var(--bx-shadow-raised);
   transform-origin: 50% 0;
-  animation: ledger-lift 560ms var(--bx-ease-stage) both;
+  animation: ledger-lift calc(var(--bx-duration-stage) * 1.33) var(--bx-ease-stage) both;
 }
 
 .transition[data-transition-kind='receipt'] span {
@@ -84,7 +103,7 @@
   background: linear-gradient(145deg, #801f29, #3a111b);
   box-shadow: var(--bx-shadow-raised);
   transform: translate(-50%, -50%);
-  animation: placard-rise 520ms var(--bx-ease-stage) both;
+  animation: placard-rise calc(var(--bx-duration-stage) * 1.24) var(--bx-ease-stage) both;
 }
 
 .transition[data-transition-kind='placard'] span::before,
@@ -113,7 +132,8 @@
   background: linear-gradient(145deg, rgb(123 31 40 / 96%), rgb(21 42 40 / 98%));
   box-shadow: var(--bx-shadow-raised);
   transform-origin: 0 50%;
-  animation: screen-fold-left 620ms var(--bx-ease-stage) both;
+  animation: screen-fold-left calc(var(--bx-duration-stage) * 1.48) var(--bx-ease-stage)
+    both;
 }
 
 .transition[data-transition-kind='folding-screen'] i:first-child {
@@ -206,5 +226,22 @@
   to {
     opacity: 0;
     transform: perspective(48rem) rotateY(82deg);
+  }
+}
+
+@keyframes stage-light-sweep {
+  0%,
+  18% {
+    opacity: 0;
+    transform: translateX(0) skewX(-12deg);
+  }
+
+  32% {
+    opacity: 0.7;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(720%) skewX(-12deg);
   }
 }

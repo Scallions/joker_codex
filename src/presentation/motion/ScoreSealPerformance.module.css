@@ -236,6 +236,19 @@
   animation-delay: calc(var(--particle-index) * 35ms);
 }
 
+.impactRing {
+  position: absolute;
+  width: clamp(16rem, 27vw, 27rem);
+  aspect-ratio: 1;
+  border: 2px solid rgb(239 196 105 / 72%);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 0.35rem rgb(183 45 47 / 18%),
+    inset 0 0 3rem rgb(239 196 105 / 10%);
+  opacity: 0;
+  animation: impact-ring var(--bx-duration-stage) var(--bx-ease-seal) both;
+}
+
 .progress {
   position: absolute;
   right: 2.2rem;
@@ -290,5 +303,21 @@
   to {
     opacity: 0;
     transform: rotate(var(--particle-turn)) translateX(12rem) scale(1);
+  }
+}
+
+@keyframes impact-ring {
+  0% {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+
+  38% {
+    opacity: 0.88;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
   }
 }

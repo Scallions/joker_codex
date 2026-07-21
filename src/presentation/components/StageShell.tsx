@@ -5,6 +5,7 @@ import {
   type PresentationSceneId,
 } from '../assets/presentationAssets';
 import { StageTransition } from '../motion/StageTransition';
+import type { PresentationSpeed } from '../../persistence/deviceSettings';
 import { SoundStageDrawer } from './SoundStageDrawer';
 import styles from './StageMaterials.module.css';
 
@@ -12,6 +13,7 @@ export interface StageShellProps {
   readonly children: ReactNode;
   readonly sceneId?: PresentationSceneId;
   readonly showGlobalControls?: boolean;
+  readonly presentationSpeed?: PresentationSpeed;
 }
 
 function StageScene({ sceneId }: { readonly sceneId: PresentationSceneId }) {
@@ -45,15 +47,25 @@ export function StageShell({
   children,
   sceneId = 'brand-curtain',
   showGlobalControls = true,
+  presentationSpeed = 'full',
 }: StageShellProps) {
   return (
     <main className={styles.viewport}>
-      <section className={styles.stage} aria-label="午夜百戏舞台">
+      <section
+        className={styles.stage}
+        aria-label="午夜百戏舞台"
+        data-presentation-speed={presentationSpeed}
+      >
         <StageScene key={sceneId} sceneId={sceneId} />
         <StageTransition key={`transition:${sceneId}`} sceneId={sceneId} />
         <div className={styles.curtainLeft} aria-hidden="true" />
         <div className={styles.curtainRight} aria-hidden="true" />
-        <div className={styles.lanterns} aria-hidden="true">
+        <div
+          className={styles.lanterns}
+          data-scene-id={sceneId}
+          key={`lanterns:${sceneId}`}
+          aria-hidden="true"
+        >
           <i />
           <i />
           <i />

@@ -49,4 +49,27 @@ describe('stage scene selection', () => {
     expect(scene).toHaveAttribute('data-load-state', 'failed');
     expect(screen.getByText('商店内容')).toBeInTheDocument();
   });
+
+  it('exposes the selected full or brisk motion profile on the fixed stage', () => {
+    const { container, rerender } = render(
+      <StageShell presentationSpeed="brisk" showGlobalControls={false}>
+        <p>利落演出</p>
+      </StageShell>,
+    );
+
+    expect(container.querySelector('section')).toHaveAttribute(
+      'data-presentation-speed',
+      'brisk',
+    );
+
+    rerender(
+      <StageShell presentationSpeed="full" showGlobalControls={false}>
+        <p>完整演出</p>
+      </StageShell>,
+    );
+    expect(container.querySelector('section')).toHaveAttribute(
+      'data-presentation-speed',
+      'full',
+    );
+  });
 });

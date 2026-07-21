@@ -36,10 +36,23 @@
   --bx-layer-navigation: 18;
   --bx-layer-notice: 24;
   --bx-layer-drawer: 30;
+  --bx-stage-chrome-top: 1rem;
+  --bx-stage-chrome-right: 1.5rem;
+  --bx-stage-chrome-audio-left: 1.25rem;
+  --bx-stage-chrome-audio-width: 8.75rem;
+  --bx-stage-chrome-gap: 0.75rem;
+  --bx-stage-chrome-height: 2.65rem;
+  --bx-stage-chrome-content-start: calc(
+    var(--bx-stage-chrome-audio-left) + var(--bx-stage-chrome-audio-width) +
+      var(--bx-stage-chrome-gap)
+  );
+  --bx-playing-content-top: 5.25rem;
+  --bx-playing-content-edge: 2.8rem;
   --bx-ease-curtain: cubic-bezier(0.22, 0.8, 0.28, 1);
   --bx-ease-stage: cubic-bezier(0.2, 0.75, 0.24, 1);
   --bx-ease-seal: cubic-bezier(0.16, 1, 0.3, 1);
   --bx-duration-routine: 160ms;
   --bx-duration-stage: 420ms;
   --bx-duration-curtain: 680ms;
+  --bx-duration-stagger: 40ms;
 }

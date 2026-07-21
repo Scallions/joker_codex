@@ -46,7 +46,7 @@ export function SoundStageDrawer() {
 
   return (
     <>
-      <div className={styles.globalControls}>
+      <div className={styles.globalControls} data-layout-zone="audio-controls">
         <button
           type="button"
           className={styles.soundButton}

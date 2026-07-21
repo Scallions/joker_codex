@@ -7,11 +7,12 @@ import {
   selectJokerPresentation,
   selectOwnedJokerPresentation,
 } from '../selectors/jokerPresentation';
+import { motionProfileForSpeed } from '../motion/motionTokens';
 import styles from './ShopScreen.module.css';
 
 export function ShopScreen() {
   const dispatch = useAppDispatch();
-  const { run, busy } = useAppSelector((state) => state.app);
+  const { run, busy, settings } = useAppSelector((state) => state.app);
   if (!run || run.phase.kind !== 'shop' || !run.shop) return null;
   const shop = run.shop;
   const checkpointId = run.checkpointId;
@@ -21,14 +22,24 @@ export function ShopScreen() {
     ...(shop.voucherOffer ? [shop.voucherOffer] : []),
     ...(shop.extraVoucherOffers ?? []),
   ];
+  const motionProfile = motionProfileForSpeed(settings.presentationSpeed);
 
   return (
     <motion.div
       className={styles.screen}
       initial={{ opacity: 0, scale: 0.985 }}
       animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: motionProfile.stageMs / 1_000 }}
     >
-      <header className={styles.header}>
+      <motion.header
+        className={styles.header}
+        initial={{ opacity: 0, y: -14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{
+          delay: motionProfile.routineMs / 1_000,
+          duration: motionProfile.routineMs / 1_000,
+        }}
+      >
         <div>
           <p>
             第 {run.progress.ante} 幕 ·{' '}
@@ -44,7 +55,7 @@ export function ShopScreen() {
           <span>手中戏票</span>
           <strong>¥{run.economy.money}</strong>
         </div>
-      </header>
+      </motion.header>
 
       <main className={styles.market}>
         <section className={styles.offerSection}>
@@ -77,6 +88,10 @@ export function ShopScreen() {
                   key={offer.id}
                   initial={{ y: 18, opacity: 0, rotate: index === 0 ? -1 : 1 }}
                   animate={{ y: 0, opacity: 1, rotate: 0 }}
+                  transition={{
+                    delay: (index * motionProfile.staggerMs) / 1_000,
+                    duration: motionProfile.routineMs / 1_000,
+                  }}
                   data-joker-rarity={presentation?.rarity}
                   data-joker-ensemble={presentation?.ensemble}
                 >
@@ -136,8 +151,18 @@ export function ShopScreen() {
                 </motion.article>
               );
             })}
-            {shop.packOffers.map((offer) => (
-              <article className={`${styles.offer} ${styles.jokerOffer}`} key={offer.id}>
+            {shop.packOffers.map((offer, index) => (
+              <motion.article
+                className={`${styles.offer} ${styles.jokerOffer}`}
+                key={offer.id}
+                initial={{ y: 18, opacity: 0, rotate: 1 }}
+                animate={{ y: 0, opacity: 1, rotate: 0 }}
+                transition={{
+                  delay:
+                    ((shop.cardOffers.length + index) * motionProfile.staggerMs) / 1_000,
+                  duration: motionProfile.routineMs / 1_000,
+                }}
+              >
                 <span className={styles.offerKind}>密封卡包</span>
                 <div className={styles.offerIcon} aria-hidden="true">
                   封
@@ -161,7 +186,7 @@ export function ShopScreen() {
                   <span>当场拆封</span>
                   <strong>{offer.price === 0 ? '赠' : `¥${offer.price}`}</strong>
                 </button>
-              </article>
+              </motion.article>
             ))}
             {shop.cardOffers.length + shop.packOffers.length === 0 ? (
               <div className={styles.soldOut}>今夜货架已空</div>
@@ -192,7 +217,15 @@ export function ShopScreen() {
           ))}
         </section>
 
-        <aside className={styles.inventory}>
+        <motion.aside
+          className={styles.inventory}
+          initial={{ opacity: 0, x: 18 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{
+            delay: motionProfile.stageMs / 1_000,
+            duration: motionProfile.routineMs / 1_000,
+          }}
+        >
           <div className={styles.inventoryTitle}>
             <span>随身戏箱</span>
             <strong>
@@ -323,10 +356,18 @@ export function ShopScreen() {
               </div>
             ))}
           </div>
-        </aside>
+        </motion.aside>
       </main>
 
-      <footer className={styles.footer}>
+      <motion.footer
+        className={styles.footer}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{
+          delay: (motionProfile.stageMs + motionProfile.staggerMs * 2) / 1_000,
+          duration: motionProfile.routineMs / 1_000,
+        }}
+      >
         <p>
           <span>已破幕数</span>
           <strong>{run.history.completedBlindIds.length}</strong>
@@ -341,7 +382,7 @@ export function ShopScreen() {
         >
           收摊 · 前往下一幕
         </button>
-      </footer>
+      </motion.footer>
     </motion.div>
   );
 }

@@ -2,8 +2,8 @@
   position: relative;
   z-index: 4;
   width: min(1120px, calc(100% - 104px));
-  height: calc(100% - 92px);
-  margin: 50px auto 0;
+  height: calc(100% - var(--bx-playing-content-top) - 2.1rem);
+  margin: var(--bx-playing-content-top) auto 0;
   padding: 34px 38px 30px;
   color: #f5e8ca;
   background:

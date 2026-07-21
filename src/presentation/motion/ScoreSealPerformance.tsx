@@ -179,6 +179,10 @@ export function ScoreSealPerformance({
       : formatScore(totals.score ?? totals.chips);
   const recentCues = visibleCues.slice(-6);
   const particleCount = Math.min(8, 3 + (sequence.cursor % 6));
+  const impactKind =
+    current.payload.type === 'total' || current.payload.type === 'blind-cleared'
+      ? current.payload.type
+      : null;
 
   return (
     <div
@@ -232,6 +236,13 @@ export function ScoreSealPerformance({
           />
         ))}
       </div>
+      {impactKind ? (
+        <span
+          className={styles.impactRing}
+          data-score-impact={impactKind}
+          aria-hidden="true"
+        />
+      ) : null}
       <p className={styles.progress}>
         第 {String(sequence.cursor + 1)} / {String(sequence.cues.length)} 响
         {paused ? ' · 声场调校中' : ''}

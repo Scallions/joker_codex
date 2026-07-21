@@ -112,6 +112,7 @@ describe('vermilion score-seal performer', () => {
       />,
     );
     expect(screen.getByText('407')).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-score-impact="total"]')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: '落定演出，显示已提交结果' }));
     expect(onSkip).toHaveBeenCalledTimes(1);
     expect(onAdvance).not.toHaveBeenCalled();

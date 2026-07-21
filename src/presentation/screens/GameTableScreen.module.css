@@ -10,9 +10,9 @@
 
 .inventoryRail {
   position: absolute;
-  top: 2.3rem;
-  right: 7.4rem;
-  left: 7.4rem;
+  top: var(--bx-playing-content-top);
+  right: var(--bx-playing-content-edge);
+  left: var(--bx-playing-content-edge);
   display: grid;
   grid-template-columns: 10rem 1fr 11rem;
   gap: 0.8rem;
@@ -183,7 +183,7 @@
 
 .ledger {
   position: absolute;
-  top: 8.1rem;
+  top: 10.5rem;
   bottom: 5.7rem;
   left: 2.8rem;
   width: 10.5rem;
@@ -261,9 +261,9 @@
 
 .centerStage {
   position: absolute;
-  top: 8.2rem;
+  top: 10.5rem;
   right: 15.2rem;
-  bottom: 16.5rem;
+  bottom: 17rem;
   left: 14.5rem;
   display: grid;
   justify-items: center;
@@ -346,11 +346,14 @@
 
 .scoreSeal p {
   position: absolute;
-  bottom: -2rem;
+  bottom: 0.85rem;
+  max-width: 8.5rem;
   margin: 0;
+  overflow: hidden;
   color: #dcae5f;
   font-family: 'STKaiti', 'KaiTi', serif;
-  font-size: 0.88rem;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -358,7 +361,7 @@
   position: absolute;
   right: 12rem;
   bottom: 0.8rem;
-  left: 12.5rem;
+  left: 14.5rem;
   height: 15.6rem;
 }
 

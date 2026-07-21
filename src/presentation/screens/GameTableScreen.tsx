@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { finishLocalRun, submitRunCommand } from '../../app/store/appSlice';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
@@ -10,6 +10,7 @@ import { canSellJokerForRun, hasActiveBlindRule } from '../../game-core/rules/ru
 import { formatScore } from '../../game-core/score/score';
 import { selectHandCardsV2 } from '../../game-core/selectors/runV2';
 import { selectOwnedJokerPresentation } from '../selectors/jokerPresentation';
+import { motionProfileForSpeed, type MotionProfile } from '../motion/motionTokens';
 import styles from './GameTableScreen.module.css';
 
 const SUIT_LABEL: Record<Suit, string> = {
@@ -51,6 +52,9 @@ interface CardButtonProps {
   readonly faceDown: boolean;
   readonly disabled: boolean;
   readonly exitKind: 'play' | 'discard';
+  readonly entering: boolean;
+  readonly entryHeld: boolean;
+  readonly motionProfile: MotionProfile;
   readonly onSelect: () => void;
 }
 
@@ -63,15 +67,21 @@ function CardButton({
   faceDown,
   disabled,
   exitKind,
+  entering,
+  entryHeld,
+  motionProfile,
   onSelect,
 }: CardButtonProps) {
   const red = card.suit === 'hearts' || card.suit === 'diamonds';
   const center = (count - 1) / 2;
+  const entryPose = { opacity: 0, x: 84, y: 42, scale: 0.9, rotate: 5 };
+  const entryDelay = entering ? (index * motionProfile.staggerMs) / 1_000 : 0;
   return (
     <motion.button
       type="button"
       data-testid="playing-card"
       data-card-id={card.id}
+      data-card-entry-state={entryHeld ? 'held' : entering ? 'entering' : 'settled'}
       className={`${styles.card} ${red ? styles.redCard : ''} ${
         selected ? styles.selectedCard : ''
       }`}
@@ -81,13 +91,18 @@ function CardButton({
       disabled={disabled || forced}
       onClick={onSelect}
       layout="position"
-      initial={{ opacity: 0, y: 34, scale: 0.94, rotate: -3 }}
-      animate={{
-        opacity: 1,
-        scale: 1,
-        y: selected ? -24 : Math.abs(index - center) * 2.2,
-        rotate: (index - center) * 2.2,
-      }}
+      initial={entryPose}
+      animate={
+        entryHeld
+          ? entryPose
+          : {
+              opacity: 1,
+              x: 0,
+              scale: 1,
+              y: selected ? -24 : Math.abs(index - center) * 2.2,
+              rotate: (index - center) * 2.2,
+            }
+      }
       exit={
         exitKind === 'play'
           ? { opacity: 0, y: -150, scale: 0.86, rotate: (index - center) * 5 }
@@ -101,7 +116,12 @@ function CardButton({
       }
       whileHover={{ y: selected ? -28 : -10, scale: 1.025 }}
       whileTap={{ scale: 0.97 }}
-      transition={{ type: 'spring', stiffness: 430, damping: 28 }}
+      transition={{
+        type: 'spring',
+        stiffness: motionProfile.spring.stiffness,
+        damping: motionProfile.spring.damping,
+        delay: entryDelay,
+      }}
     >
       {faceDown ? (
         <span className={styles.cardSuit}>戏</span>
@@ -124,12 +144,38 @@ function CardButton({
 export function GameTableScreen() {
   const dispatch = useAppDispatch();
   const [exitKind, setExitKind] = useState<'play' | 'discard'>('play');
-  const { run, busy, activeProfileId, profiles } = useAppSelector((state) => state.app);
+  const [presentedHandIds, setPresentedHandIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const { run, busy, activeProfileId, presentationSequence, profiles, settings } =
+    useAppSelector((state) => state.app);
+  const hand = useMemo(
+    () => (run?.phase.kind === 'round' && run.round ? selectHandCardsV2(run) : []),
+    [run],
+  );
+  const motionProfile = motionProfileForSpeed(settings.presentationSpeed);
+  useEffect(() => {
+    if (presentationSequence) return;
+    const nextIds = hand.map(({ id }) => id);
+    const settleAfterMs =
+      motionProfile.routineMs + Math.max(0, nextIds.length - 1) * motionProfile.staggerMs;
+    const timeout = window.setTimeout(() => {
+      setPresentedHandIds((current) => {
+        if (
+          current.size === nextIds.length &&
+          nextIds.every((cardId) => current.has(cardId))
+        ) {
+          return current;
+        }
+        return new Set(nextIds);
+      });
+    }, settleAfterMs);
+    return () => window.clearTimeout(timeout);
+  }, [hand, motionProfile.routineMs, motionProfile.staggerMs, presentationSequence]);
   if (!run || run.phase.kind !== 'round' || !run.round) return null;
 
   const round = run.round;
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId);
-  const hand = selectHandCardsV2(run);
   const cardMap = new Map(run.deck.cards.map((card) => [card.id, card]));
   const selectedCards = round.selectedCardIds.flatMap((id) => {
     const card = cardMap.get(id);
@@ -166,7 +212,7 @@ export function GameTableScreen() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
-      <header className={styles.inventoryRail}>
+      <header className={styles.inventoryRail} data-layout-zone="table-inventory">
         <div className={styles.brandPlate}>
           <span>百戏奇牌</span>
           <strong>{activeProfile?.displayName ?? '无名戏主'}</strong>
@@ -274,7 +320,7 @@ export function GameTableScreen() {
         </div>
       </header>
 
-      <aside className={styles.ledger}>
+      <aside className={styles.ledger} data-layout-zone="table-ledger">
         <div className={styles.ledgerTitle}>
           <span>{run.progress.endless ? '无尽账簿' : '八幕账簿'}</span>
           <strong>第 {run.progress.ante} 幕</strong>
@@ -304,7 +350,7 @@ export function GameTableScreen() {
         <p>检查点 #{run.checkpointId}</p>
       </aside>
 
-      <section className={styles.centerStage}>
+      <section className={styles.centerStage} data-layout-zone="table-center">
         <div className={styles.blindBanner}>
           <span>需达成 {formatScore(round.targetScore)} 分</span>
           <strong>{round.blind.name}</strong>
@@ -317,20 +363,21 @@ export function GameTableScreen() {
             {run.lastHand ? (
               <motion.p
                 key={run.checkpointId}
+                data-score-status="last-hand"
                 initial={{ scale: 1.4, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
               >
                 本手 · {run.lastHand.handName} +{formatScore(run.lastHand.score)}
               </motion.p>
             ) : (
-              <p>朱砂印静候落分</p>
+              <p data-score-status="idle">朱砂印静候落分</p>
             )}
           </AnimatePresence>
         </div>
       </section>
 
-      <section className={styles.handArea}>
-        <div className={styles.handMeta}>
+      <section className={styles.handArea} data-layout-zone="table-hand">
+        <div className={styles.handMeta} data-hand-meta="true">
           <div>
             <button
               type="button"
@@ -385,6 +432,11 @@ export function GameTableScreen() {
                 faceDown={round.faceDownCardIds.includes(card.id)}
                 disabled={busy}
                 exitKind={exitKind}
+                entering={!presentedHandIds.has(card.id)}
+                entryHeld={
+                  Boolean(presentationSequence) && !presentedHandIds.has(card.id)
+                }
+                motionProfile={motionProfile}
                 onSelect={() =>
                   void dispatch(
                     submitRunCommand({
@@ -401,7 +453,7 @@ export function GameTableScreen() {
         </div>
       </section>
 
-      <aside className={styles.actionRail}>
+      <aside className={styles.actionRail} data-layout-zone="table-actions">
         <button
           type="button"
           aria-label="出牌"

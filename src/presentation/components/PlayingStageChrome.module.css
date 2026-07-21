@@ -1,0 +1,37 @@
+.chrome {
+  position: absolute;
+  top: var(--bx-stage-chrome-top);
+  right: var(--bx-stage-chrome-right);
+  left: var(--bx-stage-chrome-content-start);
+  z-index: var(--bx-layer-navigation);
+  display: grid;
+  height: var(--bx-stage-chrome-height);
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--bx-stage-chrome-gap);
+  align-items: stretch;
+  pointer-events: none;
+}
+
+.status {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+}
+
+.navigation {
+  display: flex;
+  gap: 0.38rem;
+  align-items: stretch;
+  pointer-events: auto;
+}
+
+.navigation button {
+  min-width: 5.55rem;
+  padding: 0.42rem 0.64rem;
+  border: 1px solid rgb(211 165 76 / 50%);
+  color: #f4dfb8;
+  background: rgb(25 43 42 / 90%);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}

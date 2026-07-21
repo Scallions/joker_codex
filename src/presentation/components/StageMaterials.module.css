@@ -27,6 +27,13 @@
   isolation: isolate;
 }
 
+.stage[data-presentation-speed='brisk'] {
+  --bx-duration-routine: 55ms;
+  --bx-duration-stage: 140ms;
+  --bx-duration-curtain: 225ms;
+  --bx-duration-stagger: 14ms;
+}
+
 .stage::before {
   position: absolute;
   right: 8%;
@@ -75,7 +82,7 @@
   object-fit: cover;
   opacity: 0.72;
   filter: saturate(0.82) contrast(1.04) brightness(0.72);
-  animation: scene-arrive 460ms var(--bx-ease-stage) both;
+  animation: scene-arrive var(--bx-duration-stage) var(--bx-ease-stage) both;
 }
 
 .sceneVeil {
@@ -145,4 +152,40 @@
   box-shadow:
     0 0 12px #d94c39,
     0 0 28px rgb(255 200 105 / 60%);
+  opacity: 0;
+  animation: lantern-ignite var(--bx-duration-stage) var(--bx-ease-seal) both;
+  animation-delay: calc(var(--lantern-index, 0) * var(--bx-duration-stagger));
+}
+
+.lanterns i:nth-child(2) {
+  --lantern-index: 1;
+}
+
+.lanterns i:nth-child(3) {
+  --lantern-index: 2;
+}
+
+.lanterns i:nth-child(4) {
+  --lantern-index: 3;
+}
+
+.lanterns i:nth-child(5) {
+  --lantern-index: 4;
+}
+
+@keyframes lantern-ignite {
+  0% {
+    opacity: 0;
+    transform: scale(0.45);
+  }
+
+  58% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
