@@ -1,51 +1,54 @@
 # Logging Guidelines
 
-> How logging is done in this project.
+> No-runtime-logger policy for the local-first game.
 
 ---
 
 ## Overview
 
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
+The browser runtime has no logging library, telemetry, analytics, or remote log
+sink. Runtime failures are represented as typed results or user-visible Redux
+state. Adding console output to src is not an observability strategy and should
+not be done by default.
 
 ---
 
 ## Log Levels
 
-<!-- When to use each level: debug, info, warn, error -->
+Runtime debug, info, warn, and error levels are not defined. A future logging
+system requires an explicit product decision because the game is local-first
+and stores profile data only on the device.
 
-(To be filled by the team)
+Node maintenance scripts may print concise success summaries to stdout and
+throw on failure. scripts/generate-catalog-emblems.mjs is the existing pattern.
 
 ---
 
 ## Structured Logging
 
-<!-- Log format, required fields -->
+There is no structured runtime log format. Tests should assert returned state,
+events, and errors instead of scraping console output.
 
-(To be filled by the team)
+For scripts, output should be deterministic and operational: artifact counts,
+changed counts, or budget totals. Error output should identify the failing
+artifact and make the process exit non-zero.
 
 ---
 
-## What to Log
+## Allowed Output
 
-<!-- Important events to log -->
-
-(To be filled by the team)
+- One-off developer scripts may report a final count or audit summary.
+- Build tools and test runners own their normal diagnostic output.
+- Temporary debugging output must be removed before the quality gate.
 
 ---
 
 ## What NOT to Log
 
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+- Never log exported profile JSON, seed/share payloads, display names, or full
+  IndexedDB records.
+- Never add analytics or network logging without explicit scope and consent.
+- Do not leave console.log, console.warn, debugger, or ad hoc timing probes in
+  src.
+- Do not treat a console message as error handling; preserve the typed failure
+  path and user-visible message.
