@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 17
+- **Total Sessions**: 18
 - **Last Active**: 2026-07-22
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~571 | Active |
+| `journal-1.md` | ~604 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 18 | 2026-07-22 | 完成 GitHub CI/CD 与 Pages 静态部署 | `cf54c26` | `codex/archive-github-pages-cicd` |
 | 17 | 2026-07-22 | Bootstrap project guidelines | `d962386` | `main` |
 | 16 | 2026-07-22 | Fix card deselection position | `d61737e` | `main` |
 | 15 | 2026-07-21 | Fix post-play hand ordering | `74d6542` | `main` |

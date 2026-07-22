@@ -569,3 +569,36 @@ Replaced the Trellis guideline scaffolds with codebase-derived backend-boundary 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 完成 GitHub CI/CD 与 Pages 静态部署
+
+**Date**: 2026-07-22
+**Task**: 完成 GitHub CI/CD 与 Pages 静态部署
+**Branch**: `codex/archive-github-pages-cicd`
+
+### Summary
+
+完成 Vite 子路径资源适配、GitHub Actions 质量与 Pages 部署工作流、线上浏览器验收及 main 分支保护；公开站点已成功上线。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cf54c26` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
