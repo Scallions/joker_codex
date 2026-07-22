@@ -1,4 +1,5 @@
 import type { AssetOwnershipRecord, CatalogRow } from '../../content/schema/catalog';
+import { resolvePublicAssetUrl } from '../assets/publicAssetUrl';
 import { CatalogEmblem } from './CatalogEmblem';
 import styles from './CatalogAudit.module.css';
 
@@ -20,6 +21,7 @@ export function CatalogCard({
   badge,
 }: CatalogCardProps) {
   const joker = row.family === 'joker';
+  const assetUrl = resolvePublicAssetUrl(asset.assetPath);
   return (
     <article
       className={`${styles.card} ${joker ? styles.jokerCard : ''}`}
@@ -32,7 +34,7 @@ export function CatalogCard({
       <div className={styles.artwork}>
         {row.family === 'joker' ? (
           <img
-            src={asset.assetPath}
+            src={assetUrl}
             alt=""
             data-focal-key={asset.focalKey}
             data-asset-source={asset.source}

@@ -17,6 +17,12 @@ npm run dev
 
 所有档案、牌局与设备设置都保存在当前浏览器的 IndexedDB 中，不需要账号、服务器或网络连接。甲、乙、丙三个档位分别保存进度与活动牌局，音乐、音效、静音和演出速度属于设备级共享设置。导出档案会生成带版本与校验和的 JSON 文件；导入前会校验并提示覆盖对应档位。
 
+## 在线游玩
+
+正式版本发布在 <https://scallions.github.io/joker_codex/>。网站与本地开发使用相同的纯前端构建，不需要登录或连接游戏服务器。
+
+IndexedDB 存档按网站来源（协议、主机和端口）隔离，URL 路径不参与隔离。因此 `http://127.0.0.1:4173` 与 `https://scallions.github.io` 拥有不同存档；只修改同一 GitHub Pages 主机下的仓库路径仍会访问同一来源的数据，而改用自定义域名会得到新的独立存档。跨来源切换前请先从旧地址导出档案，再在新地址导入。
+
 ## 常用命令
 
 ```bash
@@ -31,6 +37,16 @@ npm run build:audit   # 校验首屏静态依赖的 350 KiB gzip 预算
 npm run check         # 除浏览器测试外的本地质量门禁
 npm run content:audit # 审计 230 项非奇牌与 150 张奇牌的目录闭合
 ```
+
+## GitHub CI/CD
+
+`main` 是受保护的生产分支。日常改动从功能分支提交 Pull Request；`Quality and Pages` 工作流会执行 `npm ci` 与完整的 `npm run check`。只有 `quality` 成功并合并到 `main` 后，完全相同的 `dist/` 构建产物才会自动部署到 GitHub Pages。
+
+需要手动重新验证或发布时，在 GitHub 的 Actions 页面打开 `Quality and Pages`，点击 `Run workflow` 并选择 `main`。从其他分支手动运行只执行质量检查，不会发布生产站点。
+
+完整 Chromium 与 WebKit 测试位于独立的 `Browser tests` 工作流，按需手动运行，不阻塞常规发布。失败后可在该次 Actions 运行的 Artifacts 区域下载 `playwright-diagnostics-*`，其中包含 Playwright HTML 报告、截图和 trace 等实际生成的诊断文件。
+
+质量或部署失败时，先查看失败步骤的日志；不得跳过 `quality` 或直接绕过分支保护。需要回滚线上版本时，从最新 `main` 建立回滚分支，执行 `git revert <有问题的提交>`，推送并通过 Pull Request 合并；同一套 CI/CD 会验证并重新部署回滚结果。
 
 ## 游戏流程
 

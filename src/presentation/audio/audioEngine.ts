@@ -7,6 +7,7 @@ import {
   type PresentationAudioId,
   type PresentationSceneId,
 } from '../assets/presentationAssets';
+import { resolvePublicAssetUrl } from '../assets/publicAssetUrl';
 import { sceneMixFor } from './audioMap';
 
 export interface AudioParamLike {
@@ -317,7 +318,7 @@ export class PresentationAudioEngine {
     const pending = this.bufferPromises.get(id);
     if (pending) return pending;
     const record = PRESENTATION_AUDIO_BY_ID[id];
-    const promise = this.fetchAudio(record.path)
+    const promise = this.fetchAudio(resolvePublicAssetUrl(record.path))
       .then((source) => {
         if (!this.context) throw new Error('声场尚未开启');
         return this.context.decodeAudioData(source);

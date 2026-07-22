@@ -4,6 +4,7 @@ import {
   PRESENTATION_SCENES_BY_ID,
   type PresentationSceneId,
 } from '../assets/presentationAssets';
+import { resolvePublicAssetUrl } from '../assets/publicAssetUrl';
 import { StageTransition } from '../motion/StageTransition';
 import type { PresentationSpeed } from '../../persistence/deviceSettings';
 import { SoundStageDrawer } from './SoundStageDrawer';
@@ -26,7 +27,7 @@ function StageScene({ sceneId }: { readonly sceneId: PresentationSceneId }) {
         className={styles.sceneImage}
         data-load-state={failed ? 'failed' : 'ready'}
         data-testid={`stage-scene-${sceneId}`}
-        src={scene.path}
+        src={resolvePublicAssetUrl(scene.path)}
         alt=""
         width={scene.width}
         height={scene.height}

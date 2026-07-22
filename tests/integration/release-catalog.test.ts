@@ -49,7 +49,7 @@ describe('百戏奇牌发布目录', () => {
     );
 
     expect(indexHtml).toContain(
-      '<link rel="icon" href="/assets/catalog-stage.svg" type="image/svg+xml" />',
+      '<link rel="icon" href="%BASE_URL%assets/catalog-stage.svg" type="image/svg+xml" />',
     );
     expect(favicon).toContain('<svg');
   });

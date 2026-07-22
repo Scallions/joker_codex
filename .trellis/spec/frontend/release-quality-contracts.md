@@ -207,3 +207,140 @@ const repository = new IndexedDbGameRepository(databaseName, {
   ],
 }
 ```
+
+## Scenario: Publishing the Vite application below a project-site base
+
+### 1. Scope / Trigger
+
+Use this contract when a static deployment serves the application below a URL
+prefix such as GitHub Pages' `/joker_codex/`, or when code adds a browser
+consumer for an asset under `public/assets`. The content catalog must remain
+environment-independent while browser requests, built entry references, and
+the build-budget audit agree on one deployment base.
+
+### 2. Signatures
+
+```ts
+export const DEFAULT_DEPLOYMENT_BASE = '/' as const;
+
+export function validateDeploymentBase(baseUrl: string): string;
+
+export function resolvePublicAssetUrlFromBase(
+  baseUrl: string,
+  assetPath: string,
+): string;
+
+export function resolvePublicAssetUrl(assetPath: string): string;
+```
+
+The CI-facing environment contract is:
+
+```text
+VITE_BASE_PATH=/joker_codex/
+```
+
+`VITE_BASE_PATH` is optional for local commands and defaults to `/`. When set,
+it must be an absolute path with exactly one leading separator, a trailing
+separator, no empty/interior traversal segments, and no query, fragment, or
+backslash.
+
+### 3. Contracts
+
+- Catalog ownership records, presentation registries, and provenance text keep
+  canonical `/assets/...` logical paths. Do not persist or validate a hosting
+  prefix in content data.
+- Browser presentation/fetch boundaries call `resolvePublicAssetUrl`, which
+  joins canonical local assets to Vite's `import.meta.env.BASE_URL`. Non-local,
+  relative, or already resolved input is not rewritten.
+- `vite.config.ts` validates `VITE_BASE_PATH` before assigning Vite `base`.
+  `index.html` uses `%BASE_URL%` for public-file references such as the favicon.
+- The build-budget audit uses the same environment value to strip the base from
+  root-absolute initial references before resolving files below `dist/`. Its
+  traversal and 350 KiB gzip contracts remain unchanged.
+- The required GitHub Actions `quality` job runs the existing `npm run check`
+  with the production base. Only a successful non-PR run on `main` uploads that
+  exact `dist/` and enables a dependent Pages deployment job.
+- IndexedDB isolation follows web origin (scheme, host, and port), not the Vite
+  base path. Changing only a project path does not create a separate store;
+  changing to another host or custom domain does.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| Base is `/` | Existing local `/assets/...` browser URLs remain unchanged |
+| Base is `/joker_codex/` | Canonical browser URL becomes `/joker_codex/assets/...` |
+| Base lacks boundary slashes, contains `//`, `.`, `..`, query, fragment, or backslash | Configuration throws before Vite builds |
+| Input is external, relative, or already prefixed | Resolver returns it unchanged after validating the base |
+| Initial module/style reference is outside the configured base | `build:audit` fails before gzip reporting |
+| Pull request passes `quality` | No Pages artifact or deployment runs |
+| `main` quality fails | No Pages deployment runs |
+| `main` quality passes | The same checked `dist/` is uploaded and deployed |
+
+### 5. Good / Base / Bad Cases
+
+- Good: content keeps `/assets/jokers/001.webp`; a Pages build requests
+  `/joker_codex/assets/jokers/001.webp`, and the live request succeeds.
+- Good: the Pages build's HTML entry paths are stripped back to `dist/assets/*`
+  before initial gzip accounting.
+- Base: default local Vitest, Vite development, build, preview, and browser tests
+  continue to use `/` with their existing assertions.
+- Bad: mutating catalog paths to `/joker_codex/assets/...` makes deployment
+  environment part of content identity and breaks local/file audits.
+- Bad: prefixing only Vite's generated entry files leaves runtime Joker, scene,
+  or audio requests pointing at the GitHub hostname root.
+- Bad: treating `/old-repo/` and `/new-repo/` on the same host as different
+  IndexedDB origins gives users incorrect migration guidance.
+
+### 6. Tests Required
+
+- `tests/presentation/public-asset-url.test.ts`: root and project bases,
+  query/fragment preservation, passthrough inputs, no double prefix, and invalid
+  base rejection.
+- Existing presentation and audio tests: default-root component `src` and fetch
+  expectations remain unchanged.
+- `tests/integration/release-catalog.test.ts`: source HTML declares the favicon
+  through `%BASE_URL%` and the local SVG exists.
+- `npm run check`: validates the default root build and budget.
+- `VITE_BASE_PATH=/joker_codex/ npm run check`: validates the Pages build and
+  budget using the same environment as CI.
+- Targeted Chromium/WebKit presentation and audio coverage plus a base-specific
+  preview/live smoke: no local asset 404 and runtime images/audio use the prefix.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// Leaks one hosting target into canonical content and still misses other assets.
+assetPath: '/joker_codex/assets/jokers/001.webp';
+```
+
+```yaml
+# Rebuilds after the quality job, so the deployed bytes were not checked.
+deploy:
+  steps:
+    - run: npm run build
+```
+
+#### Correct
+
+```ts
+// Content stays canonical; only the browser boundary knows the Vite base.
+assetPath: '/assets/jokers/001.webp';
+const browserUrl = resolvePublicAssetUrl(assetPath);
+```
+
+```yaml
+quality:
+  env:
+    VITE_BASE_PATH: /joker_codex/
+  steps:
+    - run: npm run check
+    - uses: actions/upload-pages-artifact@<pinned-commit>
+      with:
+        path: ./dist
+
+deploy:
+  needs: quality
+```

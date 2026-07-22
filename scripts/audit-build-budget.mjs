@@ -4,6 +4,17 @@ import { gzipSync } from 'node:zlib';
 
 const DIST_DIRECTORY = resolve('dist');
 const INITIAL_GZIP_BUDGET = 350 * 1024;
+const DEPLOYMENT_BASE = process.env.VITE_BASE_PATH ?? '/';
+
+function distRelativeReference(path) {
+  const [pathname] = path.split(/[?#]/, 1);
+  if (!pathname) throw new Error(`首屏资源路径为空：${path}`);
+  if (!pathname.startsWith('/')) return pathname.replace(/^\.\//, '');
+  if (!pathname.startsWith(DEPLOYMENT_BASE)) {
+    throw new Error(`首屏资源不在部署基础路径 ${DEPLOYMENT_BASE} 下：${path}`);
+  }
+  return pathname.slice(DEPLOYMENT_BASE.length);
+}
 
 function initialReferences(html) {
   const references = new Set();
@@ -16,7 +27,7 @@ function initialReferences(html) {
       (match[1] === 'script' && /type=["']module["']/.test(tag)) ||
       (match[1] === 'link' && /rel=["'](?:modulepreload|stylesheet)["']/.test(tag))
     ) {
-      references.add(path.replace(/^\//, ''));
+      references.add(distRelativeReference(path));
     }
   }
   return references;

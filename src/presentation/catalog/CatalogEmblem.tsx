@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import type { NonJokerCatalogFamily } from '../../content/schema/catalog';
+import { resolvePublicAssetUrl } from '../assets/publicAssetUrl';
 import styles from './CatalogEmblem.module.css';
 
 export interface CatalogEmblemProps {
@@ -19,6 +20,7 @@ export function CatalogEmblem({
   loading = 'lazy',
 }: CatalogEmblemProps) {
   const [failed, setFailed] = useState(false);
+  const resolvedAssetPath = resolvePublicAssetUrl(assetPath);
 
   if (failed) {
     return (
@@ -39,7 +41,7 @@ export function CatalogEmblem({
   return (
     <img
       className={styles.image}
-      src={assetPath}
+      src={resolvedAssetPath}
       alt={alt}
       loading={loading}
       data-focal-key={focalKey}

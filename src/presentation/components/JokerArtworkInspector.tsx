@@ -9,6 +9,7 @@ import {
 } from 'react';
 
 import type { JokerPresentation } from '../selectors/jokerPresentation';
+import { resolvePublicAssetUrl } from '../assets/publicAssetUrl';
 import styles from './JokerArtworkInspector.module.css';
 
 interface JokerArtworkInspectorContextValue {
@@ -43,6 +44,7 @@ export function JokerArtworkInspectorProvider({
   const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) close();
   };
+  const activeAssetUrl = active ? resolvePublicAssetUrl(active.assetPath) : null;
 
   return (
     <JokerArtworkInspectorContext.Provider value={{ open }}>
@@ -59,7 +61,7 @@ export function JokerArtworkInspectorProvider({
             onMouseDown={closeOnBackdrop}
           >
             <div className={styles.ambient} aria-hidden="true">
-              <img src={active.assetPath} alt="" />
+              <img src={activeAssetUrl ?? undefined} alt="" />
             </div>
             <section
               className={styles.dialog}
@@ -71,7 +73,7 @@ export function JokerArtworkInspectorProvider({
               <div className={styles.artFrame}>
                 <img
                   className={styles.art}
-                  src={active.assetPath}
+                  src={activeAssetUrl ?? undefined}
                   alt=""
                   data-testid="joker-inspector-art"
                   data-focal-key={active.focalKey}
@@ -121,6 +123,7 @@ export function JokerArtworkTrigger({
   if (!inspector) {
     throw new Error('JokerArtworkTrigger 必须位于 JokerArtworkInspectorProvider 内');
   }
+  const assetUrl = resolvePublicAssetUrl(presentation.assetPath);
 
   return (
     <button
@@ -131,7 +134,7 @@ export function JokerArtworkTrigger({
     >
       <img
         className={imageClassName}
-        src={presentation.assetPath}
+        src={assetUrl}
         alt=""
         loading={loading}
         data-testid={`joker-art-${presentation.contentId}`}
